@@ -1,0 +1,39 @@
+groups:
+- name: basic-alerts
+  rules:
+
+  - alert: InstanceDown
+    expr: up == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Instance down"
+      description: "{{ $labels.instance }} is not reachable"
+
+  - alert: HighCPUUsage
+    expr: avg(rate(node_cpu_seconds_total{mode!="idle"}[2m])) > 0.85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage"
+      description: "CPU usage > 85% for 5 minutes"
+
+  - alert: LowDiskSpace
+    expr: (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"}) < 0.15
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low disk space"
+      description: "Filesystem has less than 15% free space"
+
+  - alert: ContainerDown
+    expr: container_last_seen < (time() - 60)
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Container down"
+      description: "A container has not been seen for 60s"
