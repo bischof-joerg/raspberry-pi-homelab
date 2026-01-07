@@ -55,9 +55,9 @@ services:
     tmpfs:
       - /tmp
 
-  # One-shot renderer: renders alertmanager.yml from template using envsubst and exits
+   # One-shot renderer: renders alertmanager.yml from template using envsubst and exits
   alertmanager-config-render:
-    image: alpine:3.20
+    image: bitnami/envsubst:1.4.2
     container_name: alertmanager-config-render
     restart: "no"
     networks: [monitoring]
@@ -65,19 +65,21 @@ services:
       - ./alertmanager/alertmanager.env
     volumes:
       - alertmanager-config:/out
-      - ./alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
-    entrypoint: ["/bin/sh", "-lc"]
-    command: >
-      apk add --no-cache gettext &&
-      envsubst < /in/alertmanager.yml.tmpl > /out/alertmanager.yml &&
-      echo "Rendered /out/alertmanager.yml" &&
-      cat /out/alertmanager.yml >/dev/null
+      - ../alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
+    command:
+      - /bin/sh
+      - -lc
+      - >
+        envsubst < /in/alertmanager.yml.tmpl > /out/alertmanager.yml &&
+        echo "Rendered /out/alertmanager.yml" &&
+        test -s /out/alertmanager.yml
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
     read_only: true
     tmpfs:
       - /tmp
+
 
   grafana:
     image: grafana/grafana:10.4.6
