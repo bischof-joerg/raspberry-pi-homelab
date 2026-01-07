@@ -36,6 +36,8 @@ services:
     # Expose Alertmanager UI only if you need it (prefer reverse proxy + auth/IP restriction)
     # ports:
     #   - "9093:9093"
+    env_file:
+      - ./alertmanager/alertmanager.env
     volumes:
       - /srv/data/monitoring/alertmanager:/alertmanager
       - alertmanager-config:/etc/alertmanager:ro
@@ -84,6 +86,8 @@ services:
     networks: [monitoring]
     ports:
       - "3000:3000"
+    env_file:
+      - ./grafana/grafana.env
     environment:
       # secrets in env_file (and keep it out of git)
       GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
