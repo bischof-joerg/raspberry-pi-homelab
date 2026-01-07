@@ -2,6 +2,8 @@
 **/.env.*
 .vscode/
 .DS_Store
+monitoring/compose/**/.env
+monitoring/compose/**/*.env
 
 # VS Code
 .vscode/
