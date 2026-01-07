@@ -1,110 +1,158 @@
-services:
-  node-exporter:
-    image: quay.io/prometheus/node-exporter:latest
-    container_name: node-exporter
-    restart: unless-stopped
-    ports:
-      - "9100:9100"
-    pid: host
-    volumes:
-      - /:/host:ro,rslave
-    command:
-      - '--path.rootfs=/host'
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
+# docker-compose.yml
+# Monitoring stack for Raspberry Pi (ARM64) with IaC + basic hardening
+# - Exposes ONLY Grafana by default
+# - Prometheus/Alertmanager UIs are kept internal (enable ports if you really need them)
 
+services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.54.1
     container_name: prometheus
     restart: unless-stopped
-    ports:
-      - "9090:9090"
+    networks: [monitoring]
+    # Expose Prometheus UI only if you need it (prefer reverse proxy + auth/IP restriction)
+    # ports:
+    #   - "9090:9090"
     volumes:
-      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../prometheus/rules:/etc/prometheus/rules:ro
-      - /srv/data/prometheus:/prometheus
+      - /srv/data/monitoring/prometheus:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
     command:
-      - '--storage.tsdb.retention.time=15d'
-      - '--config.file=/etc/prometheus/prometheus.yml'
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
     security_opt:
       - no-new-privileges:true
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    volumes:
-      - /srv/data/grafana:/var/lib/grafana
-      - ../grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
-    env_file:
-      - .env
-    environment:
-      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
-      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
-      GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: "true"
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_AUTH_ANONYMOUS_ENABLED: "false"
-    security_opt:
-      - no-new-privileges:true
-
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.55.1
-    container_name: cadvisor
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:rw
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
-    security_opt:
-      - no-new-privileges:true
-    
-  alertmanager-config:
-    image: alpine:3.20
-    container_name: alertmanager-config
-    restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      - ../alertmanager/alertmanager.yml.tmpl:/templates/alertmanager.yml.tmpl:ro
-      - alertmanager-config:/rendered
-    command:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        apk add --no-cache gettext >/dev/null
-        envsubst < /templates/alertmanager.yml.tmpl > /rendered/alertmanager.yml
-        chmod 600 /rendered/alertmanager.yml
-        # Container am Leben halten, damit das Volume nicht "weg" ist
-        tail -f /dev/null
-    security_opt:
-      - no-new-privileges:true
-      
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
 
   alertmanager:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:v0.27.0
     container_name: alertmanager
     restart: unless-stopped
-    ports:
-      - "9093:9093"
+    networks: [monitoring]
+    # Expose Alertmanager UI only if you need it (prefer reverse proxy + auth/IP restriction)
+    # ports:
+    #   - "9093:9093"
     volumes:
+      - /srv/data/monitoring/alertmanager:/alertmanager
       - alertmanager-config:/etc/alertmanager:ro
-      - /srv/data/alertmanager:/alertmanager
+      - ./alertmanager/templates:/etc/alertmanager/templates:ro
     command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
-      - "--storage.path=/alertmanager"
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
     depends_on:
-      - alertmanager-config
+      alertmanager-config-render:
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  # One-shot renderer: renders alertmanager.yml from template using envsubst and exits
+  alertmanager-config-render:
+    image: alpine:3.20
+    container_name: alertmanager-config-render
+    restart: "no"
+    networks: [monitoring]
+    env_file:
+      - ./alertmanager/alertmanager.env
+    volumes:
+      - alertmanager-config:/out
+      - ./alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
+    entrypoint: ["/bin/sh", "-lc"]
+    command: >
+      apk add --no-cache gettext &&
+      envsubst < /in/alertmanager.yml.tmpl > /out/alertmanager.yml &&
+      echo "Rendered /out/alertmanager.yml" &&
+      cat /out/alertmanager.yml >/dev/null
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  grafana:
+    image: grafana/grafana:10.4.6
+    container_name: grafana
+    restart: unless-stopped
+    networks: [monitoring]
+    ports:
+      - "3000:3000"
+    environment:
+      # secrets in env_file (and keep it out of git)
+      - GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER}"
+      - GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
+      - GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: "true"
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      # Optional: enable Grafana's Prometheus metrics endpoint
+      - GF_METRICS_ENABLED=true
+    volumes:
+      - /srv/data/monitoring/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    # Grafana needs write access to /var/lib/grafana (volume), so not fully read-only
+    tmpfs:
+      - /tmp
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.8.1
+    container_name: node-exporter
+    restart: unless-stopped
+    networks: [monitoring]
+    # Do NOT expose to LAN; Prometheus scrapes it via Docker network
+    # ports:
+    #   - "9100:9100"
+    pid: host
+    user: "65534:65534"
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($|/)
+      - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|pstore|rpc_pipefs|securityfs|squashfs|sysfs|tracefs)$
+    volumes:
+      - /:/host:ro,rslave
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    networks: [monitoring]
+    # Do NOT expose to LAN; Prometheus scrapes it via Docker network
+    # ports:
+    #   - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    command:
+      - --housekeeping_interval=30s
+      - --docker_only=true
+    security_opt:
+      - no-new-privileges:true
+    # cAdvisor needs broad visibility; keep caps minimal but accept the mounts are powerful
+    cap_drop: [ALL]
+
+networks:
+  monitoring:
+    name: monitoring
+    driver: bridge
 
 volumes:
   alertmanager-config:
-
+    name: alertmanager-config

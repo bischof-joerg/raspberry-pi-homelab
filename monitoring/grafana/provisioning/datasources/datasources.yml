@@ -1,3 +1,4 @@
+# grafana/provisioning/datasources/datasources.yml
 apiVersion: 1
 
 datasources:
@@ -7,4 +8,5 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: false
-
+    jsonData:
+      httpMethod: POST
