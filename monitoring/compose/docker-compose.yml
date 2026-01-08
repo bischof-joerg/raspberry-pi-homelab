@@ -169,9 +169,11 @@ services:
 
 networks:
   monitoring:
+    external: true
     name: monitoring
     driver: bridge
 
 volumes:
   alertmanager-config:
+    external: true
     name: alertmanager-config
