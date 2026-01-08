@@ -1,10 +1,12 @@
-**/.env
-**/.env.*
-.vscode/
-.DS_Store
-monitoring/compose/**/.env
-monitoring/compose/**/*.env
+# --- Secrets ---
+.env
+*.env
+!.env.example
+!*.env.example
 
-# VS Code
-.vscode/
+# --- OS ---
+.DS_Store
+
+# --- VS Code ---
+.vscode/*
 !.vscode/extensions.json
