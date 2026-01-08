@@ -16,7 +16,7 @@
     ]
   },
   "description": "This Grafana dashboard offers a basic overview of key performance metrics for Docker containers in your system.",
-  "editable": true,
+  "editable": false,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": 8,
@@ -38,7 +38,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "af8xxrul6fu2of"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -91,7 +91,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "af8xxrul6fu2of"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
           "expr": "count(count(container_last_seen) by (name))",
@@ -107,7 +107,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "af8xxrul6fu2of"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -195,7 +195,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "af8xxrul6fu2of"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
           "expr": "sum(rate(container_cpu_usage_seconds_total{name=~\".+\"}[10m])) by (name) * 100",
@@ -223,7 +223,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "af8xxrul6fu2of"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -308,7 +308,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "af8xxrul6fu2of"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
           "expr": "sum(rate(container_memory_usage_bytes{name=~\".+\"}[10m])) by (name)",
@@ -324,7 +324,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "af8xxrul6fu2of"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -409,7 +409,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "af8xxrul6fu2of"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
           "expr": "sum(rate(container_memory_cache{name=~\".+\"}[10m])) by (name)",
@@ -438,7 +438,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "af8xxrul6fu2of"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -526,7 +526,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "af8xxrul6fu2of"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
           "expr": "sum(rate(container_fs_reads_bytes_total{name=~\".+\"}[10m])) by (name)",
@@ -542,7 +542,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "af8xxrul6fu2of"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -630,7 +630,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "af8xxrul6fu2of"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
           "expr": "sum(rate(container_fs_writes_bytes_total{name=~\".+\"}[10m])) by (name)",
@@ -659,7 +659,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "af8xxrul6fu2of"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -747,7 +747,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "af8xxrul6fu2of"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
           "expr": "sum(rate(container_network_receive_bytes_total{name=~\".+\"}[10m])) by (name)",
@@ -763,7 +763,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "af8xxrul6fu2of"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -851,7 +851,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "af8xxrul6fu2of"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
           "expr": "sum(rate(container_network_transmit_bytes_total{name=~\".+\"}[10m])) by (name)",
@@ -880,7 +880,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "af8xxrul6fu2of"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -921,7 +921,7 @@
           "color": "rgba(255,0,255,0.7)"
         },
         "filterValues": {
-          "le": 1e-9
+          "le": 1e-09
         },
         "legend": {
           "show": true
@@ -944,7 +944,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "af8xxrul6fu2of"
+            "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
           "expr": "count by(name) (count_over_time(container_last_seen{name=~\".+\"}[$__range]))",
