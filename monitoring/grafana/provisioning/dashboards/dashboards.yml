@@ -19,12 +19,3 @@ providers:
     editable: false
     options:
       path: /var/lib/grafana/dashboards/docker
-
-  - name: Monitoring
-    orgId: 1
-    folder: Monitoring
-    type: file
-    disableDeletion: true
-    editable: false
-    options:
-      path: /var/lib/grafana/dashboards/monitoring
