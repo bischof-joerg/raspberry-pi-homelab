@@ -1,15 +1,6 @@
 groups:
 - name: host-resources
   rules:
-  - alert: HostMemoryAvailableLow
-    expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.10
-    for: 10m
-    labels:
-      severity: warning
-    annotations:
-      summary: "Memory available low"
-      description: "Less than 10% memory available on {{ $labels.instance }}."
-
   - alert: HostLoadHigh
     expr: node_load1 > 6
     for: 10m

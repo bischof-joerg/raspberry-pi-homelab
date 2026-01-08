@@ -9,14 +9,3 @@ groups:
     annotations:
       summary: "Filesystem read-only ({{ $labels.mountpoint }})"
       description: "Mountpoint {{ $labels.mountpoint }} on {{ $labels.instance }} is read-only."
-
-  - alert: HostDiskSpaceLow
-    expr: |
-      (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} /
-       node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.15
-    for: 10m
-    labels:
-      severity: warning
-    annotations:
-      summary: "Disk space low ({{ $labels.mountpoint }})"
-      description: "Less than 15% free on {{ $labels.mountpoint }} ({{ $labels.instance }})."
