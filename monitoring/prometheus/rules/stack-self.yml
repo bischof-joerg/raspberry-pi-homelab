@@ -1,0 +1,11 @@
+groups:
+- name: stack-self
+  rules:
+  - alert: TargetDown
+    expr: up == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Target down ({{ $labels.job }} / {{ $labels.instance }})"
+      description: "Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}."
