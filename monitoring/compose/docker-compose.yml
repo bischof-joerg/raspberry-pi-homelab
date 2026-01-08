@@ -12,6 +12,8 @@ services:
     # Expose Prometheus UI only if you need it (prefer reverse proxy + auth/IP restriction)
     # ports:
     #   - "9090:9090"
+    ports:
+      - "127.0.0.1:9090:9090"
     volumes:
       - /srv/data/monitoring/prometheus:/prometheus
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -33,15 +35,12 @@ services:
     container_name: alertmanager
     restart: unless-stopped
     networks: [monitoring]
-    # Expose Alertmanager UI only if you need it (prefer reverse proxy + auth/IP restriction)
-    # ports:
-    #   - "9093:9093"
-    env_file:
-      - ./alertmanager/alertmanager.env
+    ports:
+      - "127.0.0.1:9093:9093"
     volumes:
       - /srv/data/monitoring/alertmanager:/alertmanager
+      # Config + templates come from the single volume prepared by the renderer
       - alertmanager-config:/etc/alertmanager:ro
-      - ./alertmanager/templates:/etc/alertmanager/templates:ro
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager
@@ -55,31 +54,45 @@ services:
     tmpfs:
       - /tmp
 
-   # One-shot renderer: renders alertmanager.yml from template using envsubst and exits
+  # One-shot renderer: renders alertmanager.yml from template using envsubst and copies templates into the same volume.
   alertmanager-config-render:
-    image: bitnami/envsubst:1.4.2
+    image: alpine:3.20
     container_name: alertmanager-config-render
     restart: "no"
     networks: [monitoring]
     env_file:
-      - ./alertmanager/alertmanager.env
+      - ../alertmanager/alertmanager.env
     volumes:
       - alertmanager-config:/out
       - ../alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
+      - ../alertmanager/templates:/in/templates:ro
     command:
       - /bin/sh
       - -lc
-      - >
-        envsubst < /in/alertmanager.yml.tmpl > /out/alertmanager.yml &&
-        echo "Rendered /out/alertmanager.yml" &&
+      - |
+        set -euo pipefail
+        apk add --no-cache gettext
+
+        # Render config
+        envsubst < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
+        chmod 0644 /out/alertmanager.yml
+
+        # Copy templates (optional; works even if empty)
+        mkdir -p /out/templates
+        if [ -d /in/templates ]; then
+          cp -a /in/templates/. /out/templates/ 2>/dev/null || true
+        fi
+        chmod -R a+rX /out/templates || true
+
+        echo "Rendered /out/alertmanager.yml and copied templates to /out/templates"
         test -s /out/alertmanager.yml
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
-    read_only: true
+    # IMPORTANT: must be able to write to /out
+    read_only: false
     tmpfs:
       - /tmp
-
 
   grafana:
     image: grafana/grafana:10.4.6
@@ -87,9 +100,9 @@ services:
     restart: unless-stopped
     networks: [monitoring]
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file:
-      - ./grafana/grafana.env
+      - ../grafana/grafana.env
     environment:
       # secrets in env_file (and keep it out of git)
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
@@ -101,8 +114,8 @@ services:
       GF_METRICS_ENABLED: "true"
     volumes:
       - /srv/data/monitoring/grafana:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
