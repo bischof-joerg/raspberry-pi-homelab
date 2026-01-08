@@ -46,7 +46,7 @@
   "tags": [],
   "style": "dark",
   "timezone": "browser",
-  "editable": true,
+  "editable": false,
   "hideControls": true,
   "sharedCrosshair": false,
   "rows": [
@@ -749,5 +749,6 @@
     }
   ],
   "gnetId": null,
-  "description": "The  official, pre-built Prometheus Stats Dashboard."
+  "description": "The  official, pre-built Prometheus Stats Dashboard.",
+  "meta": {}
 }
