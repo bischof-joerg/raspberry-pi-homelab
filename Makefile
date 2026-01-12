@@ -1,18 +1,32 @@
-# Testen als Teil des Entwicklungsprozesses
+# Testing as crucial part of the development process
 
-# Definiere Befehle für verschiedene Testphasen
-.PHONY: precommit postdeploy test
+# Define commands for different test phases
+.PHONY: help precommit postdeploy test
 
+help:
+	@echo "Targets:"
+	@echo "  make precommit   Run pre-commit checks"
+	@echo "  make postdeploy  Run post-deploy checks (Pi)"
+	@echo "  make test        Run all tests"
 
-# precommit Tests: also solche die im Code explizit mit @pytest.mark.precommit markiert sind
+IS_PI := $(shell grep -qi raspberry /proc/device-tree/model 2>/dev/null && echo yes || echo no)
+
+PYTEST_STRICT = --strict-markers --maxfail=1
+PYTEST_REPORT = -rA 
+# If slowest tests shall be identified, uncomment the following line and comment the above line
+#PYTEST_REPORT = -rA --durations=5
+
 precommit:
-	pytest -m precommit
+	pytest $(PYTEST_STRICT) $(PYTEST_REPORT) tests/precommit -m precommit
 
-
-# nur postdeploy Tests: also solche die im Code explizit mit @pytest.mark.postdeploy markiert sind
 postdeploy:
-	pytest -m postdeploy
+	ifeq ($(IS_PI),yes)
+		./run-tests.sh tests/postdeploy -m postdeploy
+	else
+		@echo "postdeploy tests are intended to run on the Raspberry Pi"
+		@exit 1
+	endif
 
-# alle Tests
 test:
-	pytest
+	./run-tests.sh
+

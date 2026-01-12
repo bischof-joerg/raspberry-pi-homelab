@@ -7,3 +7,7 @@ markers = [
   "precommit: checks before committing",
   "postdeploy: checks after deploy on the raspberry pi",
 ]
+addopts = [
+  "--strict-markers",
+  "--maxfail=1",
+]
