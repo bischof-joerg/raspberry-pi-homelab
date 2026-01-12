@@ -6,6 +6,9 @@ import pytest
 from tests._helpers import REPO_ROOT
 
 EXCLUDE_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache"}
+EXCLUDE_FILES = {
+    "tests/precommit/test_25_no_merge_conflict_markers.py",
+}
 MARKERS = ("<<<<<<<", "=======", ">>>>>>>")
 
 # scan text files "best effort". Binary/strange encodings are skipped.
@@ -13,6 +16,9 @@ MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB, so the test stays fast
 
 
 def is_excluded(path: Path) -> bool:
+    rel = path.relative_to(REPO_ROOT)
+    if str(rel) in EXCLUDE_FILES:
+        return True
     return any(part in EXCLUDE_DIRS for part in path.parts)
 
 
