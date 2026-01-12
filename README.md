@@ -9,7 +9,8 @@ Um die Dateiverzeichzeichnisse auf dem Host anzulegen und korrekte Ownership zu 
 
 # commit and update workflow
 ## on WSL
-make precommit     # concious and explicit
+make precommit     # concious and explicit, with pytest -m precommit -rs reasons for skipped tests are shown
+
 <potentially fix issues>
 git add ...
 git commit
