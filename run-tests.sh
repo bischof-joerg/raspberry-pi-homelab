@@ -70,14 +70,15 @@ run_pytest_plain() {
 }
 
 # If secrets are required, enforce a safe path:
-if ! sudo test -f "$SECRETS_FILE"; then
-  echo "ERROR: Secrets file not found: $SECRETS_FILE" >&2
-  echo "Create it (root-only) e.g.:" >&2
-  echo "  sudo install -d -m 700 /etc/raspberry-pi-homelab" >&2
-  echo "  sudo nano $SECRETS_FILE" >&2
-  echo "  sudo chmod 600 $SECRETS_FILE" >&2
-  exit 2
-fi
+if [[ "$REQUIRE_SECRETS" -eq 1 ]]; then
+  if ! sudo test -f "$SECRETS_FILE"; then
+    echo "ERROR: Secrets file not found: $SECRETS_FILE" >&2
+    echo "Create it (root-only) e.g.:" >&2
+    echo "  sudo install -d -m 700 /etc/raspberry-pi-homelab" >&2
+    echo "  sudo nano $SECRETS_FILE" >&2
+    echo "  sudo chmod 600 $SECRETS_FILE" >&2
+    exit 2
+  fi
 
   # Verify it is readable by root (not necessarily by current user)
   if ! sudo test -r "$SECRETS_FILE"; then
@@ -85,8 +86,7 @@ fi
     exit 2
   fi
 
-  # Optional: Fail fast if required vars are missing in the secrets file.
-  # This avoids confusing test failures later.
+  # Fail fast if required vars are missing in the secrets file.
   if ! sudo -E bash -c "set -a; source '$SECRETS_FILE'; set +a; [[ -n \"\${GRAFANA_ADMIN_USER:-}\" && -n \"\${GRAFANA_ADMIN_PASSWORD:-}\" ]]" ; then
     echo "ERROR: Missing GRAFANA_ADMIN_USER or GRAFANA_ADMIN_PASSWORD in $SECRETS_FILE" >&2
     exit 2
@@ -96,3 +96,4 @@ fi
 else
   run_pytest_plain "$@"
 fi
+
