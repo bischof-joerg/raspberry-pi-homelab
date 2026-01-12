@@ -19,14 +19,15 @@ PYTEST_REPORT = -rA
 precommit:
 	pytest $(PYTEST_STRICT) $(PYTEST_REPORT) tests/precommit -m precommit
 
+ifeq ($(IS_PI),yes)
 postdeploy:
-	ifeq ($(IS_PI),yes)
-		./run-tests.sh tests/postdeploy -m postdeploy
-	else
-		@echo "postdeploy tests are intended to run on the Raspberry Pi"
-		@exit 1
-	endif
+	./run-tests.sh $(PYTEST_STRICT) $(PYTEST_REPORT) tests/postdeploy -m postdeploy
+else
+postdeploy:
+	@echo "postdeploy tests are intended to run on the Raspberry Pi"
+	@exit 1
+endif
 
 test:
-	./run-tests.sh
+	./run-tests.sh $(PYTEST_STRICT) $(PYTEST_REPORT)
 
