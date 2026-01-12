@@ -1,7 +1,6 @@
 # background on pyproject.toml files: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
 
 [tool.pytest.ini_options]
-addopts = "-q"
 testpaths = ["tests"]
 markers = [
   "precommit: checks before committing",
