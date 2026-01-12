@@ -1,27 +1,19 @@
 # .github/workflows/pre-commit.yml
-name: pre-commit
+name: tests
 
 on:
   pull_request:
   push:
-    branches:
-      - main
-
-permissions:
-  contents: read
+    branches: [ main ]
 
 jobs:
-  run:
-    name: Run pre-commit hooks
+  precommit:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # pre-commit manages its own isolated environments per hook.
-      # This action also enables caching to speed up subsequent runs.
-      - name: Run pre-commit
-        uses: pre-commit/action@v3.0.1
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          extra_args: --all-files --show-diff-on-failure
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install pytest yamllint
+      - run: make precommit

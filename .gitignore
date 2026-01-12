@@ -10,3 +10,12 @@
 # --- VS Code ---
 .vscode/*
 !.vscode/extensions.json
+
+# Python venv
+.venv/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
