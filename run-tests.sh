@@ -4,6 +4,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SECRETS_FILE="${SECRETS_FILE:-/etc/raspberry-pi-homelab/secrets.env}"
 
+# Check for sudo availability
+command -v sudo >/dev/null 2>&1 || { echo "ERROR: sudo not found"; exit 2; }
+sudo -n true >/dev/null 2>&1 || true
+
 # Default: avoid root writing .pytest_cache into the repo (especially when running via sudo)
 PYTEST_CACHE_OPTS=()
 if [[ "${PYTEST_DISABLE_CACHE:-1}" == "1" ]]; then
@@ -66,15 +70,14 @@ run_pytest_plain() {
 }
 
 # If secrets are required, enforce a safe path:
-if [[ "$REQUIRE_SECRETS" -eq 1 ]]; then
-  if [[ ! -f "$SECRETS_FILE" ]]; then
-    echo "ERROR: Secrets file not found: $SECRETS_FILE" >&2
-    echo "Create it (root-only) e.g.:" >&2
-    echo "  sudo install -d -m 700 /etc/raspberry-pi-homelab" >&2
-    echo "  sudo nano $SECRETS_FILE" >&2
-    echo "  sudo chmod 600 $SECRETS_FILE" >&2
-    exit 2
-  fi
+if ! sudo test -f "$SECRETS_FILE"; then
+  echo "ERROR: Secrets file not found: $SECRETS_FILE" >&2
+  echo "Create it (root-only) e.g.:" >&2
+  echo "  sudo install -d -m 700 /etc/raspberry-pi-homelab" >&2
+  echo "  sudo nano $SECRETS_FILE" >&2
+  echo "  sudo chmod 600 $SECRETS_FILE" >&2
+  exit 2
+fi
 
   # Verify it is readable by root (not necessarily by current user)
   if ! sudo test -r "$SECRETS_FILE"; then
