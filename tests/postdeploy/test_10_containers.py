@@ -1,39 +1,50 @@
 # Execute "docker compose -f <compose.yml path> ps" and check if it succeeds
 import pytest
-from tests._helpers import run, which_ok, REPO_ROOT
 
-# Path with docker-compose.yml file
-COMPOSE_FILE = REPO_ROOT / "monitoring/compose/docker-compose.yml"
+from tests._helpers import REPO_ROOT, compose_ps_json, compose_services_by_name, run, which_ok
 
-@pytest.mark.postdeploy
-def test_compose_ps():
-    if not which_ok("docker"):
-        pytest.skip("docker not installed")
-    # execute docker compose ps on COMPOSE_FILE (see above is path for docker_compose.yml)
-    res = run(["docker", "compose", "-f", str(COMPOSE_FILE), "ps"])
-    assert res.returncode == 0, f"docker compose ps failed:\n{res.stdout}\n{res.stderr}"
+
+COMPOSE_FILE = REPO_ROOT / "monitoring" / "compose" / "docker-compose.yml"
+
 
 @pytest.mark.postdeploy
-def test_alertmanager_config_render_job_exits_cleanly():
-    """
-    alertmanager-config-render is a one-shot job container.
-    It is expected to exit with code 0 after rendering the config.
-    """
-    if not which_ok("docker"):
-        pytest.skip("docker not installed / not available")
+def test_compose_services_state_json():
+    try:
+        ps_rows = compose_ps_json(compose_file=COMPOSE_FILE)
+    except Exception as e:
+        pytest.fail(str(e))
 
-    res = run(
-        [
-            "docker",
-            "inspect",
-            "-f",
-            "{{.State.Status}} exit={{.State.ExitCode}} err={{.State.Error}}",
-            "alertmanager-config-render",
-        ]
-    )
-    assert res.returncode == 0, f"docker inspect failed:\n{res.stdout}\n{res.stderr}"
+    rows = compose_services_by_name(ps_rows)
 
-    out = (res.stdout or "").strip()
-    assert "exited" in out, f"Expected config-render to be exited (one-shot job), got: {out}"
-    assert "exit=0" in out, f"Expected exit code 0, got: {out}"
-    assert "err=" in out, f"Expected empty error, got: {out}"
+    expected = {
+        "prometheus": "running",
+        "grafana": "running",
+        "alertmanager": "running",
+        "node-exporter": "running",
+        "cadvisor": "running",
+        # one-shot job:
+        "alertmanager-config-render": "exited",
+    }
+
+    missing = [svc for svc in expected if svc not in rows]
+    assert not missing, f"Missing services in compose ps: {missing}\nGot: {sorted(rows.keys())}"
+
+    for svc, want in expected.items():
+        row = rows[svc]
+        state = (row.get("State") or row.get("state") or "").lower()
+
+        assert want in state, f"{svc}: expected state '{want}', got '{state}'. Full row: {row}"
+
+        if svc == "alertmanager-config-render":
+            exit_code = row.get("ExitCode")
+
+            # Some compose versions omit ExitCode in ps output; fall back to docker inspect
+            if exit_code is None:
+                if not which_ok("docker"):
+                    pytest.fail("docker required to inspect ExitCode")
+                name = row.get("Name") or "alertmanager-config-render"
+                insp = run(["docker", "inspect", "-f", "{{.State.ExitCode}}", name])
+                assert insp.returncode == 0, f"docker inspect failed:\n{insp.stdout}\n{insp.stderr}"
+                exit_code = (insp.stdout or "").strip()
+
+            assert str(exit_code) == "0", f"{svc}: expected ExitCode 0, got {exit_code}. Full row: {row}"
