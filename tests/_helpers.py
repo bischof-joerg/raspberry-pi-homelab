@@ -64,7 +64,8 @@ def compose_ps_json(*, compose_file: Path) -> list[dict]:
     if not compose_file.exists():
         raise FileNotFoundError(f"Compose file missing: {compose_file}")
 
-    res = run([*cmd, "-f", str(compose_file), "ps", "--format", "json"])
+    res = run([*cmd, "-f", str(compose_file), "ps", "--all", "--format", "json"])
+
     if res.returncode != 0:
         raise RuntimeError(f"docker compose ps failed:\n{res.stdout}\n{res.stderr}")
 
