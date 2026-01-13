@@ -1,25 +1,19 @@
 # raspberry-pi-homelab
 Raspberry PI HomeLab Repro
 
-
-Um die Dateiverzeichzeichnisse auf dem Host anzulegen und korrekte Ownership zu setzen:
-- nach git pull auf ~/src/raspberry-pi-homelab
-- im compose verzeichnis ./init-permissions.sh aufrufen
-    - einmalig Exec-Bit setzen (klein, aber praktisch): chmod +x init-permissions.sh
-
 # commit and update workflow
 ## on WSL
 - ```make precommit```     # concious and explicit, with pytest -m precommit -rs reasons for skipped tests are shown
-- <potentially fix issues>
+- fix issues if needed and start from top
 - git commit handling
     - ```git status```
     - ```git add ...```
     - ```git commit -m <>```
 
-## CI:
+## CI
 - ```make precommit```
 
-## on PI after deploy:
+## on PI after deploy
 - ```cd ~/iac/raspberry-pi-homelab```
 - ```git pull```
 - Execute deploy with sudo: ```sudo ./deploy.sh```

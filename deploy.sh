@@ -1,7 +1,8 @@
+#!/usr/bin/env bash
+
 # Manifests the deployment of the monitoring stack using Docker Compose.
 # Intended to be called with sudo to ensure proper permissions after 'git pull'.
 
-#!/usr/bin/env bash
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
