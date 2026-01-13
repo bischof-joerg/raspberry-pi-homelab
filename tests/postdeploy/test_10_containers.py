@@ -63,3 +63,27 @@ def test_compose_services_state_json():
                 exit_code = (insp.stdout or "").strip()
 
             assert str(exit_code) == "0", f"{svc}: expected ExitCode 0, got {exit_code}. Full row: {row}"
+
+@pytest.mark.postdeploy
+def test_compose_services_not_restarting_or_unhealthy():
+    ps_rows = compose_ps_json(compose_file=COMPOSE_FILE)
+    rows = compose_services_by_name(ps_rows)
+
+    # only check services we care about in this stack
+    services = ["prometheus", "grafana", "alertmanager", "node-exporter", "cadvisor"]
+
+    missing = [s for s in services if s not in rows]
+    assert not missing, f"Missing services in compose ps: {missing}\nGot: {sorted(rows.keys())}"
+
+    for svc in services:
+        row = rows[svc]
+        state = (row.get("State") or "").lower()
+        status = (row.get("Status") or "").lower()
+        health = (row.get("Health") or "").lower()
+
+        assert "restarting" not in state, f"{svc}: restarting state detected. Row: {row}"
+        assert "unhealthy" not in status, f"{svc}: unhealthy status detected. Row: {row}"
+
+        # If Health field exists (non-empty), enforce healthy
+        if health:
+            assert health == "healthy", f"{svc}: expected health=healthy, got health={health}. Row: {row}"
