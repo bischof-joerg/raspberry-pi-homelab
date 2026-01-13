@@ -51,6 +51,11 @@ def compose_cmd() -> list[str] | None:
 def compose_ps_json(*, compose_file: Path) -> list[dict]:
     """
     Return `docker compose ps --format json` output as list of dict rows.
+
+    Compose versions differ:
+    - Some return a single JSON array: [ {...}, {...} ]
+    - Others return NDJSON (one JSON object per line).
+    This helper supports both.
     """
     cmd = compose_cmd()
     if not cmd:
@@ -63,15 +68,36 @@ def compose_ps_json(*, compose_file: Path) -> list[dict]:
     if res.returncode != 0:
         raise RuntimeError(f"docker compose ps failed:\n{res.stdout}\n{res.stderr}")
 
+    raw = (res.stdout or "").strip()
+    if not raw:
+        return []
+
+    # 1) Try JSON array first
     try:
-        data = json.loads(res.stdout)
-    except Exception as e:
-        raise RuntimeError(f"Failed to parse compose ps json: {e}\nRaw:\n{res.stdout}") from e
+        data = json.loads(raw)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            return [data]
+        raise RuntimeError(f"Unexpected compose ps json type: {type(data)}")
+    except json.JSONDecodeError:
+        pass
 
-    if not isinstance(data, list):
-        raise RuntimeError(f"Unexpected compose ps json type: {type(data)}\nRaw:\n{res.stdout}")
+    # 2) Fallback: NDJSON (one object per line)
+    rows: list[dict] = []
+    for i, line in enumerate(raw.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception as e:
+            raise RuntimeError(f"Failed to parse compose ps NDJSON at line {i}: {e}\nLine:\n{line}") from e
+        if not isinstance(obj, dict):
+            raise RuntimeError(f"Unexpected NDJSON row type at line {i}: {type(obj)}\nLine:\n{line}")
+        rows.append(obj)
 
-    return data
+    return rows
 
 
 def compose_services_by_name(ps_rows: list[dict]) -> dict[str, dict]:
