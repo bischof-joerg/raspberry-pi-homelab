@@ -1,0 +1,9 @@
+# Ensure shell scripts always use LF (prevents shebang/[[/substitution issues on Linux)
+*.sh text eol=lf
+
+# (Optional) keep yaml/json normalized too
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+
