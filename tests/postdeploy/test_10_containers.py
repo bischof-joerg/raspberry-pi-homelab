@@ -1,21 +1,37 @@
 # Execute "docker compose -f <compose.yml path> ps" and check if it succeeds
+import time
 import pytest
 
 from tests._helpers import REPO_ROOT, compose_ps_json, compose_services_by_name, run, which_ok
 
-
 COMPOSE_FILE = REPO_ROOT / "monitoring" / "compose" / "docker-compose.yml"
+
+
+def get_rows_with_retry(expected_services: set[str], retries: int = 5, sleep_s: float = 0.5) -> dict[str, dict]:
+    last_rows: dict[str, dict] = {}
+    last_keys: list[str] = []
+
+    for _ in range(retries):
+        ps_rows = compose_ps_json(compose_file=COMPOSE_FILE)
+        rows = compose_services_by_name(ps_rows)
+        last_rows = rows
+        last_keys = sorted(rows.keys())
+
+        if expected_services.issubset(rows.keys()):
+            return rows
+
+        time.sleep(sleep_s)
+
+    pytest.fail(
+        f"Missing services after retries.\n"
+        f"Expected: {sorted(expected_services)}\n"
+        f"Got: {last_keys}\n"
+        f"Hint: one-shot jobs require `docker compose ps --all` (enabled) and may race right after `up -d`."
+    )
 
 
 @pytest.mark.postdeploy
 def test_compose_services_state_json():
-    try:
-        ps_rows = compose_ps_json(compose_file=COMPOSE_FILE)
-    except Exception as e:
-        pytest.fail(str(e))
-
-    rows = compose_services_by_name(ps_rows)
-
     expected = {
         "prometheus": "running",
         "grafana": "running",
@@ -26,15 +42,14 @@ def test_compose_services_state_json():
         "alertmanager-config-render": "exited",
     }
 
-    missing = [svc for svc in expected if svc not in rows]
-    assert not missing, f"Missing services in compose ps: {missing}\nGot: {sorted(rows.keys())}"
+    rows = get_rows_with_retry(set(expected.keys()), retries=5, sleep_s=0.5)
 
     for svc, want in expected.items():
         row = rows[svc]
         state = (row.get("State") or row.get("state") or "").lower()
-
         assert want in state, f"{svc}: expected state '{want}', got '{state}'. Full row: {row}"
 
+        # Extra strictness for the one-shot job
         if svc == "alertmanager-config-render":
             exit_code = row.get("ExitCode")
 

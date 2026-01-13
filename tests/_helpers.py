@@ -50,12 +50,14 @@ def compose_cmd() -> list[str] | None:
 
 def compose_ps_json(*, compose_file: Path) -> list[dict]:
     """
-    Return `docker compose ps --format json` output as list of dict rows.
+    Return `docker compose ps --all --format json` output as list of dict rows.
 
     Compose versions differ:
     - Some return a single JSON array: [ {...}, {...} ]
     - Others return NDJSON (one JSON object per line).
     This helper supports both.
+
+    We use --all to include one-shot/exited containers (e.g. config render jobs).
     """
     cmd = compose_cmd()
     if not cmd:
@@ -65,7 +67,6 @@ def compose_ps_json(*, compose_file: Path) -> list[dict]:
         raise FileNotFoundError(f"Compose file missing: {compose_file}")
 
     res = run([*cmd, "-f", str(compose_file), "ps", "--all", "--format", "json"])
-
     if res.returncode != 0:
         raise RuntimeError(f"docker compose ps failed:\n{res.stdout}\n{res.stderr}")
 
@@ -73,7 +74,7 @@ def compose_ps_json(*, compose_file: Path) -> list[dict]:
     if not raw:
         return []
 
-    # 1) Try JSON array first
+    # 1) Try JSON array/dict first
     try:
         data = json.loads(raw)
         if isinstance(data, list):
