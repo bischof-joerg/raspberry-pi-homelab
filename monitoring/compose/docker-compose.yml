@@ -100,7 +100,7 @@ services:
     restart: unless-stopped
     networks: [monitoring]
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     env_file:
       - ../grafana/grafana.env
     environment:
