@@ -1077,7 +1077,7 @@
           "color": "rgba(255,0,255,0.7)"
         },
         "filterValues": {
-          "le": 1E-9
+          "le": 1e-09
         },
         "legend": {
           "show": true
@@ -1123,6 +1123,19 @@
   ],
   "templating": {
     "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "label": "Prometheus",
+        "hide": 0,
+        "refresh": 1,
+        "query": "prometheus",
+        "current": {
+          "text": "DS_PROMETHEUS",
+          "value": "DS_PROMETHEUS"
+        },
+        "options": []
+      },
       {
         "current": {},
         "datasource": {
