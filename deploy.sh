@@ -11,19 +11,42 @@ SECRETS_FILE="${SECRETS_FILE:-/etc/raspberry-pi-homelab/secrets.env}"
 INIT_SCRIPT="${INIT_SCRIPT:-$REPO_ROOT/monitoring/compose/init-permissions.sh}"
 
 # toggles with defaults
-RUN_INIT_PERMISSIONS="${RUN_INIT_PERMISSIONS:-auto}"   # auto|always|never
-PULL_IMAGES="${PULL_IMAGES:-1}"                        # 1|0
-RUN_TESTS="${RUN_TESTS:-1}"                            # 1|0
+RUN_INIT_PERMISSIONS="${RUN_INIT_PERMISSIONS:-auto}"     # auto|always|never
+PULL_IMAGES="${PULL_IMAGES:-1}"                          # 1|0
+RUN_TESTS="${RUN_TESTS:-1}"                              # 1|0
+
+# NEW: repo ownership handling
+# Use this to avoid permission chaos when files accidentally become root-owned (e.g., a sudo command created files).
+FIX_REPO_OWNERSHIP="${FIX_REPO_OWNERSHIP:-auto}"         # auto|always|never
+REPO_OWNER_USER="${REPO_OWNER_USER:-admin}"
+REPO_OWNER_GROUP="${REPO_OWNER_GROUP:-admin}"
 
 # logging and error handling functions
 log(){ echo "[$(date -Is)] $*"; }
 die(){ echo "ERROR: $*" >&2; exit 2; }
+
+on_err() {
+  local exit_code=$?
+  local line_no=${1:-"?"}
+  echo "ERROR: deploy.sh failed (exit=${exit_code}) at line ${line_no}." >&2
+  echo "Hint: re-run with 'bash -x ./deploy.sh' for detailed tracing." >&2
+  exit "$exit_code"
+}
+trap 'on_err $LINENO' ERR
 
 # Ensure the script is run as root
 require_root() {
   if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     die "Please run with sudo: sudo ./deploy.sh"
   fi
+}
+
+# Basic sanity checks to prevent destructive operations
+sanity_checks() {
+  [[ -n "${REPO_ROOT}" ]] || die "REPO_ROOT is empty (unexpected)"
+  [[ "${REPO_ROOT}" != "/" ]] || die "REPO_ROOT resolved to '/', refusing to continue"
+  [[ -d "${REPO_ROOT}" ]] || die "REPO_ROOT is not a directory: ${REPO_ROOT}"
+  [[ -f "${REPO_ROOT}/deploy.sh" ]] || die "Expected deploy.sh in REPO_ROOT, got: ${REPO_ROOT}"
 }
 
 # Check prerequisites: docker, docker compose, compose file
@@ -50,6 +73,47 @@ compose() {
   docker compose -f "$COMPOSE_FILE" "$@"
 }
 
+# NEW: Check and (optionally) fix repo ownership
+# Why:
+# - Prevents permission issues when root-created files end up inside the repo
+# - Keeps the "no manual changes on Pi" principle intact (deploy.sh self-heals where safe)
+repo_ownership_mismatch_exists() {
+  # Fast check: stop at first mismatch; do not cross filesystem boundaries.
+  # NOTE: includes .git intentionally (common root-owned culprit).
+  find "$REPO_ROOT" -xdev \( ! -user "$REPO_OWNER_USER" -o ! -group "$REPO_OWNER_GROUP" \) -print -quit 2>/dev/null | grep -q .
+}
+
+fix_repo_ownership_if_needed() {
+  case "$FIX_REPO_OWNERSHIP" in
+    never|always|auto) ;;
+    *) die "Invalid FIX_REPO_OWNERSHIP=$FIX_REPO_OWNERSHIP (use auto|always|never)" ;;
+  esac
+
+  # Validate target user/group to avoid confusing chown failures
+  id -u "$REPO_OWNER_USER" >/dev/null 2>&1 || die "User not found: REPO_OWNER_USER=$REPO_OWNER_USER"
+  getent group "$REPO_OWNER_GROUP" >/dev/null 2>&1 || die "Group not found: REPO_OWNER_GROUP=$REPO_OWNER_GROUP"
+
+  if [[ "$FIX_REPO_OWNERSHIP" == "always" ]]; then
+    log "repo-ownership: forcing ownership to ${REPO_OWNER_USER}:${REPO_OWNER_GROUP} (FIX_REPO_OWNERSHIP=always)"
+    # Safer: do not follow symlinks (avoid touching data outside repo if symlinks exist)
+    chown -R --no-dereference "${REPO_OWNER_USER}:${REPO_OWNER_GROUP}" "$REPO_ROOT"
+    return 0
+  fi
+
+  if repo_ownership_mismatch_exists; then
+    if [[ "$FIX_REPO_OWNERSHIP" == "never" ]]; then
+      die "repo-ownership: mismatch detected in $REPO_ROOT; refusing to fix (FIX_REPO_OWNERSHIP=never)"
+    fi
+
+    log "repo-ownership: mismatch detected; fixing ownership to ${REPO_OWNER_USER}:${REPO_OWNER_GROUP} (FIX_REPO_OWNERSHIP=auto)"
+    # Safer: do not follow symlinks
+    chown -R --no-dereference "${REPO_OWNER_USER}:${REPO_OWNER_GROUP}" "$REPO_ROOT"
+    log "repo-ownership: fixed"
+  else
+    log "repo-ownership: OK (${REPO_OWNER_USER}:${REPO_OWNER_GROUP})"
+  fi
+}
+
 maybe_init_permissions() {
   [[ -f "$INIT_SCRIPT" ]] || { log "init-permissions: not found, skipping ($INIT_SCRIPT)"; return 0; }
 
@@ -71,9 +135,28 @@ maybe_init_permissions() {
   log "init-permissions: done"
 }
 
+run_postdeploy_tests() {
+  if [[ "$RUN_TESTS" != "1" ]]; then
+    log "tests: skipped (RUN_TESTS=0)"
+    return 0
+  fi
+
+  command -v make >/dev/null 2>&1 || die "tests requested but 'make' not found"
+  [[ -f "$REPO_ROOT/Makefile" ]] || die "tests requested but Makefile not found in repo root"
+
+  log "tests: make postdeploy"
+  (cd "$REPO_ROOT" && make postdeploy)
+  log "tests: passed"
+}
+
 main() {
   require_root
+  sanity_checks
   cd "$REPO_ROOT"
+
+  # NEW: ensure repo stays owned by the intended non-root user/group
+  fix_repo_ownership_if_needed
+
   check_prereqs
   load_secrets
 
@@ -92,13 +175,7 @@ main() {
   log "compose: ps"
   compose ps
 
-  if [[ "$RUN_TESTS" == "1" ]]; then
-    log "tests: make postdeploy"
-    (cd "$REPO_ROOT" && make postdeploy)
-    log "tests: passed"
-  else
-    log "tests: skipped (RUN_TESTS=0)"
-  fi
+  run_postdeploy_tests
 
   log "deploy: done"
 }
