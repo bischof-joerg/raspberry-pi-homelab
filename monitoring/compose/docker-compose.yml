@@ -165,7 +165,7 @@ services:
       - /var/lib/docker:/var/lib/docker:ro
     command:
       - --housekeeping_interval=30s
-      - --docker_endpoint=unix:///var/run/docker.sock
+      - --docker_only=true     
       - --store_container_labels=true
 
 networks:
