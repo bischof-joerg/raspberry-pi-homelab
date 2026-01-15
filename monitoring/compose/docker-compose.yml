@@ -153,14 +153,16 @@ services:
     # Do NOT expose to LAN; Prometheus scrapes it via Docker network
     # ports:
     #   - "8080:8080"
+    pid: host
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    privileged: true
     volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /:/rootfs:ro
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
-    devices:
-      - /dev/kmsg:/dev/kmsg
-    privileged: true
     command:
       - --housekeeping_interval=30s
       - --docker_only=true
