@@ -29,6 +29,20 @@ def get_rows_with_retry(expected_services: set[str], retries: int = 5, sleep_s: 
         f"Hint: one-shot jobs require `docker compose ps --all` (enabled) and may race right after `up -d`."
     )
 
+def wait_for_healthy(service: str, compose_file: str, timeout_s: int = 90, interval_s: int = 5) -> str:
+    deadline = time.time() + timeout_s
+    last = ""
+    while time.time() < deadline:
+        ps_rows = compose_ps_json(compose_file=compose_file)
+        rows = compose_services_by_name(ps_rows)
+        h = (rows.get(service, {}).get("Health") or "").lower()
+        last = h
+        if h == "healthy" or h == "":
+            return h
+        if h == "unhealthy":
+            return h
+        time.sleep(interval_s)
+    return last
 
 @pytest.mark.postdeploy
 def test_compose_services_state_json():
@@ -86,4 +100,6 @@ def test_compose_services_not_restarting_or_unhealthy():
 
         # If Health field exists (non-empty), enforce healthy
         if health:
-            assert health == "healthy", f"{svc}: expected health=healthy, got health={health}. Row: {row}"
+            final = wait_for_healthy(svc, compose_file=COMPOSE_FILE, timeout_s=90, interval_s=5)
+            assert final == "healthy", f"{svc}: expected health=healthy, got health={final} after waiting. Row: {row}"
+            
