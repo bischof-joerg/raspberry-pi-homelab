@@ -12,7 +12,7 @@ The monitoring stack is implemented as an isolated Docker stack and provides:
 - Alert routing (Alertmanager)
 
 📄 Architecture, container roles, and persistence details are documented here:  
-➡️ **[monitoring/MonitoringStack.md](monitoring/MonitoringStack.md)**
+➡️ **[monitoring/MonitoringStack.md](monitoring/monitoring.md)**
 
 
 ## Secrets
