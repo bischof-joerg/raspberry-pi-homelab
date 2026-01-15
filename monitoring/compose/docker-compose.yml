@@ -158,13 +158,13 @@ services:
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    privileged: true
     command:
       - --housekeeping_interval=30s
       - --docker_only=true
-    security_opt:
-      - no-new-privileges:true
-    # cAdvisor needs broad visibility; keep caps minimal but accept the mounts are powerful
-    cap_drop: [ALL]
+      - --store_container_labels=true
 
 networks:
   monitoring:
