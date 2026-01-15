@@ -158,12 +158,13 @@ services:
       - /dev/kmsg:/dev/kmsg
     privileged: true
     volumes:
+      - /etc/machine-id:/etc/machine-id:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /:/rootfs:ro
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
-      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
     command:
       - --housekeeping_interval=30s
       - --docker_only=true
