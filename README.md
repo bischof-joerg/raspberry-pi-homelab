@@ -29,3 +29,6 @@ For a basis for reproducible deployments and exentension with additional service
 - Secure defaults and hardening is part of integrating new services
 Details on the development workflow are availabe under:
 ➡️ **[DevWorkflow.md](DevWorkflow.md)**
+
+## Update of Grafana Dashboards
+➡️ **[monitoring/grafana/grafana_dashboards.md](monitoring/grafana/grafana_dashboards.md)**

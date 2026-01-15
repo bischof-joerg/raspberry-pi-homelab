@@ -27,12 +27,26 @@ if grep -RIn '"type"[[:space:]]*:[[:space:]]*"angular"' "$ROOT" >/dev/null; then
   grep -RIn '"type"[[:space:]]*:[[:space:]]*"angular"' "$ROOT" || true
 fi
 
-# 4) Prometheus datasource placeholder check (best-effort)
-# This is intentionally not "fail hard" because some dashboards rely on default datasource,
-# but it gives signal if hardcoded UIDs slip in.
-if grep -RIn '"type"[[:space:]]*:[[:space:]]*"prometheus"' "$ROOT" | grep -v '\${DS_PROMETHEUS}' >/dev/null; then
-  echo "WARNING: Some prometheus datasource blocks do not use \${DS_PROMETHEUS}."
-  grep -RIn '"type"[[:space:]]*:[[:space:]]*"prometheus"' "$ROOT" | head -n 40
-fi
+# 4) Prometheus datasource placeholder check (robust)
+bad_found=0
+find "$ROOT" -name '*.json' -print0 | while IFS= read -r -d '' f; do
+  bad="$(jq -r '
+    [ .. | objects
+      | select(has("datasource"))
+      | .datasource
+      | select(type=="object" and .type=="prometheus")
+      | .uid // "MISSING_UID"
+      | select(. != "${DS_PROMETHEUS}")
+    ] | unique | .[]
+  ' "$f" 2>/dev/null || true)"
+
+  if [[ -n "${bad:-}" ]]; then
+    echo "WARNING: $f has prometheus datasource uid not using \${DS_PROMETHEUS}: $bad"
+    bad_found=1
+  fi
+done
+
+# Optional: fail hard if you want strictness
+# [[ "$bad_found" -eq 0 ]] || exit 1
 
 echo "OK: dashboards validated"

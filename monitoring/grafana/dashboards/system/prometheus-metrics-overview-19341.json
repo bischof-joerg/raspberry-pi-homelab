@@ -42,7 +42,7 @@
       }
     ]
   },
-  "editable": false,
+  "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
@@ -860,7 +860,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "Prometheus Metrics Overview",
-  "uid": "b0b89a23-8f37-4bfe-962a-f329a654e987",
+  "uid": "gnet-system-19341",
   "version": 3,
   "weekStart": "",
   "gnetId": 19341,

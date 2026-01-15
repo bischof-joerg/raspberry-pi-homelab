@@ -1,12 +1,48 @@
 {
   "dashboards": [
-    { "folder": "docker", "gnet_id": 21743, "filename": "docker-overview-21743.json", "uid": "gnet-docker-21743" },
-    { "folder": "docker", "gnet_id": 193,   "filename": "docker-monitoring-193.json", "uid": "gnet-docker-193" },
-    { "folder": "docker", "gnet_id": 21040, "filename": "docker-engine-health-21040.json", "uid": "gnet-docker-21040" },
-
-    { "folder": "system", "gnet_id": 1860,  "filename": "node-exporter-full-1860.json", "uid": "gnet-system-1860" },
-    { "folder": "system", "gnet_id": 9578,  "filename": "alertmanager-9578.json", "uid": "gnet-system-9578" },
-    { "folder": "system", "gnet_id": 19341, "filename": "prometheus-metrics-overview-19341.json", "uid": "gnet-system-19341" },
-    { "folder": "system", "gnet_id": 159,   "filename": "prometheus-overview-159.json", "uid": "gnet-system-159" }
-  ]
+    {
+      "folder": "docker",
+      "gnet_id": 21743,
+      "filename": "docker-overview-21743.json",
+      "uid": "gnet-docker-21743"
+    },
+    {
+      "folder": "docker",
+      "gnet_id": 193,
+      "filename": "docker-monitoring-193.json",
+      "uid": "gnet-docker-193"
+    },
+    {
+      "folder": "docker",
+      "gnet_id": 21040,
+      "filename": "docker-engine-health-21040.json",
+      "uid": "gnet-docker-21040"
+    },
+    {
+      "folder": "system",
+      "gnet_id": 1860,
+      "filename": "node-exporter-full-1860.json",
+      "uid": "gnet-system-1860"
+    },
+    {
+      "folder": "system",
+      "gnet_id": 9578,
+      "filename": "alertmanager-9578.json",
+      "uid": "gnet-system-9578"
+    },
+    {
+      "folder": "system",
+      "gnet_id": 19341,
+      "filename": "prometheus-metrics-overview-19341.json",
+      "uid": "gnet-system-19341"
+    },
+    {
+      "folder": "system",
+      "gnet_id": 159,
+      "filename": "prometheus-overview-159.json",
+      "uid": "gnet-system-159"
+    }
+  ],
+  "id": null,
+  "uid": "manifest"
 }
