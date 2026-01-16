@@ -171,7 +171,7 @@ services:
       - --store_container_labels=true
 
   docker-state-exporter:
-    image: karugaru/docker_state_exporter:v0.3.0
+    image: karugaru/docker_state_exporter:latest
     container_name: docker-state-exporter
     restart: unless-stopped
     networks: [monitoring]
