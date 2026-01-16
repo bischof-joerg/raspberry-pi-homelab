@@ -8,12 +8,6 @@
     },
     {
       "folder": "docker",
-      "gnet_id": 193,
-      "filename": "docker-monitoring-193.json",
-      "uid": "gnet-docker-193"
-    },
-    {
-      "folder": "docker",
       "gnet_id": 21040,
       "filename": "docker-engine-health-21040.json",
       "uid": "gnet-docker-21040"
