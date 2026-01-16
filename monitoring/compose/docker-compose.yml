@@ -170,6 +170,21 @@ services:
       - --docker_only=true
       - --store_container_labels=true
 
+  docker-state-exporter:
+    image: karugaru/docker_state_exporter:v0.3.0
+    container_name: docker-state-exporter
+    restart: unless-stopped
+    networks: [monitoring]
+    # Zugriff auf Docker-API (read-only)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Hardening
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    # Explizit dokumentiert (Dashboard erwartet Port 8080)
+    ports: []
+
 networks:
   monitoring:
     external: true

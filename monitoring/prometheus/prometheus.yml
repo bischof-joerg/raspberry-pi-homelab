@@ -36,3 +36,7 @@ scrape_configs:
     relabel_configs:
       - target_label: instance
         replacement: rpi-hub
+
+  - job_name: docker-state-exporter
+    static_configs:
+      - targets: ["docker-state-exporter:8080"]
