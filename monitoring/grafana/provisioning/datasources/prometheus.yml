@@ -7,6 +7,8 @@ prune: true
 deleteDatasources:
   - name: Prometheus
     orgId: 1
+  - name: DS_PROMETHEUS
+    orgId: 2
 
 datasources:
   - name: Prometheus
