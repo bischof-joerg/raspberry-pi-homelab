@@ -1,6 +1,13 @@
 # grafana/provisioning/datasources/prometheus.yml
 apiVersion: 1
 
+# Wichtig: erst bereinigen, dann neu anlegen
+deleteDatasources:
+  - name: DS_PROMETHEUS
+    orgId: 1
+  - name: Prometheus
+    orgId: 1
+
 # Automatically remove any data sources not defined in this file
 prune: true
 
