@@ -7240,5 +7240,5 @@
   "title": "Node Exporter Full",
   "version": 11,
   "description": "Graphed values of Prometheus node exporter",
-  "uid": "gnet-system-1860"
+  "uid": "system-node-exporter-full-1860"
 }

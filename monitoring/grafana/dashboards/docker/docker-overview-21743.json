@@ -1052,7 +1052,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "cAdvisor exporter - Docker container Overview",
-  "uid": "gnet-docker-21743",
+  "uid": "docker-docker-overview-21743",
   "version": 15,
   "weekStart": ""
 }

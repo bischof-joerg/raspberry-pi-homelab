@@ -846,7 +846,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "Docker daemon metrics",
-  "uid": "gnet-docker-21040",
+  "uid": "docker-docker-engine-health-21040",
   "version": 1,
   "weekStart": "",
   "gnetId": 21040,
