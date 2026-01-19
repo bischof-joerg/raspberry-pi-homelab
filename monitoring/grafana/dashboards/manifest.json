@@ -14,27 +14,15 @@
     },
     {
       "folder": "system",
-      "gnet_id": 1860,
-      "filename": "node-exporter-full-1860.json",
-      "uid": "gnet-system-1860"
-    },
-    {
-      "folder": "system",
-      "gnet_id": 9578,
-      "filename": "alertmanager-9578.json",
-      "uid": "gnet-system-9578"
+      "gnet_id": 12486,
+      "filename": "node-exporter-full-12486.json",
+      "uid": "gnet-system-12486"
     },
     {
       "folder": "system",
       "gnet_id": 19341,
       "filename": "prometheus-metrics-overview-19341.json",
       "uid": "gnet-system-19341"
-    },
-    {
-      "folder": "system",
-      "gnet_id": 159,
-      "filename": "prometheus-overview-159.json",
-      "uid": "gnet-system-159"
     }
   ],
   "id": null,
