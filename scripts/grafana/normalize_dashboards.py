@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Set, Tuple
 
 ROOT = Path("monitoring/grafana/dashboards")
-PROM_DS_UID = "${DS_PROMETHEUS}"
+PROM_DS_UID = "DS_PROMETHEUS"
 
 def slugify_uid(s: str) -> str:
     # Grafana UID is typically limited; keep it short & safe
