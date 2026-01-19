@@ -2,19 +2,13 @@
 """
 Normalize Grafana dashboard JSONs for FILE PROVISIONING.
 
-Goals (for your setup):
-- Ensure all Prometheus datasource references point to uid "DS_PROMETHEUS"
-  (NOT "${DS_PROMETHEUS}" because provisioning does not resolve that placeholder).
-- Keep Grafana internal datasource ("-- Grafana --") untouched.
-- Ensure stable dashboard.uid (prefer manifest.json if present).
+Goals:
+- Ensure all Prometheus datasource references point to uid "DS_PROMETHEUS".
+- Fix internal dashboard links by mapping old UIDs to new slugified UIDs.
+- Ensure stable dashboard.uid (prefer manifest.json or filename-based).
 - Set dashboard.id to null for provisioning.
-- Avoid duplicate dashboard titles within the same folder (Grafana will restrict
-  provisioning DB write access when duplicates exist).
+- Avoid duplicate dashboard titles within the same folder.
 - Optionally remove __inputs to avoid confusion.
-
-Repo conventions:
-- Dashboards live under: monitoring/grafana/dashboards/<folder>/*.json
-- Optional manifest:       monitoring/grafana/dashboards/manifest.json
 """
 
 from __future__ import annotations
@@ -28,17 +22,16 @@ from typing import Any, Dict, Iterable, Optional, Set, Tuple
 
 DASH_ROOT = Path("monitoring/grafana/dashboards")
 
-# This must match your provisioned datasource UID in grafana/provisioning/datasources/prometheus.yml
+# Provisioned datasource configuration
+# must matchprovisioned datasource UID in grafana/provisioning/datasources/prometheus.yml
 PROM_UID = "DS_PROMETHEUS"
 PROM_NAME = "Prometheus"
-
 # Grafana "internal" datasource marker used for annotations.
 GRAFANA_INTERNAL_UID = "-- Grafana --"
 GRAFANA_INTERNAL_TYPE = "grafana"
 
 # If true, we keep __inputs. For provisioning, it's typically noise.
 KEEP_INPUTS = False
-
 
 # ----------------------------
 # Helpers
@@ -48,12 +41,13 @@ _UID_ALLOWED = re.compile(r"^[a-zA-Z0-9_-]{1,40}$")
 
 
 def slugify_uid(s: str, limit: int = 40) -> str:
-    s = (s or "").strip()
-    s = s.lower()
+    # 1. Lowercase and replace dots (common in filenames) with dashes
+    s = (s or "").strip().lower().replace(".", "-")
+    # 2. Remove anything not alphanumeric, dash, or underscore
     s = re.sub(r"[^a-z0-9_-]+", "-", s)
+    # 3. Collapse multiple dashes and trim edges
     s = re.sub(r"-{2,}", "-", s).strip("-")
-    s = s[:limit]
-    return s or "dashboard"
+    return s[:limit] or "dashboard"
 
 
 def ensure_uid(uid: str) -> str:
@@ -66,7 +60,7 @@ def ensure_uid(uid: str) -> str:
 
 def iter_json_files(root: Path) -> Iterable[Path]:
     for p in root.rglob("*.json"):
-        if p.is_file():
+        if p.is_file() and not p.name.startswith(".") and p.name != "manifest.json":
             yield p
 
 
@@ -78,18 +72,8 @@ class ManifestEntry:
 
 
 def load_manifest(manifest_path: Path) -> Dict[Path, ManifestEntry]:
-    """
-    Expected shape (example):
-    {
-      "dashboards": [
-        {"folder":"docker","filename":"docker-engine-health-21040.json","uid":"gnet-docker-21040"},
-        ...
-      ]
-    }
-    """
     if not manifest_path.exists():
         return {}
-
     try:
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception as e:
@@ -97,8 +81,7 @@ def load_manifest(manifest_path: Path) -> Dict[Path, ManifestEntry]:
 
     out: Dict[Path, ManifestEntry] = {}
     for d in data.get("dashboards", []):
-        folder = d.get("folder")
-        filename = d.get("filename")
+        folder, filename = d.get("folder"), d.get("filename")
         if not folder or not filename:
             continue
         uid = d.get("uid")
@@ -111,14 +94,6 @@ def load_manifest(manifest_path: Path) -> Dict[Path, ManifestEntry]:
 # Core patching logic
 # ----------------------------
 
-def is_grafana_internal_ds(ds_obj: Dict[str, Any]) -> bool:
-    return ds_obj.get("type") == GRAFANA_INTERNAL_TYPE or ds_obj.get("uid") == GRAFANA_INTERNAL_UID
-
-
-def prom_ds_object() -> Dict[str, str]:
-    return {"type": "prometheus", "uid": PROM_UID}
-
-
 def normalize_datasource_value(ds_val: Any) -> Any:
     """
     Normalize various datasource representations:
@@ -130,13 +105,11 @@ def normalize_datasource_value(ds_val: Any) -> Any:
     """
     # Object form
     if isinstance(ds_val, dict):
-        if is_grafana_internal_ds(ds_val):
+        if ds_val.get("type") == GRAFANA_INTERNAL_TYPE or ds_val.get("uid") == GRAFANA_INTERNAL_UID:
             return ds_val
 
-        ds_type = ds_val.get("type")
-        ds_uid = ds_val.get("uid")
-        ds_name = ds_val.get("name")
-
+        ds_type, ds_uid, ds_name = ds_val.get("type"), ds_val.get("uid"), ds_val.get("name")
+        
         # If it looks like Prometheus in any way, normalize to uid DS_PROMETHEUS.
         looks_like_prom = (
             ds_type == "prometheus"
@@ -144,11 +117,7 @@ def normalize_datasource_value(ds_val: Any) -> Any:
             or ds_name == PROM_NAME
         )
         if looks_like_prom:
-            ds_val["type"] = "prometheus"
-            ds_val["uid"] = PROM_UID
-            # Remove conflicting keys if present
-            if "name" in ds_val:
-                ds_val.pop("name", None)
+            return {"type": "prometheus", "uid": PROM_UID}
         return ds_val
 
     # String form
@@ -156,14 +125,10 @@ def normalize_datasource_value(ds_val: Any) -> Any:
         s = ds_val.strip()
         if s == GRAFANA_INTERNAL_UID:
             return {"type": GRAFANA_INTERNAL_TYPE, "uid": GRAFANA_INTERNAL_UID}
-
         # Common Prometheus variants (including the placeholder that breaks provisioning)
         if s in (PROM_NAME, PROM_UID, "${DS_PROMETHEUS}", f"${{{PROM_UID}}}"):
-            return prom_ds_object()
-
-        # Unknown string: leave it as-is (better than breaking other plugins)
-        return ds_val
-
+            return {"type": "prometheus", "uid": PROM_UID}
+    
     return ds_val
 
 
@@ -181,148 +146,91 @@ def walk_and_patch(node: Any) -> Any:
         for k, v in list(node.items()):
             node[k] = walk_and_patch(v)
         return node
-
+    
     if isinstance(node, list):
         return [walk_and_patch(x) for x in node]
-
+    
     return node
 
 
-def contains_angular(node: Any) -> bool:
-    """
-    Best-effort detection of Angular panels (deprecated).
-    """
-    if isinstance(node, dict):
-        if node.get("type") == "angular":
-            return True
-        return any(contains_angular(v) for v in node.values())
-    if isinstance(node, list):
-        return any(contains_angular(v) for v in node)
-    return False
-
-
-def make_default_uid_for_file(path: Path) -> str:
-    rel = path.resolve().relative_to(DASH_ROOT.resolve())
-    # e.g. docker/docker-engine-health-21040 -> docker-docker-engine-health-21040
-    return ensure_uid(slugify_uid(str(rel.with_suffix("")).replace("/", "-")))
-
-
 def ensure_unique_titles_per_folder(docs: Iterable[Tuple[Path, Dict[str, Any]]]) -> None:
-    """
-    Grafana provisioning can become read-only if duplicate titles exist in the same folder.
-    We ensure uniqueness by suffixing duplicates with " (<uid>)".
-    """
-    seen: Dict[str, Set[str]] = {}  # folder_key -> set of titles
+    seen: Dict[str, Set[str]] = {}
     for fpath, dash in docs:
         folder_key = str(fpath.parent.resolve())
         title = str(dash.get("title") or "").strip() or "Dashboard"
         uid = str(dash.get("uid") or "").strip() or "unknown"
-
         used = seen.setdefault(folder_key, set())
-        if title not in used:
-            used.add(title)
-            continue
-
-        # Duplicate title: disambiguate
-        new_title = f"{title} ({uid})"
-        # If still duplicated, add incremental suffix
-        i = 2
+        
+        new_title, i = title, 2
         while new_title in used:
-            new_title = f"{title} ({uid}-{i})"
+            new_title = f"{title} ({uid})" if i == 2 else f"{title} ({uid}-{i})"
             i += 1
-
         dash["title"] = new_title
         used.add(new_title)
 
 
 def main() -> int:
     if not DASH_ROOT.exists():
-        print(f"ERROR: {DASH_ROOT} not found (run from repo root).", file=sys.stderr)
+        print(f"ERROR: {DASH_ROOT} not found.", file=sys.stderr)
         return 2
 
-    manifest_path = DASH_ROOT / "manifest.json"
-    manifest_map = load_manifest(manifest_path)
-
-    # Load all dashboards
+    manifest_map = load_manifest(DASH_ROOT / "manifest.json")
     docs: list[Tuple[Path, Dict[str, Any]]] = []
+    uid_mapping: Dict[str, str] = {}  # Map Old UID -> New UID for fixing links
+
+    # Step 1: Load and determine NEW UIDs
     for f in iter_json_files(DASH_ROOT):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
         except Exception as e:
             print(f"ERROR: invalid JSON: {f} ({e})", file=sys.stderr)
             return 3
-        if not isinstance(data, dict):
-            print(f"ERROR: dashboard JSON is not an object: {f}", file=sys.stderr)
-            return 3
-        docs.append((f, data))
-
-    # Assign/normalize UIDs + patch content
-    used_uids: Set[str] = set()
-    angular_files: list[Path] = []
-
-    for f, dash in docs:
-        # Provisioning expects id null/absent. Use null for explicitness.
-        dash["id"] = None
-
-        # Prefer manifest UID if present
+        
+        old_uid = data.get("uid")
+        
+        # Determine target UID
         entry = manifest_map.get(f.resolve())
         if entry and entry.uid:
-            dash_uid = ensure_uid(entry.uid)
+            new_uid = ensure_uid(entry.uid)
+        elif old_uid and _UID_ALLOWED.match(old_uid):
+            new_uid = old_uid
         else:
-            # If existing uid is present, normalize it; otherwise derive from filename
-            existing = dash.get("uid")
-            if isinstance(existing, str) and existing.strip():
-                dash_uid = ensure_uid(existing.strip())
-            else:
-                dash_uid = make_default_uid_for_file(f)
+            rel = f.resolve().relative_to(DASH_ROOT.resolve())
+            new_uid = ensure_uid(slugify_uid(str(rel.with_suffix("")).replace("/", "-")))
+            
+        if old_uid and old_uid != new_uid:
+            uid_mapping[old_uid] = new_uid
+            
+        data["uid"] = new_uid
+        data["id"] = None
+        docs.append((f, data))
 
-        # Ensure uniqueness across repo (defensive)
-        base = dash_uid
-        i = 2
-        while dash_uid in used_uids:
-            dash_uid = ensure_uid(f"{base}-{i}")
-            i += 1
-        dash["uid"] = dash_uid
-        used_uids.add(dash_uid)
-
-        # Patch datasources recursively
+    # Step 2: Global Search & Replace for UID links and Patch Content
+    normalized_docs: list[Tuple[Path, Dict[str, Any]]] = []
+    for f, dash in docs:
+        # Convert to string to replace all internal references to old UIDs
+        dump = json.dumps(dash)
+        for old_uid, new_uid in uid_mapping.items():
+            dump = dump.replace(f'"{old_uid}"', f'"{new_uid}"')
+        
+        dash = json.loads(dump)
         dash = walk_and_patch(dash)
-
-        # Remove __inputs unless explicitly kept
+        
         if not KEEP_INPUTS:
             dash.pop("__inputs", None)
+            
+        normalized_docs.append((f, dash))
 
-        # Angular detection (non-fatal)
-        if contains_angular(dash):
-            angular_files.append(f)
+    # Step 3: Title Deduplication
+    ensure_unique_titles_per_folder(normalized_docs)
 
-    # Ensure unique titles per folder
-    ensure_unique_titles_per_folder(docs)
-
-    # Write back
-    for f, dash in docs:
+    # Step 4: Write back
+    for f, dash in normalized_docs:
         f.write_text(json.dumps(dash, indent=2, sort_keys=False) + "\n", encoding="utf-8")
 
-    print(f"Normalized dashboards: {len(docs)}")
-    if angular_files:
-        print("WARNING: Angular panels detected (deprecated):")
-        for p in angular_files:
-            print(f"  - {p}")
-
-    # Quick guard: prove that no dashboard still references the broken placeholder
-    # (datasource uid literal "${DS_PROMETHEUS}")
-    bad_hits = 0
-    for f in iter_json_files(DASH_ROOT):
-        txt = f.read_text(encoding="utf-8", errors="replace")
-        if '"uid": "${DS_PROMETHEUS}"' in txt:
-            bad_hits += 1
-            print(f"WARNING: still contains uid placeholder '${{DS_PROMETHEUS}}': {f}")
-    if bad_hits:
-        print("WARNING: Some dashboards still contain '${DS_PROMETHEUS}'. This will break file provisioning.")
-        # Non-fatal; you may choose to return 4 here.
-
+    print(f"Successfully normalized {len(normalized_docs)} dashboards and updated {len(uid_mapping)} internal links.")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
