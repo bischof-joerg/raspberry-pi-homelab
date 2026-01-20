@@ -181,7 +181,7 @@ services:
       - /tmp
 
   cadvisor:
-    image: ghcr.io/google/cadvisor/cadvisor:v0.56.2
+    image: ghcr.io/google/cadvisor:v0.56.2
     container_name: cadvisor
     restart: unless-stopped
     # Use root and privileged to ensure cgroup v2 visibility on Pi 5 kernel
