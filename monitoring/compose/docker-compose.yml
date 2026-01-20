@@ -212,7 +212,6 @@ services:
       # Added for Pi 5 / cgroup v2 handling:
       - --enable_load_reader=true
       - --allow_dynamic_housekeeping=true
-      - --prefix_fs_alias=false
       # Use this only if logs show "container not found in any cgroup"
       # - --cgroup_hierarchy_root=/sys/fs/cgroup # Forces cAdvisor to the correct Cgroup V2 root on Pi OS
     logging:
