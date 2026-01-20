@@ -227,9 +227,10 @@ services:
 
 networks:
   monitoring:
-    external: true
     name: monitoring
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-monitoring
 
 volumes:
   alertmanager-config:
