@@ -181,7 +181,7 @@ services:
       - /tmp
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    image: ghcr.io/google/cadvisor/cadvisor:v0.56.2
     container_name: cadvisor
     restart: unless-stopped
     # Use root and privileged to ensure cgroup v2 visibility on Pi 5 kernel
@@ -210,7 +210,7 @@ services:
       # Enable filtering metrics in Grafana by the labels set in compose file
       - --store_container_labels=true
       # Added for Pi 5 / cgroup v2 handling:
-      - --enable_load_reader=true
+      - --enable_load_reader=false
       - --allow_dynamic_housekeeping=true
       # Use this only if logs show "container not found in any cgroup"
       # - --cgroup_hierarchy_root=/sys/fs/cgroup # Forces cAdvisor to the correct Cgroup V2 root on Pi OS
