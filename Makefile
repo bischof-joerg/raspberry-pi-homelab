@@ -138,3 +138,10 @@ doctor:
 	  echo "SKIP: not on Raspberry Pi or curl missing"; \
 	fi
 
+	@echo
+	@echo "== Doctor tests (pytest -m doctor) =="
+	@if command -v pytest >/dev/null 2>&1; then \
+	  pytest -q --strict-markers -m doctor tests/doctor && echo "OK: doctor tests passed" || (echo "FAIL: doctor tests failed" && exit 2); \
+	else \
+	  echo "SKIP: pytest missing"; \
+	fi

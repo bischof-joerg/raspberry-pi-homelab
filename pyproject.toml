@@ -5,6 +5,7 @@ testpaths = ["tests"]
 markers = [
   "precommit: checks before committing",
   "postdeploy: checks after deploy on the raspberry pi",
+  "doctor: tooling/config sanity checks for dev environments (WSL/Pi)"
 ]
 addopts = [
   "--strict-markers",
