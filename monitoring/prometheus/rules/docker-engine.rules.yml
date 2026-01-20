@@ -1,0 +1,15 @@
+groups:
+  - name: docker-engine
+    rules:
+      - alert: DockerEngineDown
+        expr: up{job="docker-engine"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: docker
+        annotations:
+          summary: "Docker Engine metrics unreachable on {{ $labels.instance }}"
+          description: |
+            Prometheus cannot scrape Docker Engine metrics (job=docker-engine).
+            This usually indicates that dockerd is down, blocked by firewall,
+            or the metrics endpoint (:9323) is unavailable.
