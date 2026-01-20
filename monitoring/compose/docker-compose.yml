@@ -187,7 +187,7 @@ services:
     # Use root and privileged to ensure cgroup v2 visibility on Pi 5 kernel
     user: root
     # This is non-negotiable on the Pi 5. cAdvisor must be able to move across namespaces to inspect other containers' resource usage.
-    privileged: true 
+    privileged: true
     networks: [monitoring]
     # Do NOT expose to LAN; Prometheus scrapes it via Docker network
     # ports:
