@@ -199,9 +199,15 @@ main() {
   if [[ "$PULL_IMAGES" == "1" ]]; then
     log "compose: pull + up (single ghcr session)"
     with_ephemeral_docker_config bash -euo pipefail -c '
-      compose pull
-      compose up -d
+      if [[ -f "'"$COMPOSE_ENV_FILE"'" ]]; then
+        docker compose --env-file "'"$COMPOSE_ENV_FILE"'" -f "'"$COMPOSE_FILE"'" pull
+        docker compose --env-file "'"$COMPOSE_ENV_FILE"'" -f "'"$COMPOSE_FILE"'" up -d
+      else
+        docker compose -f "'"$COMPOSE_FILE"'" pull
+        docker compose -f "'"$COMPOSE_FILE"'" up -d
+      fi
     '
+
   else
     log "compose: pull skipped (PULL_IMAGES=0)"
     compose up -d
