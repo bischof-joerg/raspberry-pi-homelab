@@ -181,10 +181,12 @@ services:
       - /tmp
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.47.2 # Stable for Pi 5 ARM64
-    user: root  # Add this to test whether permission issues are causing problems
+    image: gcr.io/cadvisor/cadvisor:v0.49.1 # Stable for Pi 5 ARM64
     container_name: cadvisor
     restart: unless-stopped
+    # Use root and privileged to ensure cgroup v2 visibility on Pi 5 kernel
+    user: root
+    privileged: true
     networks: [monitoring]
     # Do NOT expose to LAN; Prometheus scrapes it via Docker network
     # ports:
@@ -192,19 +194,14 @@ services:
     pid: host
     devices:
       - /dev/kmsg:/dev/kmsg
-    privileged: true
     volumes:
       - /etc/machine-id:/etc/machine-id:ro
       - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
-      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro # Explicit cgroup v2 mount
       - /:/rootfs:ro
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
     command: # recommended flags for Prometheus integration + performance on Pi
       # Reduce CPU usage by checking containers less frequently essential for Pi resource management
       - --housekeeping_interval=30s
@@ -212,6 +209,12 @@ services:
       - --docker_only=true
       # Enable filtering metrics in Grafana by the labels set in compose file
       - --store_container_labels=true
+      # Added for Pi 5 / cgroup v2 stability:
+      - --enable_load_reader=true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
 
 networks:
   monitoring:
