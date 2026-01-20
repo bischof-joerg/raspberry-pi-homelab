@@ -91,6 +91,7 @@ check_prereqs() {
 load_secrets() {
   [[ -f "$SECRETS_FILE" ]] || die "Secrets file not found: $SECRETS_FILE"
   set -a
+  # shellcheck disable=SC1090
   source "$SECRETS_FILE"
   set +a
 }
