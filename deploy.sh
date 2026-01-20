@@ -8,7 +8,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${COMPOSE_FILE:-$REPO_ROOT/monitoring/compose/docker-compose.yml}"
 SECRETS_FILE="${SECRETS_FILE:-$REPO_ROOT/.env}"
-SECRETS_FILE="${SECRETS_FILE:-/etc/raspberry-pi-homelab/secrets.env}"
+COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-$REPO_ROOT/monitoring/compose/.env}"
 INIT_SCRIPT="${INIT_SCRIPT:-$REPO_ROOT/monitoring/compose/init-permissions.sh}"
 
 # toggles with defaults
