@@ -90,18 +90,18 @@ check_prereqs() {
 # Load secrets from the specified file
 load_secrets() {
   [[ -f "$SECRETS_FILE" ]] || die "Secrets file not found: $SECRETS_FILE"
-
   set -a
-  # shellcheck disable=SC1090
   source "$SECRETS_FILE"
   set +a
-
-  : "${GRAFANA_ADMIN_USER:?Missing GRAFANA_ADMIN_USER in $SECRETS_FILE}"
-  : "${GRAFANA_ADMIN_PASSWORD:?Missing GRAFANA_ADMIN_PASSWORD in $SECRETS_FILE}"
 }
 
+
 compose() {
-  docker compose -f "$COMPOSE_FILE" "$@"
+  if [[ -f "$COMPOSE_ENV_FILE" ]]; then
+    docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  else
+    docker compose -f "$COMPOSE_FILE" "$@"
+  fi
 }
 
 # NEW: Check and (optionally) fix repo ownership
