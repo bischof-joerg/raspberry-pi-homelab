@@ -10,10 +10,10 @@ services:
     restart: unless-stopped
     networks: [monitoring]
     # Expose Prometheus UI only if you need it (prefer reverse proxy + auth/IP restriction)
-    # ports:
-    #   - "9090:9090"
-    ports:
-      - "127.0.0.1:9090:9090"
+    ports: # for checking only
+      - "9090:9090"
+    #ports:
+    #  - "127.0.0.1:9090:9090"
     volumes:
       - /srv/data/monitoring/prometheus:/prometheus
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
