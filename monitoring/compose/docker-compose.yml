@@ -186,7 +186,8 @@ services:
     restart: unless-stopped
     # Use root and privileged to ensure cgroup v2 visibility on Pi 5 kernel
     user: root
-    privileged: true
+    # This is non-negotiable on the Pi 5. cAdvisor must be able to move across namespaces to inspect other containers' resource usage.
+    privileged: true 
     networks: [monitoring]
     # Do NOT expose to LAN; Prometheus scrapes it via Docker network
     # ports:
@@ -205,6 +206,9 @@ services:
     command: # recommended flags for Prometheus integration + performance on Pi
       # Reduce CPU usage by checking containers less frequently essential for Pi resource management
       - --housekeeping_interval=30s
+      - --max_housekeeping_interval=60s
+      - --event_storage_event_limit=default=0
+      - --event_storage_age_limit=default=0
       # Prevents cAdvisor from trying to monitor the whole host, focusing only on containers
       - --docker_only=true
       # Enable filtering metrics in Grafana by the labels set in compose file
@@ -218,16 +222,6 @@ services:
       driver: "json-file"
       options:
         max-size: "5m"
-## Comments on the above Pi 5 cgroup v2 flags:
-# Why these flags are all necessary together:
-#    --cgroup_hierarchy_root=/sys/fs/cgroup:
-#      On Pi 5, the kernel uses a unified hierarchy. Without this flag, cAdvisor often searches for v1 controllers (like /sys/fs/cgroup/cpu), fails to find them, and returns empty metrics.
-#    --prefix_fs_alias=false:
-#      Prevents cAdvisor from adding the /rootfs prefix to all disk device names, which ensures Grafana dashboard queries (which look for /, /var/lib/docker, etc.) actually find a match.
-#    --enable_load_reader=true:
-#      Required for the Pi 5 kernel to report CPU load correctly within a containerized environment.
-## Comment on privileged:
-#     privileged: true: This is non-negotiable on the Pi 5. cAdvisor must be able to move across namespaces to inspect other containers' resource usage.
 
 networks:
   monitoring:
