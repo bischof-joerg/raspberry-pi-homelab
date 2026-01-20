@@ -8,7 +8,7 @@ import urllib.request
 import pytest
 
 
-pytestmark = pytest.mark.postdeploy
+# pytestmark = pytest.mark.postdeploy
 
 PROMETHEUS_BASE = "http://localhost:9090"
 
