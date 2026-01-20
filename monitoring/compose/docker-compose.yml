@@ -181,7 +181,7 @@ services:
       - /tmp
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1 # Stable for Pi 5 ARM64
+    image: gcr.io/cadvisor/cadvisor:v0.47.2 # Stable for Pi 5 ARM64
     user: root  # Add this to test whether permission issues are causing problems
     container_name: cadvisor
     restart: unless-stopped
