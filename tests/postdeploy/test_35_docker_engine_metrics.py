@@ -1,110 +1,150 @@
 # tests/postdeploy/test_35_docker_engine_metrics.py
 import json
+import os
+import time
 import urllib.parse
 import urllib.request
 
 import pytest
 
+from tests._helpers import run, which_ok
+
 PROMETHEUS_BASE = "http://127.0.0.1:9090"
+DOCKER_ENGINE_PORT = 9323
+MONITORING_NETWORK = "monitoring"
+EXPECTED_BRIDGE_NAME = "br-monitoring"
+
+# Keep this consistent with your docker daemon metrics endpoint.
+# Metric name that should exist if dockerd metrics are enabled (dockerd exposes it).
+REQUIRED_SAMPLE_METRIC = "engine_daemon_engine_info"
 
 
-def _http_get_json(url: str, *, timeout_s: int = 5) -> dict:
+def _http_get_json(url: str, timeout_s: int = 5) -> dict:
     with urllib.request.urlopen(url, timeout=timeout_s) as r:
         return json.loads(r.read().decode())
 
 
-def _prom_query(expr: str, *, timeout_s: int = 5) -> dict:
+def _prom_query(expr: str, timeout_s: int = 5) -> dict:
     qs = urllib.parse.urlencode({"query": expr})
     return _http_get_json(f"{PROMETHEUS_BASE}/api/v1/query?{qs}", timeout_s=timeout_s)
 
 
-@pytest.mark.postdeploy
-def test_prometheus_targets_contains_docker_engine_and_is_up():
-    j = _http_get_json(f"{PROMETHEUS_BASE}/api/v1/targets", timeout_s=5)
-    assert j.get("status") == "success", f"targets endpoint failed: {j}"
+def _docker_network_inspect(name: str) -> dict:
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
 
-    targets = j["data"]["activeTargets"]
-    docker_targets = [t for t in targets if t.get("labels", {}).get("job") == "docker-engine"]
+    res = run(["docker", "network", "inspect", name])
+    if res.returncode != 0:
+        pytest.fail(f"docker network inspect failed for {name}:\n{res.stdout}\n{res.stderr}")
 
-    assert docker_targets, "No activeTargets with job=docker-engine found (Prometheus scrape_config missing?)"
-
-    for t in docker_targets:
-        assert t.get("health") == "up", (
-            f"docker-engine target not healthy: health={t.get('health')} err={t.get('lastError')}"
-        )
-
-        scrape_url = t.get("scrapeUrl", "")
-        # We mainly care that it's the engine metrics port.
-        assert scrape_url.endswith(":9323/metrics") or ":9323/metrics" in scrape_url, (
-            f"Unexpected scrapeUrl for docker-engine: {scrape_url}"
-        )
+    try:
+        arr = json.loads(res.stdout)
+        assert isinstance(arr, list) and arr, "unexpected network inspect output"
+        return arr[0]
+    except Exception as e:
+        pytest.fail(f"Failed to parse docker network inspect JSON: {e}\nRaw:\n{res.stdout}")
 
 
-@pytest.mark.postdeploy
-def test_docker_engine_up_metric_is_1():
-    # Strong signal: Prometheus itself reports the target as up.
-    j = _prom_query('up{job="docker-engine"}', timeout_s=5)
-    assert j.get("status") == "success", f"query failed: {j}"
+def _get_monitoring_gateway_ip(net: dict) -> str:
+    ipam = (net.get("IPAM") or {}).get("Config") or []
+    if not ipam:
+        pytest.fail(f"No IPAM config found for network {net.get('Name')}")
 
-    res = j["data"]["result"]
-    assert res, 'No series returned for up{job="docker-engine"} (target missing or not scraped?)'
-
-    # Accept multiple series, but all should be "1".
-    bad = []
-    for s in res:
-        metric = s.get("metric", {})
-        val = s.get("value", [None, None])[1]
-        if val != "1":
-            bad.append((metric, val))
-
-    assert not bad, f'Expected up{{job="docker-engine"}} == 1, but got non-1 series: {bad}'
+    gw = ipam[0].get("Gateway")
+    if not gw:
+        pytest.fail(f"No Gateway in IPAM config for network {net.get('Name')}: {ipam}")
+    return gw
 
 
-@pytest.mark.postdeploy
-def test_docker_engine_scrape_samples_positive():
-    # Another strong signal: target produces samples (not just up/down).
-    j = _prom_query('scrape_samples_scraped{job="docker-engine"}', timeout_s=5)
-    assert j.get("status") == "success", f"query failed: {j}"
-
-    res = j["data"]["result"]
-    assert res, 'No series returned for scrape_samples_scraped{job="docker-engine"}'
-
-    bad = []
-    for s in res:
-        metric = s.get("metric", {})
-        val_s = s.get("value", [None, None])[1]
-        try:
-            val = float(val_s)
-        except Exception:
-            bad.append((metric, val_s))
-            continue
-
-        if val <= 0:
-            bad.append((metric, val))
-
-    assert not bad, f"Expected scrape_samples_scraped>0 for docker-engine, got: {bad}"
+def _get_bridge_name(net: dict) -> str | None:
+    return (net.get("Options") or {}).get("com.docker.network.bridge.name")
 
 
-@pytest.mark.postdeploy
-def test_docker_engine_has_expected_engine_daemon_metrics_best_effort():
-    # Dashboard 21040 typically expects engine_daemon_* metrics.
-    # Depending on Docker version/config, exact metric set can vary,
-    # so we check a small set of commonly present ones and require >=1 to exist.
-    candidates = [
-        "engine_daemon_engine_info",
-        "engine_daemon_container_states_containers",
-        "engine_daemon_events_total",
+def _assert_metrics_reachable_from_monitoring_net(gateway_ip: str) -> None:
+    """
+    This is the key 'sustainable' check: it will fail whenever firewall/forwarding breaks
+    container->host access for 9323 from the monitoring bridge network.
+    """
+    # Use an ephemeral container in the monitoring network to test the host endpoint
+    # (exactly the traffic Prometheus generates).
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        MONITORING_NETWORK,
+        "alpine:3.20",
+        "sh",
+        "-lc",
+        # install curl, then fetch metrics with a tight timeout, and check for a known metric
+        (
+            "apk add --no-cache curl >/dev/null && "
+            f"curl -fsS --max-time 3 http://{gateway_ip}:{DOCKER_ENGINE_PORT}/metrics "
+            f"| grep -E '^{REQUIRED_SAMPLE_METRIC}($|{{)' >/dev/null"
+        ),
     ]
+    res = run(cmd)
+    assert res.returncode == 0, (
+        "Docker engine metrics are NOT reachable from within the monitoring network.\n"
+        f"Expected: http://{gateway_ip}:{DOCKER_ENGINE_PORT}/metrics to be reachable and contain {REQUIRED_SAMPLE_METRIC}.\n"
+        f"stdout:\n{res.stdout}\n"
+        f"stderr:\n{res.stderr}\n"
+        "This typically indicates: UFW/FORWARD policy blocking, missing allow rule on br-monitoring, "
+        "or dockerd metrics not enabled/listening."
+    )
 
-    found = []
-    for m in candidates:
-        j = _prom_query(m, timeout_s=5)
-        assert j.get("status") == "success", f"query failed for {m}: {j}"
-        if j["data"]["result"]:
-            found.append(m)
 
-    assert found, (
-        "None of the expected docker engine metrics were found in Prometheus. "
-        "Scrape may be hitting the wrong endpoint, or Docker metrics exposure does not include engine_daemon_*.\n"
-        f"Tried: {candidates}"
+@pytest.mark.postdeploy
+def test_docker_engine_metrics_network_and_scrape_is_stable():
+    # 1) Verify the monitoring network exists and is bound to the fixed bridge name.
+    net = _docker_network_inspect(MONITORING_NETWORK)
+    assert net.get("Name") == MONITORING_NETWORK, net
+
+    bridge = _get_bridge_name(net)
+    assert bridge == EXPECTED_BRIDGE_NAME, (
+        f"monitoring network must be bound to bridge {EXPECTED_BRIDGE_NAME} "
+        f"but is {bridge!r}. Options: {net.get('Options')}"
+    )
+
+    gateway_ip = _get_monitoring_gateway_ip(net)
+
+    # 2) Verify the endpoint is reachable from within the monitoring network.
+    _assert_metrics_reachable_from_monitoring_net(gateway_ip)
+
+    # 3) Verify Prometheus target exists and is UP, and scrapes the expected URL.
+    targets = _http_get_json(f"{PROMETHEUS_BASE}/api/v1/targets", timeout_s=5)
+    assert targets.get("status") == "success", targets
+
+    active = targets["data"]["activeTargets"]
+    docker_targets = [t for t in active if t.get("labels", {}).get("job") == "docker-engine"]
+    assert docker_targets, "No activeTargets with job=docker-engine found (prometheus scrape_config missing?)"
+
+    expected_scrape = f"http://{gateway_ip}:{DOCKER_ENGINE_PORT}/metrics"
+    for t in docker_targets:
+        assert t.get("scrapeUrl") == expected_scrape, (
+            f"docker-engine scrapeUrl mismatch.\nExpected: {expected_scrape}\nGot: {t.get('scrapeUrl')}\n"
+            f"labels={t.get('labels')}, discovered={t.get('discoveredLabels')}"
+        )
+        assert t.get("health") == "up", (
+            f"docker-engine target not healthy: health={t.get('health')} err={t.get('lastError')} "
+            f"scrapeUrl={t.get('scrapeUrl')}"
+        )
+
+    # 4) Verify Prometheus actually ingested a core docker-engine metric.
+    #    Retry to avoid flakiness right after deploy/reload.
+    deadline = time.time() + 25
+    last = None
+    while time.time() < deadline:
+        last = _prom_query(REQUIRED_SAMPLE_METRIC, timeout_s=5)
+        if last.get("status") == "success":
+            result = last.get("data", {}).get("result", [])
+            if result:
+                return
+        time.sleep(2)
+
+    pytest.fail(
+        f"Prometheus did not ingest {REQUIRED_SAMPLE_METRIC} within retry window.\n"
+        f"Last query response: {last}\n"
+        "Target may be up but scraping empty/filtered, or scrape interval too long, "
+        "or dockerd metrics endpoint not exporting expected series."
     )
