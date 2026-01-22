@@ -62,11 +62,9 @@ def _get_bridge_name(net: dict) -> str | None:
 
 def _assert_metrics_reachable_from_monitoring_net(gateway_ip: str) -> None:
     """
-    This is the key 'sustainable' check: it will fail whenever firewall/forwarding breaks
-    container->host access for 9323 from the monitoring bridge network.
+    Robust connectivity check from inside the monitoring network.
+    Avoid grep -E regex pitfalls on BusyBox (Alpine).
     """
-    # Use an ephemeral container in the monitoring network to test the host endpoint
-    # (exactly the traffic Prometheus generates).
     cmd = [
         "docker",
         "run",
@@ -76,11 +74,11 @@ def _assert_metrics_reachable_from_monitoring_net(gateway_ip: str) -> None:
         "alpine:3.20",
         "sh",
         "-lc",
-        # install curl, then fetch metrics with a tight timeout, and check for a known metric
         (
             "apk add --no-cache curl >/dev/null && "
             f"curl -fsS --max-time 3 http://{gateway_ip}:{DOCKER_ENGINE_PORT}/metrics "
-            f"| grep -E '^{REQUIRED_SAMPLE_METRIC}($|{{)' >/dev/null"
+            # BusyBox-safe: just ensure metric name appears somewhere in the payload
+            f"| grep -qF '{REQUIRED_SAMPLE_METRIC}'"
         ),
     ]
     res = run(cmd)
@@ -92,7 +90,6 @@ def _assert_metrics_reachable_from_monitoring_net(gateway_ip: str) -> None:
         "This typically indicates: UFW/FORWARD policy blocking, missing allow rule on br-monitoring, "
         "or dockerd metrics not enabled/listening."
     )
-
 
 @pytest.mark.postdeploy
 def test_docker_engine_metrics_network_and_scrape_is_stable():
