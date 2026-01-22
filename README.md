@@ -11,7 +11,7 @@ The monitoring stack is implemented as an isolated Docker stack and provides:
 - Dashboards and visualization (Grafana)
 - Alert routing (Alertmanager)
 
-📄 Architecture, container roles, and persistence details are documented here:  
+📄 Architecture, container roles, and persistence details are documented here:
 ➡️ **[monitoring/MonitoringStack.md](monitoring/monitoring.md)**
 
 
@@ -27,6 +27,8 @@ For a basis for reproducible deployments and exentension with additional service
   - establishing tests befor committing to git, after deployed and to have sanity checks in addition. The execution is integrated as make steps - see the Makefile for details.
   - on PI only git pull and automated deployement followed by tests is done.
 - Secure defaults and hardening is part of integrating new services
+- For local development a repro local Python Virtual Environment (.venv) is used for tooling like (pre-commit, pytest).
+
 Details on the development workflow are availabe under:
 ➡️ **[DevWorkflow.md](DevWorkflow.md)**
 

@@ -5,6 +5,11 @@ from pathlib import Path
 import pytest
 from tests._helpers import run, REPO_ROOT
 
+## This test is no longer need and covered by pre-commit hooks.
+# Keeping it here for historical reasons.
+# See: .pre-commit-config.yaml (jsonlint hook)
+# For this reason changed marker from @pytest.mark.precommit to @pytest.mark.lint
+
 MAX_KB = 1024  # same as pre-commit args: ["--maxkb=1024"]
 MAX_BYTES = MAX_KB * 1024
 
@@ -45,7 +50,7 @@ def list_tracked_files() -> list[Path]:
     return files
 
 
-@pytest.mark.precommit
+@pytest.mark.lint
 def test_no_large_files():
     staged = [p for p in list_staged_files() if p.exists()]
     candidates = staged if staged else [p for p in list_tracked_files() if p.exists()]

@@ -1,20 +1,90 @@
-# .github/workflows/pre-commit.yml
-name: tests
+repos:
+  # ------------------------------------------------------------
+  # Allgemeine Hygiene
+  # ------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-added-large-files
 
-on:
-  pull_request:
-  push:
-    branches:
-      - main
+  # ------------------------------------------------------------
+  # Shell-Skripte (deploy.sh, run-tests.sh, etc.)
+  # ------------------------------------------------------------
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.10.0
+    hooks:
+      - id: shellcheck
+        name: shellcheck (bash scripts)
+        files: \.sh$
+        args:
+          - --severity=warning
+        # SC1090 ist bei dynamischem source akzeptabel (SECRETS_FILE)
+        exclude: |
+          (?x)^(
+            .*vendor/.*|
+            .*\.env$
+          )
 
-jobs:
-  precommit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: python -m pip install --upgrade pip
-      - run: pip install pytest yamllint
-      - run: make precommit
+  # ------------------------------------------------------------
+  # Python (Tests, Helpers)
+  # ------------------------------------------------------------
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3
+
+  - repo: https://github.com/pycqa/ruff-pre-commit
+    rev: v0.3.5
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: \.py$
+
+  # ------------------------------------------------------------
+  # Prometheus: Konfiguration & Rules
+  # (läuft nur, wenn promtool vorhanden ist)
+  # ------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: promtool-check-config
+        name: promtool check config
+        entry: promtool check config monitoring/prometheus/prometheus.yml
+        language: system
+        files: ^monitoring/prometheus/prometheus\.yml$
+        pass_filenames: false
+
+      - id: promtool-check-rules
+        name: promtool check rules
+        entry: bash -lc 'ls monitoring/prometheus/rules/*.yml >/dev/null 2>&1 && promtool check rules monitoring/prometheus/rules/*.yml || true'
+        language: system
+        files: ^monitoring/prometheus/rules/.*\.yml$
+        pass_filenames: false
+
+  # ------------------------------------------------------------
+  # Docker Compose (Syntax + Interpolation)
+  # Hermetisch, ohne echte Secrets
+  # ------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: docker-compose-config
+        name: docker compose config (hermetic)
+        entry: >
+          bash -lc '
+            tmp=$(mktemp -d);
+            trap "rm -rf $tmp" EXIT;
+            echo "GRAFANA_ADMIN_USER=admin" > $tmp/env;
+            echo "GRAFANA_ADMIN_PASSWORD=changeme" >> $tmp/env;
+            docker compose
+              --env-file $tmp/env
+              -f monitoring/compose/docker-compose.yml
+              config >/dev/null
+          '
+        language: system
+        files: ^monitoring/compose/docker-compose\.yml$
+        pass_filenames: false

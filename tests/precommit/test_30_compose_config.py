@@ -44,7 +44,7 @@ def test_compose_config(tmp_path):
             ALERTMANAGER_ENV.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ALERTMANAGER_ENV_EXAMPLE, ALERTMANAGER_ENV)
             created_files.append(ALERTMANAGER_ENV)
-        
+
         if GRAFANA_ENV_EXAMPLE.exists() and not GRAFANA_ENV.exists():
             GRAFANA_ENV.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(GRAFANA_ENV_EXAMPLE, GRAFANA_ENV)

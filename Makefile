@@ -14,12 +14,16 @@ help:
 IS_PI := $(shell grep -qi raspberry /proc/device-tree/model 2>/dev/null && echo yes || echo no)
 
 PYTEST_STRICT = --strict-markers --maxfail=1
-PYTEST_REPORT = -rA 
+PYTEST_REPORT = -rA
 # If slowest tests shall be identified, uncomment the following line and comment the above line
 #PYTEST_REPORT = -rA --durations=5
 
 precommit:
 	pytest $(PYTEST_STRICT) $(PYTEST_REPORT) tests/precommit -m precommit
+
+# redundant sanity checks run by GitHub pre-commit hook
+lint:
+	pytest $(PYTEST_STRICT) $(PYTEST_REPORT) tests/precommit -m lint
 
 ifeq ($(IS_PI),yes)
 postdeploy:

@@ -34,11 +34,11 @@ done < <(find "$ROOT" -type d -print0)
 bad_ds=0
 while IFS= read -r -d '' f; do
   invalid="$(jq -r '
-    [ .. | objects | select(has("datasource")) | .datasource 
+    [ .. | objects | select(has("datasource")) | .datasource
       | select(type=="object" and .type=="prometheus" and .uid != "DS_PROMETHEUS") | .uid
     ] | unique | .[]
   ' "$f" 2>/dev/null || true)"
-  
+
   if grep -E '"datasource":\s*"\$\{?DS_PROMETHEUS\}?"' "$f" >/dev/null || [[ -n "${invalid:-}" ]]; then
     echo "❌ ERROR: $f has un-normalized datasource: ${invalid:-"Placeholder string found"}"
     bad_ds=1

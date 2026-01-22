@@ -27,6 +27,7 @@
 CI mirrors the local precommit workflow to ensure parity between
 developer machines and automated checks.
 - ```make precommit```
+- in (.venv) on WSL optionally: ```pre-commit run --all-files``` to run GitHub pre-commit checks in virtual environment (.venv)
 
 ## on PI after deploy
 

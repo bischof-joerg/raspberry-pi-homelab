@@ -5,7 +5,8 @@ testpaths = ["tests"]
 markers = [
   "precommit: checks before committing",
   "postdeploy: checks after deploy on the raspberry pi",
-  "doctor: tooling/config sanity checks for dev environments (WSL/Pi)"
+  "doctor: tooling/config sanity checks for dev environments (WSL/Pi)",
+  "lint: redundant sanity checks run by GitHub pre-commit hook for dev environments (WSL/Pi)"
 ]
 addopts = [
   "--strict-markers",

@@ -1,9 +1,10 @@
+#!/usr/bin/env bash
+
 # Script to initialize permissions for monitoring data directories
 
-# Note: The script must be run as root to change ownership of directories: 
+# Note: The script must be run as root to change ownership of directories:
 #       In generals, this is established by being called from the sudo context of deploy.sh
 
-#!/usr/bin/env bash
 set -euo pipefail
 
 BASE_DIR="${BASE_DIR:-/srv/data/monitoring}"
@@ -41,4 +42,3 @@ main() {
 }
 
 main "$@"
-

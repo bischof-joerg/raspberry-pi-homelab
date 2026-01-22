@@ -102,4 +102,3 @@ def test_compose_services_not_restarting_or_unhealthy():
         if health:
             final = wait_for_healthy(svc, compose_file=COMPOSE_FILE, timeout_s=90, interval_s=5)
             assert final == "healthy", f"{svc}: expected health=healthy, got health={final} after waiting. Row: {row}"
-            

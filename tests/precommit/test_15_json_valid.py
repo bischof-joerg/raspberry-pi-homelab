@@ -7,6 +7,11 @@ import pytest
 
 from tests._helpers import REPO_ROOT
 
+## This test is no longer need and covered by pre-commit hooks.
+# Keeping it here for historical reasons.
+# See: .pre-commit-config.yaml (jsonlint hook)
+# For this reason changed marker from @pytest.mark.precommit to @pytest.mark.lint
+
 # In the repo, the important JSONs are here:
 # monitoring/grafana/dashboards/**.json
 # Optionally we check all *.json files in the repo (except .git).
@@ -21,8 +26,7 @@ def iter_json_files(root: Path) -> list[Path]:
         files.append(p)
     return sorted(files)
 
-
-@pytest.mark.precommit
+@pytest.mark.lint
 def test_all_json_files_are_valid():
     json_files = iter_json_files(REPO_ROOT)
     assert json_files, "No .json files found to validate"

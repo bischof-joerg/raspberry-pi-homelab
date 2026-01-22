@@ -96,4 +96,3 @@ if [[ "$REQUIRE_SECRETS" -eq 1 ]]; then
 else
   run_pytest_plain "$@"
 fi
-

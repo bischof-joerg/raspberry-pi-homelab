@@ -2,7 +2,7 @@
 
 # Downloads Grafana dashboards from Grafana.net based on a manifest file.
 # The manifest file specifies dashboard IDs, target folders, and filenames.
-# Checks whether dashboards need to be updated based on their latest revision by using a state file .gnet-revisions.json. 
+# Checks whether dashboards need to be updated based on their latest revision by using a state file .gnet-revisions.json.
 # Usage: ./download-gnet.sh [manifest.json]
 
 set -euo pipefail

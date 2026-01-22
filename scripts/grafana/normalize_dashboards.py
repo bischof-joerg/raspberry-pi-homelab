@@ -71,18 +71,18 @@ def main() -> int:
     # 1. Collect all dashboards and determine NEW UIDs
     docs: list[list[Any]] = [] # [path, data, old_uid]
     uid_map: Dict[str, str] = {}
-    
+
     for f in iter_json_files(DASH_ROOT):
         data = json.loads(f.read_text(encoding="utf-8"))
         old_uid = data.get("uid")
-        
+
         # Determine target UID (slugified filename)
         rel = f.resolve().relative_to(DASH_ROOT.resolve())
         new_uid = ensure_uid(slugify_uid(str(rel.with_suffix("")).replace("/", "-")))
-        
+
         if old_uid:
             uid_map[old_uid] = new_uid
-        
+
         data["uid"] = new_uid
         data["id"] = None
         docs.append([f, data])
@@ -92,13 +92,13 @@ def main() -> int:
     for f, data in docs:
         # Deep patch datasources
         data = walk_and_patch(data)
-        
+
         # Replace broken internal links (old UID -> new UID)
         raw_json = json.dumps(data)
         for old, new in uid_map.items():
             if old != new:
                 raw_json = raw_json.replace(f'"{old}"', f'"{new}"')
-        
+
         data = json.loads(raw_json)
         if not KEEP_INPUTS:
             data.pop("__inputs", None)

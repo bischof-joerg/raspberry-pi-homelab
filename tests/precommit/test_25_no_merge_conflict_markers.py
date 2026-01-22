@@ -5,6 +5,11 @@ from pathlib import Path
 import pytest
 from tests._helpers import REPO_ROOT
 
+## This test is no longer need and covered by pre-commit hooks.
+# Keeping it here for historical reasons.
+# See: .pre-commit-config.yaml (jsonlint hook)
+# For this reason changed marker from @pytest.mark.precommit to @pytest.mark.lint
+
 EXCLUDE_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache"}
 EXCLUDE_FILES = {
     "tests/precommit/test_25_no_merge_conflict_markers.py",
@@ -22,7 +27,7 @@ def is_excluded(path: Path) -> bool:
     return any(part in EXCLUDE_DIRS for part in path.parts)
 
 
-@pytest.mark.precommit
+@pytest.mark.lint
 def test_no_merge_conflict_markers_present():
     hits: list[str] = []
 

@@ -1,0 +1,37 @@
+repos:
+  # Fast, general hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-yaml
+      - id: check-json
+
+  # YAML style/lint (you already use yamllint in pytest; here we run it on staged YAMLs)
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: ["-s"]
+        files: \.(ya?ml)$
+
+  # Shellcheck for *.sh (no external shellcheck install required)
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        files: \.sh$
+        args: ["-x"]
+
+  # Repo-specific checks via pytest marker (you already have them)
+  - repo: local
+    hooks:
+      - id: pytest-precommit
+        name: pytest (marker=precommit)
+        entry: python3 -m pytest -m precommit --maxfail=1 -q
+        language: system
+        pass_filenames: false
