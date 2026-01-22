@@ -35,4 +35,5 @@ markers = [
 addopts = [
   "--strict-markers",
   "--maxfail=1",
+  "-m", "not postdeploy",
 ]

@@ -15,13 +15,15 @@
 
 ## on WSL
 
-- ```make precommit```     # conscious and explicit, with pytest -m precommit -rs reasons for skipped tests are shown
-- fix issues if needed and start from top
-- ```make doctor```     # check on pre-requirements
-- git commit handling like ...
+- git commit handling in Visual Studio or explicitely ...
   - ```git status```
   - ```git add ...```
   - ```git commit -m <>```
+- ```pytest -q``` executes all tests on WSL in the (.env), i.e. it includes
+  - ```make precommit``` conscious and explicit, with pytest -m precommit -rs reasons for skipped tests are shown
+  - ```make doctor```  check on pre-requirements
+  - GitHub pre-commit checks as defined in .pre-commit-config.yaml
+- fix issues if needed and start from top
 
 ## CI
 
