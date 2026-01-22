@@ -27,7 +27,9 @@ For a basis for reproducible deployments and exentension with additional service
   - establishing tests befor committing to git, after deployed and to have sanity checks in addition. The execution is integrated as make steps - see the Makefile for details.
   - on PI only git pull and automated deployement followed by tests is done.
 - Secure defaults and hardening is part of integrating new services
-- For local development a repro local Python Virtual Environment (.venv) is used for tooling like (pre-commit, pytest).
+- For local development a repro local Python Virtual Environment (.venv) is used for tooling like (pre-commit, pytest) and automatically used by the make phases. The following commancds manually activate and deactive it:
+  - to activate (.venv): ```source .venv/bin/activate```
+  - to deactive in (.venv): ```deactivate```
 
 Details on the development workflow are availabe under:
 ➡️ **[DevWorkflow.md](DevWorkflow.md)**

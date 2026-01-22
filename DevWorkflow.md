@@ -3,10 +3,11 @@
 - Changes are prepared on WSL, tested, committed and pushed to GitHub.
 - On Rasperry Pi sources are only pulled and deployed.
 - Testing is done via well defined make phases - check Makefile
+- A virtual environment is used on WSL and automatically called by the make phases.
 
 ## Workflow Overview
 
-1. Develop and test changes locally on WSL
+1. Develop and test changes locally on WSL.
 2. Validate changes using Make targets
 3. Commit and push to GitHub
 4. Raspberry Pi only pulls and deploys from Git
@@ -25,9 +26,11 @@
 ## CI
 
 CI mirrors the local precommit workflow to ensure parity between
-developer machines and automated checks.
+developer machines and automated checks. The test phases on WSL automatically lunch the virtual environment (.venv)
 - ```make precommit```
+- ```make doctor```
 - in (.venv) on WSL optionally: ```pre-commit run --all-files``` to run GitHub pre-commit checks in virtual environment (.venv)
+- the partially to Git-Hub pre-commit hook redundant lint tests can optionally be executed with ```make lint```
 
 ## on PI after deploy
 

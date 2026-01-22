@@ -1,5 +1,29 @@
 # background on pyproject.toml files: https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
 
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "raspberry-pi-homelab"
+version = "0.0.0"
+requires-python = ">=3.12"
+description = "IaC + monitoring homelab (Raspberry Pi) with reproducible tooling/tests"
+readme = "README.md"
+license = { text = "UNLICENSED" }
+
+# Runtime dependencies (keep empty for now unless you ship an importable package)
+dependencies = []
+
+[project.optional-dependencies]
+# WSL-only dev/test toolchain (venv). Keep Pi lean and run postdeploy there only.
+dev = [
+  "pytest>=8",
+  "typeguard>=4",
+  "pre-commit>=3.7",
+  "yamllint>=1.33",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
