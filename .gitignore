@@ -27,3 +27,6 @@ __pycache__/
 
 # Distribution / packaging - list of files indicating project setup or metadata is missing information
 *.egg-info/
+
+# ToDos
+Todo.txt
