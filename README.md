@@ -52,22 +52,31 @@ Runtime secrets don't reside in repo, but root-only on Pi.
 
 ### On the Raspberry Pi
 
-A root-owned env file at a fixed path not tracked in git:
+1. A root-owned env file at a fixed path not tracked in git:
 
-- `/etc/raspberry-pi-homelab/monitoring/compose/.env` (Mode 600, Owner root)
+    - `/etc/raspberry-pi-homelab/monitoring/compose/.env` (Mode 600, Owner root)
 
-It is:
+    It is:
 
-- consumed by docker-compose
-- validated by deploy.sh
-- never sourced manually
+    - consumed by docker-compose
+    - validated by deploy.sh
+    - never sourced manually
 
-**Example keys** (illustrative):
+    **Example keys** (illustrative):
 
-- `GRAFANA_ADMIN_USER=...`
-- `GRAFANA_ADMIN_PASSWORD=...`
-- `GHCR_USER=...`
-- `GHCR_PAT=...`
+    - `GRAFANA_ADMIN_USER=...`
+    - `GRAFANA_ADMIN_PASSWORD=...`
+
+2. A file to access GitHub Container Registry (GHCR)
+
+    - `/etc/raspberry-pi-homelab/.env` (Mode 600, Owner root)
+    - used by deploy.sh to pull images
+
+    **Contained keys** (illustrative):
+
+    - `GHCR_USER=...`
+    - `GHCR_PAT=...`
+    - Created in GitHub under Personal Acces Tokens --> token (classic) and needs to be regenerated regularly.
 
 ### Permissions
 

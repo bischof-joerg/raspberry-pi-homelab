@@ -177,7 +177,7 @@ with_ephemeral_docker_config() {
 
     log "ghcr: logging in (ephemeral DOCKER_CONFIG)"
     if ! echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
-      die "ghcr: login failed"
+      die "ghcr: login failed - consider hat your token might need to regenerated on GitHub. Check GHCR_USER and GHCR_PAT in $SECRETS_FILE"
     fi
     log "ghcr: login succeeded"
 
