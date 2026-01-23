@@ -19,10 +19,22 @@ It is based directly on the provided `docker-compose.yml` and is designed to run
 
 ### Docker networking (sustainable hardened setup)
 
-Implementation goal:
+Implementation goal including hardening:
 
 - Shared, isolated network for all monitoring components
 - Allows clean separation from other application stacks
+- Only Grafana exposes a TCP port
+- All other services are internal-only Docker network
+- Read-only root filesystems where supported
+- No privileged containers
+- Secrets never stored in Git
+- Fixed Docker bridge + UFW rules
+
+⚠ Security Note: Docker Engine metrics must
+
+- never be bound to 0.0.0.0
+- never be reachable from non-monitoring containers
+- be protected by UFW rules limiting access to br-monitoring only
 
 A dedicated Docker bridge network is used with desired state:
 
@@ -122,7 +134,8 @@ Grafana is the visualization layer. It provides dashboards, panels, and a web UI
   - Mount: `/etc/grafana/provisioning` (read-only)
 
 **Note:**
-Grafana is the only service intentionally exposed to the outside.
+Grafana is the only service exposed on the host network.
+All other services are only reachable inside the Docker monitoring network.
 
 ---
 
@@ -208,11 +221,16 @@ Due to the required host mounts, cAdvisor is intentionally isolated and run with
 
 ### Stateful (volumes required)
 
-- Prometheus (metrics)
-- Grafana (UI data, users, dashboards)
-- Loki (logs)
-- Promtail (positions)
-- Alertmanager (silences & alert state)
+The following volumes must be included in host-level backups.
+
+- Prometheus TSDB
+- Grafana data
+- Loki storage
+- Alertmanager state
+
+Backup should be performed at filesystem level (outside Docker).
+See the following backup and restore runbook
+➡️ **[./BackupRestoreRunbook.md](./BackupRestoreRunbook.md)**
 
 ### Stateless
 

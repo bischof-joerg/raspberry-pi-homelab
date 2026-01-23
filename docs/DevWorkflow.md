@@ -1,18 +1,13 @@
 # Development Workflow
 
-- Changes are prepared on WSL, tested, committed and pushed to GitHub.
-- On Rasperry Pi sources are only pulled and deployed.
-  - The deploy scribed automatically launches the post deploy tests.
-- Testing can be done via well defined make phases - check Makefile
-- A virtual environment is used on WSL and automatically called by the make phases.
-
 ## Workflow Overview
 
-1. Develop and test changes locally on WSL.
-2. Validate changes using ```pytest -q```
+1. Changes are prepared on WSL
+2. Tested by using ```pytest -q```
 3. Commit and push to GitHub
-4. Raspberry Pi only pulls and deploys from Git
-5. No manual changes are performed on the Pi
+4. On Rasperry Pi sources are only pulled from Git and deployed
+5. Ideally, no manual changes are performed on the Pi
+6. Secure defaults, hardening and reviewed / new tests is part of integrating new services
 
 ## on WSL
 
@@ -20,11 +15,20 @@
   - ```git status```
   - ```git add ...```
   - ```git commit -m <>```
-- ```pytest -q``` executes all tests on WSL in the (.env), i.e. it includes
+  - Note: GitHub commit comprises tests via a pre-commit hook
+- ```pytest -q``` executes all tests on WSL in the (.venv), i.e. it includes
   - ```make precommit``` conscious and explicit, with pytest -m precommit -rs reasons for skipped tests are shown
   - ```make doctor```  check on pre-requirements
   - GitHub pre-commit checks as defined in .pre-commit-config.yaml
 - fix issues if needed and start from top
+
+~~~text
+Note: A virtual environment is used on WSL and automatically called by the make phases.
+The repro local Python Virtual Environment '(.venv)' is used as well for local development.
+The following commancds manually activate and deactive it:
+    - to activate '(.venv)': ```source .venv/bin/activate```
+    - to deactive in '(.venv)': ```deactivate```
+~~~
 
 ## CI
 
@@ -42,6 +46,7 @@ developer machines and automated checks. The test phases on WSL automatically lu
 - ```git pull```
 - ```make doctor```
 - ```sudo ./deploy.sh```    #Execute deploy with sudo:
+  - The deploy scribed automatically launches the post deploy tests
   - Options for different modes
     - First deploy / after volume migration: Set permissions in safe manner: ```sudo RUN_INIT_PERMISSIONS=always ./deploy.sh```
     - Fast deploy without pull: ```sudo PULL_IMAGES=0 ./deploy.sh```
@@ -61,10 +66,12 @@ developer machines and automated checks. The test phases on WSL automatically lu
     - ```docker compose -f monitoring/compose/docker-compose.yml up -d --force-recreate```
 - Rollback (git revert) on deploy failure:
 
-  - ```bash
+  - Note: Reverting commits that include data migrations may require manual validation of volumes.
+
+  - ~~~bash
     cd ~/iac/raspberry-pi-homelab
     git log --oneline --max-count=10
-    ```
+    ~~~
 
     - ```git revert <commit-sha>```
     - ```git pull --rebase```
@@ -74,7 +81,7 @@ developer machines and automated checks. The test phases on WSL automatically lu
 ## Operational Guardrails (Do Not Violate)
 
 - No manual changes on the Raspberry Pi (except git pull + sudo ./deploy.sh)
-- No secrets committed to Git (use /etc/.../secrets.env)
+- No secrets committed to Git (use /etc/.../.env)
 - init-permissions.sh must not be run manually on the Pi
 
 ## Failure Handling Philosophy

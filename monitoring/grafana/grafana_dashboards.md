@@ -1,6 +1,8 @@
 # Grafana Dashboard Download & Update Workflow
 
 This document describes the **workflow, scripts, and reasoning** behind downloading, updating, normalizing, and validating Grafana dashboards from Grafana.com (GNet) into this repository. The goal is a **repeatable, conflict-free, Git-driven workflow** that works reliably with **Grafana provisioning** and avoids UI-side drift.
+This workflow assumes Grafana ≥ 11.
+Angular-based dashboards are intentionally excluded.
 
 ---
 
@@ -85,16 +87,34 @@ Example structure:
 
 ```json
 {
-  "docker": {
-    "21743": "docker/docker-overview-21743.json",
-    "193": "docker/docker-container-resource-usage-193.json",
-    "21040": "docker/docker-engine-health-21040.json"
-  },
-  "system": {
-    "1860": "system/node-exporter-full-1860.json",
-    "9578": "system/alertmanager-9578.json",
-    "19341": "system/prometheus-metrics-overview-19341.json"
-  }
+  "dashboards": [
+    {
+      "folder": "docker",
+      "gnet_id": 14282,
+      "filename": "docker-overview-14282.json",
+      "uid": "gnet-docker-14282"
+    },
+    {
+      "folder": "docker",
+      "gnet_id": 21040,
+      "filename": "docker-engine-health-21040.json",
+      "uid": "gnet-docker-21040"
+    },
+    {
+      "folder": "system",
+      "gnet_id": 12486,
+      "filename": "node-exporter-full-12486.json",
+      "uid": "gnet-system-12486"
+    },
+    {
+      "folder": "system",
+      "gnet_id": 19341,
+      "filename": "prometheus-metrics-overview-19341.json",
+      "uid": "gnet-system-19341"
+    }
+  ],
+  "id": null,
+  "uid": "manifest"
 }
 ```
 
@@ -223,6 +243,9 @@ All Prometheus datasources are rewritten to:
 }
 ```
 
+Note: Loki dashboards follow the same normalization principles,
+but use ${DS_LOKI} instead of ${DS_PROMETHEUS}.
+
 This ensures compatibility with:
 
 * Provisioned datasources
@@ -257,6 +280,11 @@ The script ensures:
 * All JSON files are valid
 * No hard-coded Prometheus datasource UIDs exist
 * Dashboards are safe for provisioning
+
+Out of scope:
+
+* Validation of PromQL correctness against live metrics
+* Detection of deprecated PromQL functions
 
 ### Why `jq`, Not `grep`
 
@@ -312,7 +340,9 @@ providers:
 
 * Grafana UI **must not be used** to import dashboards
 * Files on disk are the **single source of truth**
-* Conflicts in the UI indicate drift, not errors
+* If Grafana shows "Discard changes":
+  * Do not save
+  * Fix the dashboard JSON in Git instead
 
 ---
 
@@ -324,17 +354,20 @@ providers:
    ```bash
    scripts/grafana/download-gnet.sh
    ```
+
 3. Run:
 
    ```bash
    scripts/grafana/normalize-dashboard.py monitoring/grafana/dashboards
    ```
+
 4. Validate:
 
    ```bash
    scripts/grafana/validate_dashboards.sh
    make precommit
    ```
+
 5. Review Git diff
 6. Commit and push
 7. Pull on Raspberry Pi
@@ -368,5 +401,3 @@ The result is a **stable monitoring stack** where dashboards can be updated conf
 * Dashboard golden tests (snapshot PromQL validation)
 
 ---
-
-**End of document**

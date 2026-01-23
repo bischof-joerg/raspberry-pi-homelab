@@ -54,7 +54,13 @@ Runtime secrets don't reside in repo, but root-only on Pi.
 
 A root-owned env file at a fixed path not tracked in git:
 
-- `/etc/raspberry-pi-homelab/.env` (Mode 600, Owner root)
+- `/etc/raspberry-pi-homelab/monitoring/compose/.env` (Mode 600, Owner root)
+
+It is:
+
+- consumed by docker-compose
+- validated by deploy.sh
+- never sourced manually
 
 **Example keys** (illustrative):
 
@@ -68,8 +74,8 @@ A root-owned env file at a fixed path not tracked in git:
 Permissions are automatically checked by the deploy.sh script.
 
 ```bash
-sudo chown root:root /etc/raspberry-pi-homelab/.env
-sudo chmod 600 /etc/raspberry-pi-homelab/.env
+sudo chown root:root /etc/raspberry-pi-homelab/monitoring/compose/.env
+sudo chmod 600 /etc/raspberry-pi-homelab/monitoring/compose/.env
 
 ---
 
@@ -77,17 +83,9 @@ sudo chmod 600 /etc/raspberry-pi-homelab/.env
 
 For reproducible deployments and exentensibility with additional services, the following principles are applied:
 
-- Infrastructure as Code with:
-  - editing sources on WSL
-    - For local development a repro local Python Virtual Environment '(.venv)' is used for tooling like '(pre-commit, pytest)' and automatically used by the make phases. The following commancds manually activate and deactive it:
-    - to activate '(.venv)': ```source .venv/bin/activate```
-    - to deactive in '(.venv)': ```deactivate```
-  - tests
-    - before committing to git - as GitHub pre-commit hook and additionally with dedicated repo specific tests
-    - with deploy.sh checking afterwards with sanity checks.
-    - The execution is integrated as make steps - see the Makefile for details.
-  - on Pi only git pull and automated deployement followed by tests is done.
-- Secure defaults and hardening is part of integrating new services
+- Local development and validation happens on WSL
+- Tooling is isolated via Python virtual environment
+- All checks are executed via Make targets
 
 Details on the development workflow are availabe under:
 ➡️ **[DevWorkflow.md](DevWorkflow.md)**
