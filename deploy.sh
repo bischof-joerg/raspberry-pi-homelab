@@ -11,7 +11,8 @@ COMPOSE_FILE="${COMPOSE_FILE:-$REPO_ROOT/monitoring/compose/docker-compose.yml}"
 # Secrets are NOT stored in the repo. Default location on the Pi:
 SECRETS_FILE="${SECRETS_FILE:-/etc/raspberry-pi-homelab/.env}"
 
-# Non-secret compose env file (e.g., Grafana provisioning toggles); optional.
+# Non-secret compose env file (optional). NOTE: If you decide to place secrets here,
+# keep it OUT of git and ensure permissions are safe. Prefer SECRETS_FILE.
 COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-$REPO_ROOT/monitoring/compose/.env}"
 
 INIT_SCRIPT="${INIT_SCRIPT:-$REPO_ROOT/monitoring/compose/init-permissions.sh}"
@@ -62,16 +63,34 @@ refuse_repo_root_env() {
   # docker compose auto-loads .env from the working directory.
   # If this file is root-owned/0600, 'admin' cannot run 'docker compose ps' => breaks ops.
   if [[ -e "$REPO_ROOT/.env" ]]; then
-    die "Refusing to use repo-root .env ($REPO_ROOT/.env). Remove it and use $SECRETS_FILE instead."
+    die "Refusing to use repo-root .env ($REPO_ROOT/.env). Remove it and use $SECRETS_FILE (or a host-only secrets file) instead."
   fi
 }
 
-load_secrets() {
+validate_secrets_file() {
+  [[ -e "$SECRETS_FILE" ]] || die "Secrets file not found: $SECRETS_FILE"
   [[ -r "$SECRETS_FILE" ]] || die "Secrets file not readable: $SECRETS_FILE"
-  set -a
+
+  # Enforce: owned by root and not accessible by group/other (0600 recommended).
+  local owner group mode
+  owner="$(stat -c '%U' "$SECRETS_FILE" 2>/dev/null || true)"
+  group="$(stat -c '%G' "$SECRETS_FILE" 2>/dev/null || true)"
+  mode="$(stat -c '%a' "$SECRETS_FILE" 2>/dev/null || true)"
+
+  [[ "$owner" == "root" ]] || die "Secrets file must be owned by root (found owner=$owner): $SECRETS_FILE"
+  [[ "$group" == "root" ]] || die "Secrets file should be group root (found group=$group): $SECRETS_FILE"
+
+  # Reject any group/other permissions (anything like 640, 644, 660, 664, 600 is OK; but we require strict 600).
+  # If you want to allow 640, relax this check; for PATs, 600 is the safer default.
+  [[ "$mode" == "600" ]] || die "Secrets file must have mode 600 (found $mode): $SECRETS_FILE"
+}
+
+load_secrets() {
+  validate_secrets_file
+
+  # Load into current shell (do NOT auto-export everything).
   # shellcheck disable=SC1090
   source "$SECRETS_FILE"
-  set +a
 }
 
 compose() {
@@ -150,15 +169,21 @@ with_ephemeral_docker_config() {
   export DOCKER_CONFIG="$docker_cfg_tmp"
 
   if needs_ghcr_auth; then
+    # Load secrets only if GHCR is actually needed
+    load_secrets
+
     : "${GHCR_USER:?Missing GHCR_USER in $SECRETS_FILE}"
     : "${GHCR_PAT:?Missing GHCR_PAT in $SECRETS_FILE}"
 
     log "ghcr: logging in (ephemeral DOCKER_CONFIG)"
-    # Suppress the credential-store warning; still fail hard on login errors.
     if ! echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
       die "ghcr: login failed"
     fi
     log "ghcr: login succeeded"
+
+    # Reduce exposure window inside this process
+    unset GHCR_PAT || true
+    unset GHCR_USER || true
   else
     log "ghcr: not used by compose; skipping login"
   fi
@@ -192,7 +217,6 @@ main() {
   refuse_repo_root_env
 
   check_prereqs
-  load_secrets
 
   maybe_init_permissions
 
@@ -207,7 +231,6 @@ main() {
         docker compose -f "'"$COMPOSE_FILE"'" up -d
       fi
     '
-
   else
     log "compose: pull skipped (PULL_IMAGES=0)"
     compose up -d
