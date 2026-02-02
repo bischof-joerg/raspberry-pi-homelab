@@ -1,0 +1,10 @@
+groups:
+  - name: "infra"
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Target down (job={{ $labels.job }}, instance={{ $labels.instance }})"

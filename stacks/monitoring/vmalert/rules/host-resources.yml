@@ -1,0 +1,11 @@
+groups:
+- name: host-resources
+  rules:
+  - alert: HostLoadHigh
+    expr: node_load1 > 6
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Load high"
+      description: "Load1 > 6 for 10m on {{ $labels.instance }}."

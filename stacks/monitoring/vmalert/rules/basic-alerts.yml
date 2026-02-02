@@ -1,0 +1,111 @@
+# basic-alerts.yml
+groups:
+  - name: general
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target down (job={{ $labels.job }}, instance={{ $labels.instance }})"
+          description: "Prometheus cannot scrape this target for > 1 minute."
+
+  - name: node
+    rules:
+      - alert: NodeHighCpuUsage
+        expr: (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage (instance={{ $labels.instance }})"
+          description: "CPU usage > 85% for 5 minutes."
+
+      - alert: NodeHighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage (instance={{ $labels.instance }})"
+          description: "Memory usage > 90% for 5 minutes."
+
+      - alert: NodeSwapInUse
+        expr: (node_memory_SwapTotal_bytes > 0) and ((node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / node_memory_SwapTotal_bytes) > 0.20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Swap in use (instance={{ $labels.instance }})"
+          description: "Swap usage > 20% for 5 minutes."
+
+      - alert: NodeFilesystemSpaceLowWarning
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.20
+          and on(instance, device, mountpoint) node_filesystem_readonly == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk space low (warning) (instance={{ $labels.instance }}, mount={{ $labels.mountpoint }})"
+          description: "Free disk space < 20% for 10 minutes."
+
+      - alert: NodeFilesystemSpaceLowCritical
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.10
+          and on(instance, device, mountpoint) node_filesystem_readonly == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space low (critical) (instance={{ $labels.instance }}, mount={{ $labels.mountpoint }})"
+          description: "Free disk space < 10% for 5 minutes."
+
+  - name: docker
+    rules:
+      # Requires cAdvisor. Filter to docker-compose services to reduce noise.
+      - alert: ContainerDown
+        expr: |
+          (time() - container_last_seen{container_label_com_docker_compose_service!=""}) > 60
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container down (service={{ $labels.container_label_com_docker_compose_service }})"
+          description: "No container heartbeat seen for > 2 minutes."
+
+      - alert: ContainerHighCpu
+        expr: |
+          sum by (container_label_com_docker_compose_service) (
+            rate(container_cpu_usage_seconds_total{container_label_com_docker_compose_service!=""}[5m])
+          ) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High container CPU (service={{ $labels.container_label_com_docker_compose_service }})"
+          description: "Service CPU usage > 1.5 cores for 10 minutes."
+
+      - alert: ContainerHighMemory
+        expr: |
+          sum by (container_label_com_docker_compose_service) (
+            container_memory_working_set_bytes{container_label_com_docker_compose_service!=""}
+          ) > 1500000000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High container memory (service={{ $labels.container_label_com_docker_compose_service }})"
+          description: "Service memory working set > ~1.5GB for 10 minutes."
+
+  - name: monitoring
+    rules:
+      - alert: PrometheusRuleEvaluationFailures
+        expr: increase(prometheus_rule_evaluation_failures_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus rule evaluation failures"
+          description: "Prometheus failed to evaluate one or more rules in the last 10 minutes."
