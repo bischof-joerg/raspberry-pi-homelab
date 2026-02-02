@@ -2,16 +2,19 @@
 
 SHELL := /bin/bash
 
-.PHONY: help venv venv-clean precommit lint postdeploy test doctor
+.PHONY: help venv venv-clean precommit lint postdeploy test doctor ruff ruff-fix format
 
 help:
 	@echo "Targets:"
 	@echo "  make venv        Create/update local venv (WSL only)"
 	@echo "  make precommit   Run pre-commit checks"
 	@echo "  make lint        Run redundant sanity checks (subset of precommit)"
+	@echo "  make ruff        Run ruff lint checks"
+	@echo "  make ruff-fix    Run ruff lint checks with autofix"
+	@echo "  make format      Run ruff formatter"
 	@echo "  make postdeploy  Run post-deploy checks (Pi)"
 	@echo "  make test        Run all tests"
-	@echo "  make doctor      Check tooling/secrets for this repo (WSL/Pi)"
+	@echo "  make doctor      Check tooling/config for this repo (WSL/Pi)"
 
 # --- Platform detection ------------------------------------------------------
 
@@ -30,17 +33,25 @@ PY      := $(VENV_DIR)/bin/python
 PIP     := $(VENV_DIR)/bin/pip
 PYTEST  := $(PY) -m pytest
 YAMLLINT:= $(VENV_DIR)/bin/yamllint
+RUFF    := $(VENV_DIR)/bin/ruff
 else
 PY      := python3
 PIP     := python3 -m pip
 PYTEST  := python3 -m pytest
 YAMLLINT:= yamllint
+RUFF    := ruff
 endif
 
 PYTEST_STRICT = --strict-markers --maxfail=1
 PYTEST_REPORT = -rA
-# If slowest tests shall be identified, uncomment the following line and comment the above line
-#PYTEST_REPORT = -rA --durations=5
+
+# --- Repo paths --------------------------------------------------------------
+
+COMPOSE_NEW := stacks/monitoring/compose/docker-compose.yml
+COMPOSE_OLD := monitoring/compose/docker-compose.yml
+
+PROM_NEW := stacks/monitoring/prometheus/prometheus.yml
+PROM_OLD := monitoring/prometheus/prometheus.yml
 
 # --- venv bootstrap ----------------------------------------------------------
 
@@ -57,11 +68,11 @@ ifeq ($(USE_VENV),yes)
 	  echo "[venv] installing requirements-dev.txt"; \
 	  "$(VENV_DIR)/bin/pip" install -r requirements-dev.txt; \
 	elif [ -f pyproject.toml ]; then \
-	  echo "[venv] installing project (editable)"; \
-	  "$(VENV_DIR)/bin/pip" install -e .; \
+	  echo "[venv] installing project (editable) with dev extras"; \
+	  "$(VENV_DIR)/bin/pip" install -e ".[dev]"; \
 	else \
-	  echo "[venv] installing minimal deps (pytest, yamllint)"; \
-	  "$(VENV_DIR)/bin/pip" install pytest yamllint; \
+	  echo "[venv] installing minimal deps (pytest, yamllint, ruff)"; \
+	  "$(VENV_DIR)/bin/pip" install pytest yamllint ruff; \
 	fi
 else
 	@echo "venv: SKIP (venv is only used on WSL by design)"
@@ -75,13 +86,33 @@ else
 	@echo "venv-clean: SKIP (not on WSL)"
 endif
 
+# --- Ruff -------------------------------------------------------------------
+
+ruff: $(if $(filter yes,$(USE_VENV)),venv,)
+	@command -v $(RUFF) >/dev/null 2>&1 || (echo "FAIL: ruff missing (install via venv/pyproject dev extras)"; exit 2)
+	$(RUFF) check .
+
+ruff-fix: $(if $(filter yes,$(USE_VENV)),venv,)
+	@command -v $(RUFF) >/dev/null 2>&1 || (echo "FAIL: ruff missing (install via venv/pyproject dev extras)"; exit 2)
+	$(RUFF) check . --fix
+
+format: $(if $(filter yes,$(USE_VENV)),venv,)
+	@command -v $(RUFF) >/dev/null 2>&1 || (echo "FAIL: ruff missing (install via venv/pyproject dev extras)"; exit 2)
+	$(RUFF) format .
+
 # --- Test targets ------------------------------------------------------------
 
 precommit: $(if $(filter yes,$(USE_VENV)),venv,)
+	# Ruff is fast and should be part of precommit
+	@command -v $(RUFF) >/dev/null 2>&1 && $(RUFF) check . || echo "WARN: ruff missing (precommit will still run pytest suite)"
+	@command -v $(RUFF) >/dev/null 2>&1 && $(RUFF) format --check . || true
 	$(PYTEST) $(PYTEST_STRICT) $(PYTEST_REPORT) tests/precommit -m precommit
 
-# redundant sanity checks run by GitHub pre-commit hook
 lint: $(if $(filter yes,$(USE_VENV)),venv,)
+	# Lint is a stricter local gate: require ruff
+	@command -v $(RUFF) >/dev/null 2>&1 || (echo "FAIL: ruff missing (make venv installs it via .[dev])"; exit 2)
+	$(RUFF) check .
+	$(RUFF) format --check .
 	$(PYTEST) $(PYTEST_STRICT) $(PYTEST_REPORT) tests/precommit -m lint
 
 ifeq ($(IS_PI),yes)
@@ -109,6 +140,7 @@ doctor: $(if $(filter yes,$(USE_VENV)),venv,)
 	@$(PY) --version
 	@$(PYTEST) --version >/dev/null 2>&1 && $(PYTEST) --version || echo "WARN: pytest missing (needed for tests)"
 	@command -v $(YAMLLINT) >/dev/null 2>&1 && $(YAMLLINT) --version || echo "WARN: yamllint missing (precommit lint may skip/fail)"
+	@command -v $(RUFF) >/dev/null 2>&1 && $(RUFF) --version || echo "WARN: ruff missing (ruff checks will fail/skip depending on target)"
 	@command -v gitleaks >/dev/null 2>&1 && gitleaks version || echo "WARN: gitleaks missing (precommit secret scan may skip/fail)"
 	@command -v promtool >/dev/null 2>&1 && promtool --version || echo "WARN: promtool missing (Prometheus config check will skip)"
 	@command -v curl >/dev/null 2>&1 && curl --version | head -n 1 || echo "WARN: curl missing (endpoint checks will skip)"
@@ -120,90 +152,35 @@ doctor: $(if $(filter yes,$(USE_VENV)),venv,)
 	@echo
 
 	@echo "== Repo files =="
-	@test -f monitoring/compose/docker-compose.yml && echo "OK: compose file present" || (echo "FAIL: compose file missing" && exit 2)
-	@test -f monitoring/prometheus/prometheus.yml && echo "OK: prometheus.yml present" || (echo "FAIL: prometheus.yml missing" && exit 2)
+	@if [ -f "$(COMPOSE_NEW)" ]; then echo "OK: compose file present ($(COMPOSE_NEW))"; \
+	elif [ -f "$(COMPOSE_OLD)" ]; then echo "OK: compose file present ($(COMPOSE_OLD))"; \
+	else echo "FAIL: compose file missing"; exit 2; fi
+	@if [ -f "$(PROM_NEW)" ]; then echo "OK: prometheus.yml present ($(PROM_NEW))"; \
+	elif [ -f "$(PROM_OLD)" ]; then echo "OK: prometheus.yml present ($(PROM_OLD))"; \
+	else echo "FAIL: prometheus.yml missing"; exit 2; fi
 	@test -x ./deploy.sh && echo "OK: deploy.sh executable" || echo "WARN: deploy.sh not executable (chmod +x deploy.sh)"
 	@echo
 
-	@echo "== docker compose config (hermetic) =="
-	@if docker compose version >/dev/null 2>&1; then \
-	  bash -euo pipefail -c '\
-	    tmp="$$(mktemp -d)"; \
-	    trap "rm -rf $$tmp" EXIT; \
-	    \
-	    compose_env="$$tmp/compose.env"; \
-	    if [ -f monitoring/compose/env.example ]; then \
-	      cp monitoring/compose/env.example "$$compose_env"; \
-	    else \
-	      : > "$$compose_env"; \
-	    fi; \
-	    printf "GRAFANA_ADMIN_USER=admin\nGRAFANA_ADMIN_PASSWORD=changeme\n" >> "$$compose_env"; \
-	    \
-	    # create isolated copy of repo (no secrets, no .git) \
-	    if command -v rsync >/dev/null 2>&1; then \
-	      rsync -a --delete --exclude ".git" ./ "$$tmp/repo/"; \
-	    else \
-	      mkdir -p "$$tmp/repo"; \
-	      tar -cf - --exclude=.git . | tar -xf - -C "$$tmp/repo"; \
-	    fi; \
-	    \
-	    mkdir -p "$$tmp/repo/monitoring/alertmanager" "$$tmp/repo/monitoring/grafana"; \
-	    if [ -f monitoring/alertmanager/alertmanager.env.example ]; then \
-	      cp monitoring/alertmanager/alertmanager.env.example "$$tmp/repo/monitoring/alertmanager/alertmanager.env"; \
-	    else \
-	      : > "$$tmp/repo/monitoring/alertmanager/alertmanager.env"; \
-	    fi; \
-	    if [ -f monitoring/grafana/grafana.env.example ]; then \
-	      cp monitoring/grafana/grafana.env.example "$$tmp/repo/monitoring/grafana/grafana.env"; \
-	    else \
-	      : > "$$tmp/repo/monitoring/grafana/grafana.env"; \
-	    fi; \
-	    \
-	    cd "$$tmp/repo"; \
-	    docker compose --env-file "$$compose_env" -f monitoring/compose/docker-compose.yml config >/dev/null; \
-	    echo "OK: compose config valid"; \
-	  '; \
-	else \
-	  echo "SKIP: docker compose plugin not available"; \
-	fi
+	@echo "== Compose config validation (pytest) =="
+	@$(PYTEST) -q --strict-markers -m precommit tests/precommit -k compose_config && echo "OK: compose config validation passed" || (echo "FAIL: compose config validation failed" && exit 2)
 	@echo
 
 	@echo "== promtool check (if available) =="
 	@if command -v promtool >/dev/null 2>&1; then \
-	  echo "Running: promtool check config"; \
-	  promtool check config monitoring/prometheus/prometheus.yml && echo "OK: promtool config valid" || (echo "FAIL: promtool config invalid" && exit 2); \
-	  if test -d monitoring/prometheus/rules; then \
-	    echo "Running: promtool check rules"; \
-	    promtool check rules monitoring/prometheus/rules/*.yml && echo "OK: promtool rules valid" || (echo "FAIL: promtool rules invalid" && exit 2); \
-	  else \
-	    echo "SKIP: no rules directory"; \
-	  fi \
+	  p=""; \
+	  if [ -f "$(PROM_NEW)" ]; then p="$(PROM_NEW)"; else p="$(PROM_OLD)"; fi; \
+	  echo "Running: promtool check config $$p"; \
+	  promtool check config "$$p" && echo "OK: promtool config valid" || (echo "FAIL: promtool config invalid" && exit 2); \
 	else \
 	  echo "SKIP: promtool not installed"; \
 	fi
 	@echo
 
-	@echo "== Secrets (.env on Pi only) =="
+	@echo "== Secrets (Pi only) =="
 	@if grep -qi raspberry /proc/device-tree/model 2>/dev/null; then \
-	  test -f /etc/raspberry-pi-homelab/.env && echo "OK: /etc/raspberry-pi-homelab/.env exists" || (echo "FAIL: /etc/raspberry-pi-homelab/.env missing" && exit 2); \
-	  sudo test -r /etc/raspberry-pi-homelab/.env && echo "OK: .env readable by root" || (echo "FAIL: .env not readable by root" && exit 2); \
+	  test -f /etc/raspberry-pi-homelab/monitoring.env && echo "OK: /etc/raspberry-pi-homelab/monitoring.env exists" || (echo "FAIL: monitoring.env missing" && exit 2); \
+	  sudo test -r /etc/raspberry-pi-homelab/monitoring.env && echo "OK: monitoring.env readable by root" || (echo "FAIL: monitoring.env not readable by root" && exit 2); \
 	else \
 	  echo "SKIP: not on Raspberry Pi"; \
 	fi
 	@echo
-
-	@echo "== Local endpoints (Pi only, if curl available) =="
-	@if grep -qi raspberry /proc/device-tree/model 2>/dev/null && command -v curl >/dev/null 2>&1; then \
-	  echo "Checking Prometheus ready..."; \
-	  curl -fsS http://localhost:9090/-/ready >/dev/null && echo "OK: Prometheus ready" || (echo "FAIL: Prometheus not ready" && exit 2); \
-	  echo "Checking Alertmanager ready..."; \
-	  curl -fsS http://localhost:9093/-/ready >/dev/null && echo "OK: Alertmanager ready" || (echo "FAIL: Alertmanager not ready" && exit 2); \
-	  echo "Checking Grafana health (unauthenticated)..."; \
-	  curl -fsS http://localhost:3000/api/health >/dev/null && echo "OK: Grafana health endpoint reachable" || (echo "FAIL: Grafana health endpoint not reachable" && exit 2); \
-	else \
-	  echo "SKIP: not on Raspberry Pi or curl missing"; \
-	fi
-	@echo
-
-	@echo "== Doctor tests (pytest -m doctor) =="
-	@$(PYTEST) -q --strict-markers -m doctor tests/doctor && echo "OK: doctor tests passed" || (echo "FAIL: doctor tests failed" && exit 2)

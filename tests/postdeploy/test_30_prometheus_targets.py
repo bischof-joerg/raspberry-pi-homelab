@@ -1,6 +1,7 @@
 import json
-import pytest
 import urllib.request
+
+import pytest
 
 REQUIRED_JOBS = {
     "prometheus",
@@ -10,6 +11,7 @@ REQUIRED_JOBS = {
     "grafana",
     # extend upon additional jobs added to prometheus/prometheus.yml: "docker-exporter",  ...
 }
+
 
 @pytest.mark.postdeploy
 def test_prometheus_targets_up():

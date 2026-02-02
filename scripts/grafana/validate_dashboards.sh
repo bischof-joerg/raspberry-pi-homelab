@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Validates dashboards against normalization rules.
 set -euo pipefail
 
-ROOT="monitoring/grafana/dashboards"
+ROOT="stacks/monitoring/grafana/dashboards"
+if [[ ! -d "$ROOT" ]]; then
+  ROOT="monitoring/grafana/dashboards"
+fi
 
-echo "Starting validation..."
+echo "Starting validation... (ROOT=$ROOT)"
+
+command -v jq >/dev/null 2>&1 || { echo "ERROR: jq missing" >&2; exit 2; }
 
 # 1) JSON Syntax
 find "$ROOT" -name '*.json' -not -name 'manifest.json' -not -name '.*' -print0 | xargs -0 -n1 jq -e . >/dev/null
@@ -14,7 +18,8 @@ echo "✅ JSON syntax is valid."
 uids="$(find "$ROOT" -name '*.json' -not -name 'manifest.json' -not -name '.*' -print0 | xargs -0 -n1 jq -r '.uid // empty')"
 dupes="$(printf "%s\n" "$uids" | sort | uniq -d || true)"
 if [[ -n "${dupes:-}" ]]; then
-  echo "❌ ERROR: Duplicate UIDs detected: $dupes"
+  echo "❌ ERROR: Duplicate UIDs detected:"
+  printf "%s\n" "$dupes"
   exit 1
 fi
 
@@ -24,7 +29,8 @@ while IFS= read -r -d '' dir; do
   titles="$(find "$dir" -maxdepth 1 -name '*.json' -print0 | xargs -0 -n1 jq -r '.title // empty')"
   t_dupes="$(printf "%s\n" "$titles" | sort | uniq -d || true)"
   if [[ -n "${t_dupes:-}" ]]; then
-    echo "❌ ERROR: Duplicate titles in [$dir]: $t_dupes"
+    echo "❌ ERROR: Duplicate titles in [$dir]:"
+    printf "%s\n" "$t_dupes"
     bad_titles=1
   fi
 done < <(find "$ROOT" -type d -print0)
@@ -39,7 +45,7 @@ while IFS= read -r -d '' f; do
     ] | unique | .[]
   ' "$f" 2>/dev/null || true)"
 
-  if grep -E '"datasource":\s*"\$\{?DS_PROMETHEUS\}?"' "$f" >/dev/null || [[ -n "${invalid:-}" ]]; then
+  if grep -Eq '"datasource":\s*"\$\{?DS_PROMETHEUS\}?"' "$f" >/dev/null || [[ -n "${invalid:-}" ]]; then
     echo "❌ ERROR: $f has un-normalized datasource: ${invalid:-"Placeholder string found"}"
     bad_ds=1
   fi

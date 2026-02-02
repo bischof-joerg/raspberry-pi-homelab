@@ -1,4 +1,6 @@
 # helper for robust shell/tool calls in tests
+from __future__ import annotations
+
 import json
 import os
 import subprocess
@@ -13,7 +15,7 @@ def which_ok(binary: str) -> bool:
     """Check if a binary/tool is available in PATH."""
     return which(binary) is not None
 
-# wrapper function to call command-line applications with subprocess.run()
+
 def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
     """Run a command and capture stdout/stderr (no exception on non-zero)."""
     merged_env = os.environ.copy()
@@ -46,6 +48,23 @@ def compose_cmd() -> list[str] | None:
         return ["docker-compose"]
 
     return None
+
+
+def find_monitoring_compose_file() -> Path:
+    """
+    Determine the monitoring compose file path.
+    Prefer new GitOps target layout: stacks/monitoring/compose/docker-compose.yml.
+    Fallback to legacy layout: monitoring/compose/docker-compose.yml.
+    """
+    candidates = [
+        REPO_ROOT / "stacks" / "monitoring" / "compose" / "docker-compose.yml",
+        REPO_ROOT / "monitoring" / "compose" / "docker-compose.yml",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    # default to new path for clearer error messages
+    return candidates[0]
 
 
 def compose_ps_json(*, compose_file: Path) -> list[dict]:
@@ -113,3 +132,14 @@ def compose_services_by_name(ps_rows: list[dict]) -> dict[str, dict]:
         if svc:
             out[svc] = row
     return out
+
+
+def compose_container_name(rows_by_service: dict[str, dict], service: str) -> str | None:
+    """
+    Return the actual container name for a given compose service from ps rows.
+    """
+    row = rows_by_service.get(service)
+    if not row:
+        return None
+    name = row.get("Name") or row.get("name")
+    return str(name) if name else None

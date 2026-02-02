@@ -1,40 +1,95 @@
+from __future__ import annotations
+
 import os
-import shutil
+import re
+from pathlib import Path
+
 import pytest
 
-from tests._helpers import run, which_ok, REPO_ROOT
-
-COMPOSE_FILE = REPO_ROOT / "monitoring/compose/docker-compose.yml"
-
-COMPOSE_ENV = REPO_ROOT / "monitoring/compose/.env"
-COMPOSE_ENV_EXAMPLE = REPO_ROOT / "monitoring/compose/.env.example"
-
-ALERTMANAGER_ENV = REPO_ROOT / "monitoring/alertmanager/alertmanager.env"
-ALERTMANAGER_ENV_EXAMPLE = REPO_ROOT / "monitoring/alertmanager/alertmanager.env.example"
+from tests._helpers import find_monitoring_compose_file, run, which_ok
 
 
-def compose_cmd():
+def compose_cmd() -> list[str] | None:
     r = run(["docker", "compose", "version"])
     if r.returncode == 0:
         return ["docker", "compose"]
     return None
 
 
-def ensure_env_from_example(example_path, target_path, created_files):
+ENV_DEFAULTS: dict[str, str] = {
+    "COMPOSE_PROJECT_NAME": "homelab-home-prod-mon",
+    "TZ": "Europe/Berlin",
+    "GRAFANA_ADMIN_USER": "admin",
+    "GRAFANA_ADMIN_PASSWORD": "changeme",
+    "ALERT_EMAIL_TO": "devnull@example.invalid",
+    "ALERT_SMTP_AUTH_USERNAME": "devnull@example.invalid",
+    "ALERT_SMTP_AUTH_PASSWORD": "changeme",
+    "ALERT_SMTP_FROM": "alerts@example.invalid",
+    "ALERT_SMTP_SMARTHOST": "smtp.example.invalid:587",
+    "ALERT_SMTP_REQUIRE_TLS": "true",
+}
+
+
+def strip_env_file_blocks(compose_text: str) -> tuple[str, list[int]]:
     """
-    Ensure target env file exists. If missing and example exists, copy it.
-    Track created files so we can clean up after the test.
+    Remove any `env_file:` blocks from a compose YAML text without needing a YAML parser.
+
+    Handles:
+      env_file:
+        - /etc/raspberry-pi-homelab/monitoring.env
+      env_file: /path/to/file
+
+    Returns: (patched_text, removed_line_numbers_1based)
     """
-    if example_path.exists() and not target_path.exists():
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(example_path, target_path)
-        created_files.append(target_path)
+    lines = compose_text.splitlines()
+    out: list[str] = []
+    removed: list[int] = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = re.match(r"^(\s*)env_file\s*:(.*)$", line)
+        if not m:
+            out.append(line)
+            i += 1
+            continue
+
+        indent = m.group(1)
+        removed.append(i + 1)
+
+        # Case 1: inline value -> remove just this line
+        rest = (m.group(2) or "").strip()
+        i += 1
+        if rest:
+            continue
+
+        # Case 2: block list below -> remove consecutive "- ..." lines with greater indent
+        while i < len(lines):
+            nxt = lines[i]
+            # Stop when indentation is <= env_file indent (new key or outdent)
+            if re.match(rf"^{re.escape(indent)}\S", nxt):
+                break
+            # Remove list items with more indent
+            if re.match(rf"^{re.escape(indent)}\s+-\s+.+$", nxt):
+                removed.append(i + 1)
+                i += 1
+                continue
+            # Some empty/comment lines inside the block: remove them too to avoid dangling block
+            if nxt.strip() == "" or nxt.lstrip().startswith("#"):
+                removed.append(i + 1)
+                i += 1
+                continue
+            # Any other content with greater indent: conservatively stop
+            break
+
+    return "\n".join(out) + "\n", removed
 
 
 @pytest.mark.precommit
-def test_compose_config(tmp_path):
-    if not COMPOSE_FILE.exists():
-        pytest.fail(f"Compose file missing: {COMPOSE_FILE}")
+def test_compose_config(tmp_path: Path):
+    compose_file = find_monitoring_compose_file()
+    if not compose_file.exists():
+        pytest.fail(f"Compose file missing: {compose_file}")
 
     if not which_ok("docker"):
         pytest.fail("docker is required for this repo's precommit suite")
@@ -43,34 +98,28 @@ def test_compose_config(tmp_path):
     if not cmd:
         pytest.fail("docker compose plugin not available")
 
-    created_files = []
-    try:
-        # Compose file references env_file paths that must exist for `docker compose config`.
-        # We create temporary runtime env files from their tracked examples if needed.
-        ensure_env_from_example(COMPOSE_ENV_EXAMPLE, COMPOSE_ENV, created_files)
-        ensure_env_from_example(ALERTMANAGER_ENV_EXAMPLE, ALERTMANAGER_ENV, created_files)
+    base_text = compose_file.read_text(encoding="utf-8")
+    patched_text, removed_lines = strip_env_file_blocks(base_text)
 
-        env = os.environ.copy()
+    patched = tmp_path / "docker-compose.patched.no-env-file.yml"
+    patched.write_text(patched_text, encoding="utf-8")
 
-        # Provide non-secret defaults that may be referenced in compose or templates
-        env.setdefault("GRAFANA_ADMIN_USER", "admin")
-        env.setdefault("GRAFANA_ADMIN_PASSWORD", "changeme")
+    env = os.environ.copy()
+    for k, v in ENV_DEFAULTS.items():
+        env.setdefault(k, v)
 
-        # Validate compose syntactically and with env_file resolution
-        compose_args = [*cmd, "-f", str(COMPOSE_FILE)]
+    # Prefer JSON output to avoid any YAML parsing in test env
+    args = [*cmd, "-f", str(patched), "config", "--format", "json"]
+    res = run(args, env=env)
 
-        # Optional: also feed Compose variable interpolation from the example env.
-        # This is independent from `env_file:` entries and helps if compose uses ${VARS}.
-        if COMPOSE_ENV_EXAMPLE.exists():
-            compose_args += ["--env-file", str(COMPOSE_ENV_EXAMPLE)]
+    # Some compose versions may not support --format json; fall back to plain config
+    if res.returncode != 0 and "unknown flag: --format" in (res.stderr or "").lower():
+        res = run([*cmd, "-f", str(patched), "config"], env=env)
 
-        res = run([*compose_args, "config"], env=env)
-        assert res.returncode == 0, f"Compose config invalid:\n{res.stdout}\n{res.stderr}"
-
-    finally:
-        # Clean up only what we created
-        for f in created_files:
-            try:
-                f.unlink()
-            except FileNotFoundError:
-                pass
+    assert res.returncode == 0, (
+        "Compose config invalid.\n"
+        f"compose_file={compose_file}\n"
+        f"patched_compose={patched}\n"
+        f"removed_env_file_lines={removed_lines}\n\n"
+        f"stdout:\n{res.stdout}\n\nstderr:\n{res.stderr}"
+    )

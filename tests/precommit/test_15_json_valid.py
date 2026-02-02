@@ -7,14 +7,6 @@ import pytest
 
 from tests._helpers import REPO_ROOT
 
-## This test is no longer need and covered by pre-commit hooks.
-# Keeping it here for historical reasons.
-# See: .pre-commit-config.yaml (jsonlint hook)
-# For this reason changed marker from @pytest.mark.precommit to @pytest.mark.lint
-
-# In the repo, the important JSONs are here:
-# monitoring/grafana/dashboards/**.json
-# Optionally we check all *.json files in the repo (except .git).
 EXCLUDE_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache"}
 
 
@@ -26,6 +18,7 @@ def iter_json_files(root: Path) -> list[Path]:
         files.append(p)
     return sorted(files)
 
+
 @pytest.mark.lint
 def test_all_json_files_are_valid():
     json_files = iter_json_files(REPO_ROOT)
@@ -34,7 +27,6 @@ def test_all_json_files_are_valid():
     errors: list[str] = []
     for f in json_files:
         try:
-            # UTF-8 is normal for Grafana JSON
             data = f.read_text(encoding="utf-8")
             json.loads(data)
         except Exception as e:

@@ -29,7 +29,7 @@ DOCKER_ENGINE_PORT="${DOCKER_ENGINE_PORT:-9323}"
 
 # Current Compose project name (what you expect for *this* repo stack).
 # In your setup, the compose project name is "monitoring" (as shown by `docker compose config`).
-CURRENT_COMPOSE_PROJECT="${CURRENT_COMPOSE_PROJECT:-monitoring}"
+CURRENT_COMPOSE_PROJECT="${CURRENT_COMPOSE_PROJECT:-${COMPOSE_PROJECT_NAME:-homelab-home-prod-mon}}"
 
 # Cleanup targets:
 # - Name-based candidates (typical leftover: "compose_default")

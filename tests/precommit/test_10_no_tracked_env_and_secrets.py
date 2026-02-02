@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 from pathlib import Path
+
 import pytest
+
 from tests._helpers import run
 
 BLOCKED_EXACT = {
@@ -11,11 +15,18 @@ BLOCKED_EXACT = {
 }
 BLOCKED_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
 
+ALLOWED_ENV_EXAMPLES = {
+    ".env.example",
+    "env.example",
+    "alertmanager.env.example",
+}
+
+
 def is_blocked(path: Path) -> bool:
     name = path.name
 
     # allow examples
-    if name.endswith(".env.example") or name == "env.example":
+    if name in ALLOWED_ENV_EXAMPLES or name.endswith(".env.example"):
         return False
 
     if name in BLOCKED_EXACT:
@@ -29,14 +40,16 @@ def is_blocked(path: Path) -> bool:
         return True
 
     parts_lower = [p.lower() for p in path.parts]
+    # block any folder named secrets anywhere
     return "secrets" in parts_lower
+
 
 @pytest.mark.precommit
 def test_no_secret_like_files_tracked():
     res = run(["git", "ls-files"])
     assert res.returncode == 0, res.stderr
 
-    blocked = []
+    blocked: list[str] = []
     for line in res.stdout.splitlines():
         line = line.strip()
         if not line:
@@ -46,9 +59,7 @@ def test_no_secret_like_files_tracked():
             blocked.append(line)
 
     assert not blocked, (
-        "❌ Secret/env-like files are tracked by git:\n"
-        + "\n".join(f" - {f}" for f in blocked)
-        + "\n\nFix:\n"
+        "❌ Secret/env-like files are tracked by git:\n" + "\n".join(f" - {f}" for f in blocked) + "\n\nFix:\n"
         " - Remove from git index: git rm --cached <file>\n"
         " - Add it to .gitignore\n"
     )

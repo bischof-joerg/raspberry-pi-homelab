@@ -22,18 +22,57 @@ dev = [
   "typeguard>=4",
   "pre-commit>=3.7",
   "yamllint>=1.33",
+  "ruff>=0.9",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-  "precommit: checks before committing",
-  "postdeploy: checks after deploy on the raspberry pi",
+  "precommit: fast checks intended for git pre-commit",
+  "lint: static repo checks (yaml/json/merge markers/large files, etc.)",
   "doctor: tooling/config sanity checks for dev environments (WSL/Pi)",
-  "lint: redundant sanity checks run by GitHub pre-commit hook for dev environments (WSL/Pi)"
+  "postdeploy: checks intended to run on the Raspberry Pi after deployment",
 ]
 addopts = [
   "--strict-markers",
   "--maxfail=1",
-  "-m", "not postdeploy",
+  "-m",
+  "not postdeploy",
+]
+
+# Ruff (lint + formatter)
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+exclude = [
+  ".git",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".pytest_cache",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "W",   # pycodestyle warnings
+  "I",   # isort (import sorting)
+  "B",   # flake8-bugbear
+  "UP",  # pyupgrade
+  "SIM", # flake8-simplify
+]
+ignore = [
+  "E501", # handled by formatter/line-length
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**.py" = [
+  "S101", # allow assert in tests (only relevant if you enable bandit rules later)
 ]

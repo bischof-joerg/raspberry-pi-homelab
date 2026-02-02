@@ -3,10 +3,11 @@
 # - Exposes ONLY Grafana by default
 # - Prometheus/Alertmanager UIs are kept internal (enable ports if you really need them)
 
+name: ${COMPOSE_PROJECT_NAME:-homelab-home-prod-mon}
+
 services:
   prometheus:
     image: prom/prometheus:v3.1.0
-    container_name: prometheus
     restart: unless-stopped
     networks: [monitoring]
     # Expose Prometheus UI only if you need it (prefer reverse proxy + auth/IP restriction)
@@ -15,7 +16,7 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
-      - /srv/data/monitoring/prometheus:/prometheus
+      - /srv/data/stacks/monitoring/prometheus:/prometheus
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../prometheus/rules:/etc/prometheus/rules:ro
     command:
@@ -48,13 +49,12 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.28.0
-    container_name: alertmanager
     restart: unless-stopped
     networks: [monitoring]
     ports:
       - "127.0.0.1:9093:9093"
     volumes:
-      - /srv/data/monitoring/alertmanager:/alertmanager
+      - /srv/data/stacks/monitoring/alertmanager:/alertmanager
       # Config + templates come from the single volume prepared by the renderer
       - alertmanager-config:/etc/alertmanager:ro
     command:
@@ -79,11 +79,11 @@ services:
   # One-shot renderer: renders alertmanager.yml from template using envsubst and copies templates into the same volume.
   alertmanager-config-render:
     image: alpine:3.20
-    container_name: alertmanager-config-render
     restart: "no"
     networks: [monitoring]
+    # All secrets come from the host-only env-file (do not store secrets in git)
     env_file:
-      - ../alertmanager/alertmanager.env
+      - /etc/raspberry-pi-homelab/monitoring.env
     volumes:
       - alertmanager-config:/out
       - ../alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
@@ -118,13 +118,13 @@ services:
 
   grafana:
     image: grafana/grafana:11.4.2
-    container_name: grafana
     restart: unless-stopped
     networks: [monitoring]
     ports:
       - "3000:3000"
+    # All secrets come from the host-only env-file (do not store secrets in git)
     env_file:
-      - ../compose/.env
+      - /etc/raspberry-pi-homelab/monitoring.env
     environment:
       # secrets in env_file (and keep it out of git)
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
@@ -137,7 +137,7 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_SERVER_ENABLE_GZIP: "true" # Better performance on Pi
     volumes:
-      - /srv/data/monitoring/grafana:/var/lib/grafana
+      - /srv/data/stacks/monitoring/grafana:/var/lib/grafana
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
     healthcheck:
@@ -157,7 +157,6 @@ services:
 
   node-exporter:
     image: quay.io/prometheus/node-exporter:v1.8.2
-    container_name: node-exporter
     restart: unless-stopped
     networks: [monitoring]
     # Do NOT expose to LAN; Prometheus scrapes it via Docker network
@@ -184,7 +183,6 @@ services:
 
   cadvisor:
     image: ghcr.io/google/cadvisor:0.56.2
-    container_name: cadvisor
     restart: unless-stopped
     # Use root and privileged to ensure cgroup v2 visibility on Pi 5 kernel
     user: root
@@ -237,6 +235,4 @@ networks:
           gateway: 172.20.0.1
 
 volumes:
-  alertmanager-config:
-    external: true
-    name: alertmanager-config
+  alertmanager-config: {}

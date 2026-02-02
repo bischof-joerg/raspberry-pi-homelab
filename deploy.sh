@@ -1,21 +1,32 @@
 #!/usr/bin/env bash
 #
-# Manifests the deployment of the monitoring stack using Docker Compose.
-# Intended to be called with sudo to ensure proper permissions after 'git pull'.
+# Deploy monitoring stack (GitOps) using Docker Compose.
+# Intended to be executed on the Pi via sudo after `git pull`.
+#
+# Key principles:
+# - No secrets in repo
+# - Host-only secrets/config via /etc/raspberry-pi-homelab/monitoring.env
+# - Compose file under stacks/monitoring/compose
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE_FILE="${COMPOSE_FILE:-$REPO_ROOT/monitoring/compose/docker-compose.yml}"
 
-# Secrets are NOT stored in the repo. Default location on the Pi:
-SECRETS_FILE="${SECRETS_FILE:-/etc/raspberry-pi-homelab/.env}"
+# Prefer new target layout; allow override for transitions
+COMPOSE_FILE="${COMPOSE_FILE:-$REPO_ROOT/stacks/monitoring/compose/docker-compose.yml}"
+if [[ ! -f "$COMPOSE_FILE" ]]; then
+  # fallback for legacy layout
+  COMPOSE_FILE="$REPO_ROOT/monitoring/compose/docker-compose.yml"
+fi
 
-# Non-secret compose env file (optional). NOTE: If you decide to place secrets here,
-# keep it OUT of git and ensure permissions are safe. Prefer SECRETS_FILE.
-COMPOSE_ENV_FILE="${COMPOSE_ENV_FILE:-$REPO_ROOT/monitoring/compose/.env}"
+# Host-only config+secrets for the monitoring stack (root-only, not in git)
+SECRETS_FILE="${SECRETS_FILE:-/etc/raspberry-pi-homelab/monitoring.env}"
 
-INIT_SCRIPT="${INIT_SCRIPT:-$REPO_ROOT/monitoring/compose/init-permissions.sh}"
+# Optional init script (if you keep it); default to legacy path if present
+INIT_SCRIPT="${INIT_SCRIPT:-$REPO_ROOT/stacks/monitoring/compose/init-permissions.sh}"
+if [[ ! -f "$INIT_SCRIPT" ]]; then
+  INIT_SCRIPT="$REPO_ROOT/monitoring/compose/init-permissions.sh"
+fi
 
 # toggles with defaults
 RUN_INIT_PERMISSIONS="${RUN_INIT_PERMISSIONS:-auto}"     # auto|always|never
@@ -27,7 +38,6 @@ FIX_REPO_OWNERSHIP="${FIX_REPO_OWNERSHIP:-auto}"         # auto|always|never
 REPO_OWNER_USER="${REPO_OWNER_USER:-admin}"
 REPO_OWNER_GROUP="${REPO_OWNER_GROUP:-admin}"
 
-# logging and error handling functions
 log(){ echo "[$(date -Is)] $*"; }
 die(){ echo "ERROR: $*" >&2; exit 2; }
 
@@ -61,44 +71,28 @@ check_prereqs() {
 
 refuse_repo_root_env() {
   # docker compose auto-loads .env from the working directory.
-  # If this file is root-owned/0600, 'admin' cannot run 'docker compose ps' => breaks ops.
   if [[ -e "$REPO_ROOT/.env" ]]; then
-    die "Refusing to use repo-root .env ($REPO_ROOT/.env). Remove it and use $SECRETS_FILE (or a host-only secrets file) instead."
+    die "Refusing repo-root .env ($REPO_ROOT/.env). Remove it and use $SECRETS_FILE instead."
   fi
 }
 
 validate_secrets_file() {
-  [[ -e "$SECRETS_FILE" ]] || die "Secrets file not found: $SECRETS_FILE"
-  [[ -r "$SECRETS_FILE" ]] || die "Secrets file not readable: $SECRETS_FILE"
+  [[ -e "$SECRETS_FILE" ]] || die "Stack env file not found: $SECRETS_FILE"
+  [[ -r "$SECRETS_FILE" ]] || die "Stack env file not readable: $SECRETS_FILE"
 
-  # Enforce: owned by root and not accessible by group/other (0600 recommended).
   local owner group mode
   owner="$(stat -c '%U' "$SECRETS_FILE" 2>/dev/null || true)"
   group="$(stat -c '%G' "$SECRETS_FILE" 2>/dev/null || true)"
   mode="$(stat -c '%a' "$SECRETS_FILE" 2>/dev/null || true)"
 
-  [[ "$owner" == "root" ]] || die "Secrets file must be owned by root (found owner=$owner): $SECRETS_FILE"
-  [[ "$group" == "root" ]] || die "Secrets file should be group root (found group=$group): $SECRETS_FILE"
-
-  # Reject any group/other permissions (anything like 640, 644, 660, 664, 600 is OK; but we require strict 600).
-  # If you want to allow 640, relax this check; for PATs, 600 is the safer default.
-  [[ "$mode" == "600" ]] || die "Secrets file must have mode 600 (found $mode): $SECRETS_FILE"
-}
-
-load_secrets() {
-  validate_secrets_file
-
-  # Load into current shell (do NOT auto-export everything).
-  # shellcheck disable=SC1090
-  source "$SECRETS_FILE"
+  [[ "$owner" == "root" ]] || die "Env file must be owned by root (found owner=$owner): $SECRETS_FILE"
+  [[ "$group" == "root" ]] || die "Env file should be group root (found group=$group): $SECRETS_FILE"
+  [[ "$mode" == "600" ]] || die "Env file must have mode 600 (found $mode): $SECRETS_FILE"
 }
 
 compose() {
-  if [[ -f "$COMPOSE_ENV_FILE" ]]; then
-    docker compose --env-file "$COMPOSE_ENV_FILE" -f "$COMPOSE_FILE" "$@"
-  else
-    docker compose -f "$COMPOSE_FILE" "$@"
-  fi
+  # Always drive compose via host-only env file to keep repo hermetic.
+  docker compose --env-file "$SECRETS_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
 repo_ownership_mismatch_exists() {
@@ -115,16 +109,16 @@ fix_repo_ownership_if_needed() {
   getent group "$REPO_OWNER_GROUP" >/dev/null 2>&1 || die "Group not found: REPO_OWNER_GROUP=$REPO_OWNER_GROUP"
 
   if [[ "$FIX_REPO_OWNERSHIP" == "always" ]]; then
-    log "repo-ownership: forcing ownership to ${REPO_OWNER_USER}:${REPO_OWNER_GROUP} (FIX_REPO_OWNERSHIP=always)"
+    log "repo-ownership: forcing ownership to ${REPO_OWNER_USER}:${REPO_OWNER_GROUP}"
     chown -R --no-dereference "${REPO_OWNER_USER}:${REPO_OWNER_GROUP}" "$REPO_ROOT"
     return 0
   fi
 
   if repo_ownership_mismatch_exists; then
     if [[ "$FIX_REPO_OWNERSHIP" == "never" ]]; then
-      die "repo-ownership: mismatch detected in $REPO_ROOT; refusing to fix (FIX_REPO_OWNERSHIP=never)"
+      die "repo-ownership: mismatch detected; refusing to fix (FIX_REPO_OWNERSHIP=never)"
     fi
-    log "repo-ownership: mismatch detected; fixing ownership to ${REPO_OWNER_USER}:${REPO_OWNER_GROUP} (FIX_REPO_OWNERSHIP=auto)"
+    log "repo-ownership: mismatch detected; fixing to ${REPO_OWNER_USER}:${REPO_OWNER_GROUP}"
     chown -R --no-dereference "${REPO_OWNER_USER}:${REPO_OWNER_GROUP}" "$REPO_ROOT"
     log "repo-ownership: fixed"
   else
@@ -154,34 +148,30 @@ maybe_init_permissions() {
 
 needs_ghcr_auth() {
   # If compose file references ghcr.io images, assume auth might be needed.
-  grep -qE '^\s*image:\s*ghcr\.io/' "$COMPOSE_FILE"
+  grep -Eq 'image:\s*ghcr\.io/' "$COMPOSE_FILE"
 }
 
 with_ephemeral_docker_config() {
-  # Creates an ephemeral DOCKER_CONFIG so docker login does NOT write to /root/.docker/config.json
   local docker_cfg_tmp=""
   docker_cfg_tmp="$(mktemp -d)"
   chmod 700 "$docker_cfg_tmp"
-
-  # Ensure cleanup even if something fails
   trap 'rm -rf "${docker_cfg_tmp:-}"' RETURN
-
   export DOCKER_CONFIG="$docker_cfg_tmp"
 
   if needs_ghcr_auth; then
-    # Load secrets only if GHCR is actually needed
-    load_secrets
+    validate_secrets_file
+    # shellcheck disable=SC1090
+    source "$SECRETS_FILE"
 
     : "${GHCR_USER:?Missing GHCR_USER in $SECRETS_FILE}"
     : "${GHCR_PAT:?Missing GHCR_PAT in $SECRETS_FILE}"
 
     log "ghcr: logging in (ephemeral DOCKER_CONFIG)"
     if ! echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
-      die "ghcr: login failed - consider hat your token might need to regenerated on GitHub. Check GHCR_USER and GHCR_PAT in $SECRETS_FILE"
+      die "ghcr: login failed (check GHCR_USER/GHCR_PAT in $SECRETS_FILE)"
     fi
     log "ghcr: login succeeded"
 
-    # Reduce exposure window inside this process
     unset GHCR_PAT || true
     unset GHCR_USER || true
   else
@@ -210,26 +200,17 @@ main() {
   sanity_checks
   cd "$REPO_ROOT"
 
-  # Ensure the repo remains operable by the intended non-root user
   fix_repo_ownership_if_needed
-
-  # Enforce GitOps discipline: no secrets in repo root .env
   refuse_repo_root_env
-
   check_prereqs
-
+  validate_secrets_file
   maybe_init_permissions
 
   if [[ "$PULL_IMAGES" == "1" ]]; then
     log "compose: pull + up (single ghcr session)"
     with_ephemeral_docker_config bash -euo pipefail -c '
-      if [[ -f "'"$COMPOSE_ENV_FILE"'" ]]; then
-        docker compose --env-file "'"$COMPOSE_ENV_FILE"'" -f "'"$COMPOSE_FILE"'" pull
-        docker compose --env-file "'"$COMPOSE_ENV_FILE"'" -f "'"$COMPOSE_FILE"'" up -d
-      else
-        docker compose -f "'"$COMPOSE_FILE"'" pull
-        docker compose -f "'"$COMPOSE_FILE"'" up -d
-      fi
+      docker compose --env-file "'"$SECRETS_FILE"'" -f "'"$COMPOSE_FILE"'" pull
+      docker compose --env-file "'"$SECRETS_FILE"'" -f "'"$COMPOSE_FILE"'" up -d
     '
   else
     log "compose: pull skipped (PULL_IMAGES=0)"
@@ -240,7 +221,6 @@ main() {
   compose ps
 
   run_postdeploy_tests
-
   log "deploy: done"
 }
 

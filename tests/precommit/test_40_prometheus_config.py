@@ -1,16 +1,31 @@
-import pytest
-from pathlib import Path
-from tests._helpers import run, which_ok, REPO_ROOT
+from __future__ import annotations
 
-PROM_CONFIG = REPO_ROOT / "monitoring/prometheus/prometheus.yml"
+from pathlib import Path
+
+import pytest
+
+from tests._helpers import REPO_ROOT, run, which_ok
+
+
+def find_prometheus_config() -> Path:
+    candidates = [
+        REPO_ROOT / "stacks" / "monitoring" / "prometheus" / "prometheus.yml",
+        REPO_ROOT / "monitoring" / "prometheus" / "prometheus.yml",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return candidates[0]
+
 
 @pytest.mark.precommit
 def test_prometheus_config():
-    if not PROM_CONFIG.exists():
-        pytest.fail(f"Missing: {PROM_CONFIG}")
+    prom_config = find_prometheus_config()
+    if not prom_config.exists():
+        pytest.fail(f"Missing: {prom_config}")
 
     if not which_ok("promtool"):
         pytest.skip("promtool not installed")
 
-    res = run(["promtool", "check", "config", str(PROM_CONFIG)])
+    res = run(["promtool", "check", "config", str(prom_config)])
     assert res.returncode == 0, f"promtool failed:\n{res.stdout}\n{res.stderr}"

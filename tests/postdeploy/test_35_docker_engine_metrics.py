@@ -1,6 +1,5 @@
 # tests/postdeploy/test_35_docker_engine_metrics.py
 import json
-import os
 import time
 import urllib.parse
 import urllib.request
@@ -20,10 +19,12 @@ EXPECTED_GATEWAY = "172.20.0.1"
 # Metric name that should exist if dockerd metrics are enabled (dockerd exposes it).
 REQUIRED_SAMPLE_METRIC = "engine_daemon_engine_info"
 
+
 def _get_ipam_configs(net: dict) -> list[dict]:
     ipam = net.get("IPAM") or {}
     cfg = ipam.get("Config")
     return cfg if isinstance(cfg, list) else []
+
 
 def _assert_monitoring_ipam_is_stable(net: dict) -> tuple[str, str]:
     """
@@ -39,15 +40,14 @@ def _assert_monitoring_ipam_is_stable(net: dict) -> tuple[str, str]:
     gateway = cfg.get("Gateway")
 
     assert subnet == EXPECTED_SUBNET, (
-        f"monitoring network Subnet must be {EXPECTED_SUBNET} but is {subnet!r}. "
-        f"IPAM.Config={cfgs}"
+        f"monitoring network Subnet must be {EXPECTED_SUBNET} but is {subnet!r}. IPAM.Config={cfgs}"
     )
     assert gateway == EXPECTED_GATEWAY, (
-        f"monitoring network Gateway must be {EXPECTED_GATEWAY} but is {gateway!r}. "
-        f"IPAM.Config={cfgs}"
+        f"monitoring network Gateway must be {EXPECTED_GATEWAY} but is {gateway!r}. IPAM.Config={cfgs}"
     )
 
     return subnet, gateway
+
 
 def _http_get_json(url: str, timeout_s: int = 5) -> dict:
     with urllib.request.urlopen(url, timeout=timeout_s) as r:

@@ -5,8 +5,7 @@ Normalize Grafana dashboard JSONs for FILE PROVISIONING.
 Main fixes:
 1. DS_PROMETHEUS normalization.
 2. Fixes internal Dashboard-Links by mapping old UIDs to new ones.
-3. Stable UIDs via manifest or filename.
-4. Title deduplication.
+3. Stable UIDs via filename.
 """
 
 from __future__ import annotations
@@ -14,11 +13,10 @@ from __future__ import annotations
 import json
 import re
 import sys
-from dataclasses import dataclass
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Set, Tuple
+from typing import Any
 
-DASH_ROOT = Path("monitoring/grafana/dashboards")
 PROM_UID = "DS_PROMETHEUS"
 PROM_NAME = "Prometheus"
 GRAFANA_INTERNAL_UID = "-- Grafana --"
@@ -27,20 +25,31 @@ KEEP_INPUTS = False
 
 _UID_ALLOWED = re.compile(r"^[a-zA-Z0-9_-]{1,40}$")
 
+
+def dash_root() -> Path:
+    p = Path("stacks/monitoring/grafana/dashboards")
+    if p.exists():
+        return p
+    return Path("monitoring/grafana/dashboards")
+
+
 def slugify_uid(s: str, limit: int = 40) -> str:
     s = (s or "").strip().lower().replace(".", "-")
     s = re.sub(r"[^a-z0-9_-]+", "-", s)
     s = re.sub(r"-{2,}", "-", s).strip("-")
     return s[:limit] or "dashboard"
 
+
 def ensure_uid(uid: str) -> str:
     uid = (uid or "").strip()
     return uid if _UID_ALLOWED.match(uid) else slugify_uid(uid)
+
 
 def iter_json_files(root: Path) -> Iterable[Path]:
     for p in root.rglob("*.json"):
         if p.is_file() and p.name != "manifest.json" and not p.name.startswith("."):
             yield p
+
 
 def normalize_datasource_value(ds_val: Any) -> Any:
     if isinstance(ds_val, dict):
@@ -54,6 +63,7 @@ def normalize_datasource_value(ds_val: Any) -> Any:
         return {"type": "prometheus", "uid": PROM_UID}
     return ds_val
 
+
 def walk_and_patch(node: Any) -> Any:
     if isinstance(node, dict):
         if "datasource" in node:
@@ -63,37 +73,34 @@ def walk_and_patch(node: Any) -> Any:
         return [walk_and_patch(x) for x in node]
     return node
 
+
 def main() -> int:
-    if not DASH_ROOT.exists():
-        print(f"ERROR: {DASH_ROOT} not found.")
+    root = dash_root()
+    if not root.exists():
+        print(f"ERROR: dashboards root not found: {root}")
         return 1
 
-    # 1. Collect all dashboards and determine NEW UIDs
-    docs: list[list[Any]] = [] # [path, data, old_uid]
-    uid_map: Dict[str, str] = {}
+    docs: list[tuple[Path, dict]] = []
+    uid_map: dict[str, str] = {}
 
-    for f in iter_json_files(DASH_ROOT):
+    for f in iter_json_files(root):
         data = json.loads(f.read_text(encoding="utf-8"))
         old_uid = data.get("uid")
 
-        # Determine target UID (slugified filename)
-        rel = f.resolve().relative_to(DASH_ROOT.resolve())
+        rel = f.resolve().relative_to(root.resolve())
         new_uid = ensure_uid(slugify_uid(str(rel.with_suffix("")).replace("/", "-")))
 
         if old_uid:
-            uid_map[old_uid] = new_uid
+            uid_map[str(old_uid)] = new_uid
 
         data["uid"] = new_uid
         data["id"] = None
-        docs.append([f, data])
+        docs.append((f, data))
 
-    # 2. Patch content and replace internal UID references
-    final_docs = []
+    final_docs: list[tuple[Path, dict]] = []
     for f, data in docs:
-        # Deep patch datasources
         data = walk_and_patch(data)
 
-        # Replace broken internal links (old UID -> new UID)
         raw_json = json.dumps(data)
         for old, new in uid_map.items():
             if old != new:
@@ -104,12 +111,12 @@ def main() -> int:
             data.pop("__inputs", None)
         final_docs.append((f, data))
 
-    # 3. Write back
     for f, data in final_docs:
         f.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     print(f"Normalized {len(final_docs)} dashboards. Fixed {len(uid_map)} potential UID links.")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

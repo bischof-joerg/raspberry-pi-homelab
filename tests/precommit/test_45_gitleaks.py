@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import pytest
+
 from tests._helpers import run, which_ok
+
 
 @pytest.mark.precommit
 def test_gitleaks_detect():

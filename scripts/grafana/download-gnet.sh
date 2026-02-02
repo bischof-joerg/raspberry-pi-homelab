@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
-
-# Downloads Grafana dashboards from Grafana.net based on a manifest file.
-# The manifest file specifies dashboard IDs, target folders, and filenames.
-# Checks whether dashboards need to be updated based on their latest revision by using a state file .gnet-revisions.json.
-# Usage: ./download-gnet.sh [manifest.json]
-
 set -euo pipefail
-
-MANIFEST="${1:-monitoring/grafana/dashboards/manifest.json}"
-BASE_URL="https://grafana.com/api/dashboards"
-STATE_FILE="monitoring/grafana/dashboards/.gnet-revisions.json"
 
 require() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: missing tool: $1" >&2; exit 2; }; }
 require jq
 require curl
 
-# Initialize state file if missing
+# Prefer target layout
+DASH_ROOT_DEFAULT="stacks/monitoring/grafana/dashboards"
+if [[ ! -d "$DASH_ROOT_DEFAULT" ]]; then
+  DASH_ROOT_DEFAULT="monitoring/grafana/dashboards"
+fi
+
+MANIFEST="${1:-${DASH_ROOT_DEFAULT}/manifest.json}"
+BASE_URL="https://grafana.com/api/dashboards"
+STATE_FILE="${DASH_ROOT_DEFAULT}/.gnet-revisions.json"
+
+if [[ ! -f "$MANIFEST" ]]; then
+  echo "ERROR: manifest not found: $MANIFEST" >&2
+  exit 2
+fi
+
+mkdir -p "$(dirname "$STATE_FILE")"
 if [[ ! -f "$STATE_FILE" ]]; then
-  mkdir -p "$(dirname "$STATE_FILE")"
   echo '{}' > "$STATE_FILE"
 fi
 
@@ -40,6 +44,7 @@ get_state_rev() {
 
 set_state_rev() {
   local id="$1" rev="$2"
+  local tmp
   tmp="$(mktemp)"
   jq --arg id "$id" --argjson rev "$rev" '.[$id] = $rev' "$STATE_FILE" > "$tmp"
   mv "$tmp" "$STATE_FILE"
@@ -56,7 +61,7 @@ jq -c '.dashboards[]' "$MANIFEST" | while read -r item; do
   id="$(jq -r '.gnet_id' <<<"$item")"
   filename="$(jq -r '.filename' <<<"$item")"
 
-  out_dir="monitoring/grafana/dashboards/${folder}"
+  out_dir="${DASH_ROOT_DEFAULT}/${folder}"
   mkdir -p "$out_dir"
 
   remote_rev="$(latest_revision "$id")"
@@ -71,9 +76,7 @@ jq -c '.dashboards[]' "$MANIFEST" | while read -r item; do
   tmp="$(mktemp)"
   curl -fsSL "${BASE_URL}/${id}/revisions/${remote_rev}/download" -o "$tmp"
 
-  # JSON sanity
   jq -e . "$tmp" >/dev/null
-
   mv "$tmp" "${out_dir}/${filename}"
   set_state_rev "$id" "$remote_rev"
 done
