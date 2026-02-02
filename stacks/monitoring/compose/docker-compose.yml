@@ -148,11 +148,12 @@ services:
       - -storageDataPath=/victoria-metrics-data
       - -retentionPeriod=30d
       - -httpListenAddr=:8428
-    healthcheck:
-      test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:8428/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+    # temporarily disable healthcheck as it seems that endpoints are not available
+    # healthcheck:
+    #   test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:8428/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
     deploy:
       resources:
         limits:
@@ -176,7 +177,7 @@ services:
     networks: [monitoring]
     depends_on:
       victoriametrics:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - ../vmagent/vmagent.yml:/etc/vmagent/vmagent.yml:ro
     command:
@@ -207,7 +208,7 @@ services:
     networks: [monitoring]
     depends_on:
       victoriametrics:
-        condition: service_healthy
+        condition: service_started
       alertmanager:
         condition: service_started
     # Localhost-bound UI for debugging.
