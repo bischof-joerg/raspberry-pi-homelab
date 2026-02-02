@@ -1,7 +1,8 @@
 # docker-compose.yml
 # Monitoring stack for Raspberry Pi (ARM64) with IaC + basic hardening
+# Commit A: Add VictoriaMetrics components alongside Prometheus (safe cutover).
 # - Exposes ONLY Grafana by default
-# - Prometheus/Alertmanager UIs are kept internal (enable ports if you really need them)
+# - Prometheus/Alertmanager/VictoriaMetrics UIs are kept localhost-bound (enable LAN only if you really need it)
 
 name: ${COMPOSE_PROJECT_NAME:-homelab-home-prod-mon}
 
@@ -132,6 +133,107 @@ services:
     read_only: false
     # no mpfs: - /tmp section as the alertmanager-config-render service is a one-shot initialization container (it runs once and exits).
     # it woult only add slight overhead and is not needed.
+
+  # --- New: VictoriaMetrics single-node TSDB ---
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.110.28
+    restart: unless-stopped
+    networks: [monitoring]
+    # Localhost-bound UI/API for debugging; remove or move behind Traefik later.
+    ports:
+      - "127.0.0.1:8428:8428"
+    volumes:
+      - /srv/data/stacks/monitoring/victoriametrics:/victoria-metrics-data
+    command:
+      - -storageDataPath=/victoria-metrics-data
+      - -retentionPeriod=30d
+      - -httpListenAddr=:8428
+    healthcheck:
+      test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:8428/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  # --- New: scrape agent -> remote_write into VictoriaMetrics ---
+  vmagent:
+    image: victoriametrics/vmagent:v1.110.28
+    restart: unless-stopped
+    networks: [monitoring]
+    depends_on:
+      victoriametrics:
+        condition: service_healthy
+    volumes:
+      - ../vmagent/vmagent.yml:/etc/vmagent/vmagent.yml:ro
+    command:
+      - -promscrape.config=/etc/vmagent/vmagent.yml
+      - -remoteWrite.url=http://victoriametrics:8428/api/v1/write
+      - -httpListenAddr=:8429
+      - -promscrape.suppressScrapeErrors
+    healthcheck:
+      test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:8429/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  # --- New: alert rules evaluation -> Alertmanager ---
+  vmalert:
+    image: victoriametrics/vmalert:v1.110.28
+    restart: unless-stopped
+    networks: [monitoring]
+    depends_on:
+      victoriametrics:
+        condition: service_healthy
+      alertmanager:
+        condition: service_started
+    # Localhost-bound UI for debugging.
+    ports:
+      - "127.0.0.1:8880:8880"
+    volumes:
+      - ../vmalert/vmalert.yml:/etc/vmalert/vmalert.yml:ro
+      - ../vmalert/rules:/etc/vmalert/rules:ro
+    command:
+      - -config=/etc/vmalert/vmalert.yml
+      - -httpListenAddr=:8880
+    healthcheck:
+      test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:8880/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
 
   grafana:
     image: grafana/grafana:11.4.2
