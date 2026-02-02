@@ -136,7 +136,7 @@ services:
 
   # --- New: VictoriaMetrics single-node TSDB ---
   victoriametrics:
-    image: victoriametrics/victoria-metrics:v1.110.28
+    image: victoriametrics/victoria-metrics:v1.135.0
     restart: unless-stopped
     networks: [monitoring]
     # Localhost-bound UI/API for debugging; remove or move behind Traefik later.
@@ -171,7 +171,7 @@ services:
 
   # --- New: scrape agent -> remote_write into VictoriaMetrics ---
   vmagent:
-    image: victoriametrics/vmagent:v1.110.28
+    image: victoriametrics/vmagent:v1.135.0
     restart: unless-stopped
     networks: [monitoring]
     depends_on:
@@ -202,7 +202,7 @@ services:
 
   # --- New: alert rules evaluation -> Alertmanager ---
   vmalert:
-    image: victoriametrics/vmalert:v1.110.28
+    image: victoriametrics/vmalert:v1.135.0
     restart: unless-stopped
     networks: [monitoring]
     depends_on:
