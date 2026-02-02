@@ -62,6 +62,9 @@ def test_compose_services_state_json():
         "alertmanager": "running",
         "node-exporter": "running",
         "cadvisor": "running",
+        "victoriametrics": "running",
+        "vmagent": "running",
+        "vmalert": "running",
         # one-shot job:
         "alertmanager-config-render": "exited",
     }
@@ -95,7 +98,16 @@ def test_compose_services_not_restarting_or_unhealthy():
     ps_rows = compose_ps_json(compose_file=COMPOSE_FILE)
     rows = compose_services_by_name(ps_rows)
 
-    services = ["prometheus", "grafana", "alertmanager", "node-exporter", "cadvisor"]
+    services = [
+        "prometheus",
+        "grafana",
+        "alertmanager",
+        "node-exporter",
+        "cadvisor",
+        "victoriametrics",
+        "vmagent",
+        "vmalert",
+    ]
 
     missing = [s for s in services if s not in rows]
     assert not missing, f"Missing services in compose ps: {missing}\nGot: {sorted(rows.keys())}"
