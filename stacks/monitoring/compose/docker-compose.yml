@@ -56,7 +56,7 @@ services:
     volumes:
       - /srv/data/stacks/monitoring/alertmanager:/alertmanager
       # Config + templates come from the single volume prepared by the renderer
-      - alertmanager-config:/etc/alertmanager:ro
+      - /srv/data/stacks/monitoring/alertmanager-config:/etc/alertmanager:ro
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager
@@ -85,7 +85,7 @@ services:
     env_file:
       - /etc/raspberry-pi-homelab/monitoring.env
     volumes:
-      - alertmanager-config:/out
+      - /srv/data/stacks/monitoring/alertmanager-config:/out
       - ../alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
       - ../alertmanager/templates:/in/templates:ro
     command:
@@ -235,4 +235,4 @@ networks:
           gateway: 172.20.0.1
 
 volumes:
-  alertmanager-config: {}
+  alertmanager-config:
