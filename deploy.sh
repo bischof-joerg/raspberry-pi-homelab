@@ -7,6 +7,10 @@
 # - No secrets in repo
 # - Host-only secrets/config via /etc/raspberry-pi-homelab/monitoring.env
 # - Compose file under stacks/monitoring/compose
+#
+# Notes:
+# - docker compose auto-loads ".env" from the working directory. We refuse repo-root .env.
+# - GHCR login is OPTIONAL. If GHCR_USER/GHCR_PAT are absent and images are public, we proceed.
 
 set -euo pipefail
 
@@ -22,7 +26,7 @@ fi
 # Host-only config+secrets for the monitoring stack (root-only, not in git)
 SECRETS_FILE="${SECRETS_FILE:-/etc/raspberry-pi-homelab/monitoring.env}"
 
-# Optional init script (if you keep it); default to legacy path if present
+# Init script path
 INIT_SCRIPT="${INIT_SCRIPT:-$REPO_ROOT/stacks/monitoring/compose/init-permissions.sh}"
 if [[ ! -f "$INIT_SCRIPT" ]]; then
   INIT_SCRIPT="$REPO_ROOT/monitoring/compose/init-permissions.sh"
@@ -126,28 +130,47 @@ fix_repo_ownership_if_needed() {
   fi
 }
 
+init_permissions_needed() {
+  [[ -f "$INIT_SCRIPT" ]] || return 1
+  # init-permissions.sh --check returns:
+  # 0 = OK, 1 = needs changes
+  if bash "$INIT_SCRIPT" --check; then
+    return 1
+  fi
+  return 0
+}
+
 maybe_init_permissions() {
   [[ -f "$INIT_SCRIPT" ]] || { log "init-permissions: not found, skipping ($INIT_SCRIPT)"; return 0; }
 
   case "$RUN_INIT_PERMISSIONS" in
-    never)  log "init-permissions: skipped (RUN_INIT_PERMISSIONS=never)"; return 0 ;;
-    always) ;;
+    never)
+      log "init-permissions: skipped (RUN_INIT_PERMISSIONS=never)"
+      return 0
+      ;;
+    always)
+      log "init-permissions: running (RUN_INIT_PERMISSIONS=always) $INIT_SCRIPT"
+      bash "$INIT_SCRIPT"
+      log "init-permissions: done"
+      return 0
+      ;;
     auto)
-      if compose ps --status running 2>/dev/null | grep -q .; then
-        log "init-permissions: skipped (stack running; RUN_INIT_PERMISSIONS=auto)"
-        return 0
+      if init_permissions_needed; then
+        log "init-permissions: running (needed) $INIT_SCRIPT"
+        bash "$INIT_SCRIPT"
+        log "init-permissions: done"
+      else
+        log "init-permissions: skipped (already correct; RUN_INIT_PERMISSIONS=auto)"
       fi
       ;;
-    *) die "Invalid RUN_INIT_PERMISSIONS=$RUN_INIT_PERMISSIONS (use auto|always|never)" ;;
+    *)
+      die "Invalid RUN_INIT_PERMISSIONS=$RUN_INIT_PERMISSIONS (use auto|always|never)"
+      ;;
   esac
-
-  log "init-permissions: running $INIT_SCRIPT"
-  bash "$INIT_SCRIPT"
-  log "init-permissions: done"
 }
 
 needs_ghcr_auth() {
-  # If compose file references ghcr.io images, assume auth might be needed.
+  # If compose file references ghcr.io images, auth might be needed.
   grep -Eq 'image:\s*ghcr\.io/' "$COMPOSE_FILE"
 }
 
@@ -163,17 +186,18 @@ with_ephemeral_docker_config() {
     # shellcheck disable=SC1090
     source "$SECRETS_FILE"
 
-    : "${GHCR_USER:?Missing GHCR_USER in $SECRETS_FILE}"
-    : "${GHCR_PAT:?Missing GHCR_PAT in $SECRETS_FILE}"
-
-    log "ghcr: logging in (ephemeral DOCKER_CONFIG)"
-    if ! echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
-      die "ghcr: login failed (check GHCR_USER/GHCR_PAT in $SECRETS_FILE)"
+    # Optional: only login if creds are present.
+    if [[ -n "${GHCR_USER:-}" && -n "${GHCR_PAT:-}" ]]; then
+      log "ghcr: logging in (ephemeral DOCKER_CONFIG)"
+      if ! echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
+        die "ghcr: login failed (check GHCR_USER/GHCR_PAT in $SECRETS_FILE)"
+      fi
+      log "ghcr: login succeeded"
+      unset GHCR_PAT || true
+      unset GHCR_USER || true
+    else
+      log "ghcr: compose uses ghcr.io but GHCR_USER/GHCR_PAT not set; proceeding without login (public images expected)"
     fi
-    log "ghcr: login succeeded"
-
-    unset GHCR_PAT || true
-    unset GHCR_USER || true
   else
     log "ghcr: not used by compose; skipping login"
   fi
@@ -204,6 +228,8 @@ main() {
   refuse_repo_root_env
   check_prereqs
   validate_secrets_file
+
+  # Ensure host paths are correctly owned BEFORE starting services.
   maybe_init_permissions
 
   if [[ "$PULL_IMAGES" == "1" ]]; then
@@ -221,6 +247,7 @@ main() {
   compose ps
 
   run_postdeploy_tests
+
   log "deploy: done"
 }
 
