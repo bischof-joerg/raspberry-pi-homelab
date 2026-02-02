@@ -81,6 +81,13 @@ services:
     image: alpine:3.20
     restart: "no"
     networks: [monitoring]
+    environment:
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
+      ALERT_SMTP_SMARTHOST: ${ALERT_SMTP_SMARTHOST}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM}
+      ALERT_SMTP_AUTH_USERNAME: ${ALERT_SMTP_AUTH_USERNAME}
+      ALERT_SMTP_AUTH_PASSWORD: ${ALERT_SMTP_AUTH_PASSWORD}
+      ALERT_SMTP_REQUIRE_TLS: ${ALERT_SMTP_REQUIRE_TLS}
     volumes:
       - /srv/data/stacks/monitoring/alertmanager-config:/out
       - ../alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
@@ -90,6 +97,14 @@ services:
       - -lc
       - |
         set -euo pipefail
+
+        : "${ALERT_EMAIL_TO:?missing ALERT_EMAIL_TO}"
+        : "${ALERT_SMTP_SMARTHOST:?missing ALERT_SMTP_SMARTHOST}"
+        : "${ALERT_SMTP_FROM:?missing ALERT_SMTP_FROM}"
+        : "${ALERT_SMTP_AUTH_USERNAME:?missing ALERT_SMTP_AUTH_USERNAME}"
+        : "${ALERT_SMTP_AUTH_PASSWORD:?missing ALERT_SMTP_AUTH_PASSWORD}"
+        : "${ALERT_SMTP_REQUIRE_TLS:?missing ALERT_SMTP_REQUIRE_TLS}"
+
         apk add --no-cache gettext
 
         # Render config
