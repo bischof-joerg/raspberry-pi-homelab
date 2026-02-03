@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 import pytest
+import requests
 import yaml
 
 from tests._lib.http import get_json, wait_http_ok
@@ -52,11 +53,29 @@ def test_victoriametrics_health() -> None:
     wait_http_ok(f"{VM_URL}/api/v1/status/buildinfo")
 
 
+def _wait_any_http_ok(urls: list[str], timeout_s: int = 45) -> None:
+    last_err: str | None = None
+    for url in urls:
+        try:
+            wait_http_ok(url, timeout_s=timeout_s)
+            return
+        except AssertionError as e:
+            last_err = str(e)
+    raise AssertionError(f"None of the candidate endpoints became ready: {urls} (last_err={last_err})")
+
+
 @pytest.mark.postdeploy
 def test_vmagent_health_and_targets() -> None:
     wait_http_ok(f"{VMAGENT_URL}/health")
-    # Prometheus-style targets endpoint is commonly available; adjust if your vmagent differs.
-    wait_http_ok(f"{VMAGENT_URL}/api/v1/targets")
+
+    _wait_any_http_ok(
+        [
+            f"{VMAGENT_URL}/api/v1/targets",
+            f"{VMAGENT_URL}/targets",
+            f"{VMAGENT_URL}/api/v1/targets?state=active",
+        ],
+        timeout_s=45,
+    )
 
 
 @pytest.mark.postdeploy
@@ -95,3 +114,19 @@ def test_grafana_health() -> None:
     wait_http_ok(f"{GRAFANA_URL}/api/health")
     data = get_json(f"{GRAFANA_URL}/api/health")
     assert data.get("database") in {"ok", "OK"}, f"Grafana db not ok: {data}"
+
+
+@pytest.mark.postdeploy
+def test_prometheus_endpoint_absent_when_expected() -> None:
+    """
+    After Prometheus removal, set PROMETHEUS_REMOVED=1 in deploy/test env
+    to enforce that 127.0.0.1:9090 is not reachable anymore.
+    """
+    if os.getenv("PROMETHEUS_REMOVED") != "1":
+        pytest.skip("PROMETHEUS_REMOVED not set")
+
+    try:
+        r = requests.get("http://127.0.0.1:9090/-/ready", timeout=2)
+        raise AssertionError(f"Prometheus still reachable on 127.0.0.1:9090 (status={r.status_code})")
+    except requests.RequestException:
+        return
