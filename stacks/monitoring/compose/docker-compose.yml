@@ -83,21 +83,23 @@ services:
     restart: "no"
     networks: [monitoring]
 
-    # IMPORTANT:
-    # Docker Compose's `--env-file` feeds compose interpolation, but does NOT automatically inject vars into containers
-    # unless you specify `env_file:` and/or `environment:`. We do BOTH here to make this robust across setups.
+    # Compose interpolation must not hard-fail if SMTP isn't configured yet.
+    # Strict validation happens at runtime only when ALERT_EMAIL_ENABLED=1.
     environment:
-      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
-      ALERT_SMTP_SMARTHOST: ${ALERT_SMTP_SMARTHOST}
-      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM}
-      ALERT_SMTP_AUTH_USERNAME: ${ALERT_SMTP_AUTH_USERNAME}
-      ALERT_SMTP_AUTH_PASSWORD: ${ALERT_SMTP_AUTH_PASSWORD}
-      ALERT_SMTP_REQUIRE_TLS: ${ALERT_SMTP_REQUIRE_TLS}
+      ALERT_EMAIL_ENABLED: ${ALERT_EMAIL_ENABLED:-0}
+
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      ALERT_SMTP_SMARTHOST: ${ALERT_SMTP_SMARTHOST:-}
+      ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-}
+      ALERT_SMTP_AUTH_USERNAME: ${ALERT_SMTP_AUTH_USERNAME:-}
+      ALERT_SMTP_AUTH_PASSWORD: ${ALERT_SMTP_AUTH_PASSWORD:-}
+      ALERT_SMTP_REQUIRE_TLS: ${ALERT_SMTP_REQUIRE_TLS:-}
 
     volumes:
       - /srv/data/stacks/monitoring/alertmanager-config:/out
       - ../alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
       - ../alertmanager/templates:/in/templates:ro
+
     command:
       - /bin/sh
       - -lc
@@ -105,13 +107,41 @@ services:
         set -euo pipefail
         apk add --no-cache gettext
 
-        # Hard fail early if required env is missing. Prevents rendering empty config fields.
-        : "${ALERT_EMAIL_TO:?missing ALERT_EMAIL_TO}"
-        : "${ALERT_SMTP_SMARTHOST:?missing ALERT_SMTP_SMARTHOST}"
-        : "${ALERT_SMTP_FROM:?missing ALERT_SMTP_FROM}"
-        : "${ALERT_SMTP_AUTH_USERNAME:?missing ALERT_SMTP_AUTH_USERNAME}"
-        : "${ALERT_SMTP_AUTH_PASSWORD:?missing ALERT_SMTP_AUTH_PASSWORD}"
-        : "${ALERT_SMTP_REQUIRE_TLS:?missing ALERT_SMTP_REQUIRE_TLS}"
+        if [ "${ALERT_EMAIL_ENABLED:-0}" = "1" ]; then
+          # Hard fail early if required env is missing. Prevents rendering empty config fields.
+          : "${ALERT_EMAIL_TO:?missing ALERT_EMAIL_TO}"
+          : "${ALERT_SMTP_SMARTHOST:?missing ALERT_SMTP_SMARTHOST}"
+          : "${ALERT_SMTP_FROM:?missing ALERT_SMTP_FROM}"
+          : "${ALERT_SMTP_AUTH_USERNAME:?missing ALERT_SMTP_AUTH_USERNAME}"
+          : "${ALERT_SMTP_AUTH_PASSWORD:?missing ALERT_SMTP_AUTH_PASSWORD}"
+          # ALERT_SMTP_REQUIRE_TLS=true|false.
+          : "${ALERT_SMTP_REQUIRE_TLS:?missing ALERT_SMTP_REQUIRE_TLS}"
+
+          # These blocks are inserted under:
+          #   - name: "email-critical"
+          #   - name: "email-warning"
+          # in alertmanager.yml.tmpl.
+          #
+          # IMPORTANT: The indentation here must match the template location.
+          # We start at 4 spaces so it becomes valid YAML under the receiver item.
+          ALERT_EMAIL_CRITICAL_YAML="$(printf '%s\n' \
+            '    email_configs:' \
+            '      - to: "${ALERT_EMAIL_TO}"' \
+            '        from: "${ALERT_SMTP_FROM}"' \
+            '        smarthost: "${ALERT_SMTP_SMARTHOST}"' \
+            '        auth_username: "${ALERT_SMTP_AUTH_USERNAME}"' \
+            '        auth_password: "${ALERT_SMTP_AUTH_PASSWORD}"' \
+            '        require_tls: ${ALERT_SMTP_REQUIRE_TLS}' \
+            '        send_resolved: true'
+          )"
+          ALERT_EMAIL_WARNING_YAML="${ALERT_EMAIL_CRITICAL_YAML}"
+        else
+          # Email disabled: keep receivers defined, but empty (no-op receivers).
+          ALERT_EMAIL_CRITICAL_YAML=""
+          ALERT_EMAIL_WARNING_YAML=""
+        fi
+
+        export ALERT_EMAIL_CRITICAL_YAML ALERT_EMAIL_WARNING_YAML
 
         # Render config
         envsubst < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
@@ -126,11 +156,13 @@ services:
 
         echo "Rendered /out/alertmanager.yml and copied templates to /out/templates"
         test -s /out/alertmanager.yml
+
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
     # IMPORTANT: must be able to write to /out
     read_only: false
+
     # no mpfs: - /tmp section as the alertmanager-config-render service is a one-shot initialization container (it runs once and exits).
     # it woult only add slight overhead and is not needed.
 
