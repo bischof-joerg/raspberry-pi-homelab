@@ -6,6 +6,7 @@ import pathlib
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -69,3 +70,24 @@ def retry():
         raise last_err or AssertionError("retry timeout")
 
     return _retry
+
+
+def _load_env_file_if_present(path: Path) -> None:
+    if not path.exists():
+        return
+    try:
+        text = path.read_text(encoding="utf-8")
+    except PermissionError:
+        return
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip())
+
+
+# Host-only secrets/config (GitOps policy): load if present on the Pi
+env_path = Path("/etc/raspberry-pi-homelab/monitoring.env")
+if env_path.exists() and os.access(env_path, os.R_OK):
+    _load_env_file_if_present(env_path)
