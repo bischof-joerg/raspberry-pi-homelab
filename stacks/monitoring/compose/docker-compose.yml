@@ -77,7 +77,8 @@ services:
     tmpfs:
       - /tmp
 
-  # One-shot renderer: renders alertmanager.yml from template using envsubst and copies templates into the same volume.
+  # One-shot renderer: renders alertmanager.yml from template using envsubst and
+  # copies templates into the same volume.
   alertmanager-config-render:
     image: alpine:3.20
     restart: "no"
@@ -95,6 +96,10 @@ services:
       ALERT_SMTP_AUTH_PASSWORD: ${ALERT_SMTP_AUTH_PASSWORD:-}
       ALERT_SMTP_REQUIRE_TLS: ${ALERT_SMTP_REQUIRE_TLS:-}
 
+      # Prevent compose warnings if these appear anywhere as ${...} by accident.
+      ALERT_EMAIL_CRITICAL_YAML: ${ALERT_EMAIL_CRITICAL_YAML:-}
+      ALERT_EMAIL_WARNING_YAML: ${ALERT_EMAIL_WARNING_YAML:-}
+
     volumes:
       - /srv/data/stacks/monitoring/alertmanager-config:/out
       - ../alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
@@ -105,7 +110,7 @@ services:
       - -lc
       - |
         set -euo pipefail
-        apk add --no-cache gettext >/dev/null
+        apk add --no-cache gettext
 
         if [ "$${ALERT_EMAIL_ENABLED:-0}" = "1" ]; then
           : "$${ALERT_EMAIL_TO:?missing ALERT_EMAIL_TO}"
@@ -115,19 +120,27 @@ services:
           : "$${ALERT_SMTP_AUTH_PASSWORD:?missing ALERT_SMTP_AUTH_PASSWORD}"
           : "$${ALERT_SMTP_REQUIRE_TLS:?missing ALERT_SMTP_REQUIRE_TLS}"
 
-          ALERT_EMAIL_CRITICAL_YAML="$$(cat <<'EOF'
-            email_configs:
-              - to: "$${ALERT_EMAIL_TO}"
-                from: "$${ALERT_SMTP_FROM}"
-                smarthost: "$${ALERT_SMTP_SMARTHOST}"
-                auth_username: "$${ALERT_SMTP_AUTH_USERNAME}"
-                auth_password: "$${ALERT_SMTP_AUTH_PASSWORD}"
-                require_tls: $${ALERT_SMTP_REQUIRE_TLS}
-                send_resolved: true
-        EOF
-          )"
+          case "$ALERT_SMTP_REQUIRE_TLS" in
+            true|false) ;;
+            *)
+              echo "ERROR: ALERT_SMTP_REQUIRE_TLS must be 'true' or 'false'" >&2
+              exit 2
+              ;;
+          esac
 
-          ALERT_EMAIL_WARNING_YAML="$${ALERT_EMAIL_CRITICAL_YAML}"
+          # Generate ready-to-insert YAML blocks (with actual values).
+          # Indentation: 4 spaces so it's valid under the receiver item.
+          ALERT_EMAIL_CRITICAL_YAML="$(
+            printf '%s\n' "    email_configs:"
+            printf '      - to: "%s"\n' "$ALERT_EMAIL_TO"
+            printf '        from: "%s"\n' "$ALERT_SMTP_FROM"
+            printf '        smarthost: "%s"\n' "$ALERT_SMTP_SMARTHOST"
+            printf '        auth_username: "%s"\n' "$ALERT_SMTP_AUTH_USERNAME"
+            printf '        auth_password: "%s"\n' "$ALERT_SMTP_AUTH_PASSWORD"
+            printf '        require_tls: %s\n' "$ALERT_SMTP_REQUIRE_TLS"
+            printf '%s\n' "        send_resolved: true"
+          )"
+          ALERT_EMAIL_WARNING_YAML="$ALERT_EMAIL_CRITICAL_YAML"
         else
           ALERT_EMAIL_CRITICAL_YAML=""
           ALERT_EMAIL_WARNING_YAML=""
@@ -135,9 +148,9 @@ services:
 
         export ALERT_EMAIL_CRITICAL_YAML ALERT_EMAIL_WARNING_YAML
 
-        # Render config (substitute only the two injected YAML blocks)
-        SUBST_VARS='$ALERT_EMAIL_CRITICAL_YAML $ALERT_EMAIL_WARNING_YAML'
-        envsubst "$${SUBST_VARS}" < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
+        # Render config: only substitute the two injected YAML blocks.
+        envsubst '$ALERT_EMAIL_CRITICAL_YAML $ALERT_EMAIL_WARNING_YAML' \
+          < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
 
         chmod 0644 /out/alertmanager.yml
 
