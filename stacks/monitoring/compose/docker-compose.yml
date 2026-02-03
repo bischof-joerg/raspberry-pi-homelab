@@ -2,53 +2,11 @@
 # Monitoring stack for Raspberry Pi (ARM64) with IaC + basic hardening
 # Commit A: Add VictoriaMetrics components alongside Prometheus (safe cutover).
 # - Exposes ONLY Grafana by default
-# - Prometheus/Alertmanager/VictoriaMetrics UIs are kept localhost-bound (enable LAN only if you really need it)
+# - Alertmanager/VictoriaMetrics UIs are kept localhost-bound (enable LAN only if you really need it)
 
 name: ${COMPOSE_PROJECT_NAME:-homelab-home-prod-mon}
 
 services:
-  prometheus:
-    image: prom/prometheus:v3.1.0
-    restart: unless-stopped
-    networks: [monitoring]
-    # Expose Prometheus UI only if you need it (prefer reverse proxy + auth/IP restriction)
-    # ports: # for checking only
-    #  - "9090:9090"
-    ports:
-      - "127.0.0.1:9090:9090"
-    volumes:
-      - /srv/data/stacks/monitoring/prometheus:/prometheus
-      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ../prometheus/rules:/etc/prometheus/rules:ro
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.path=/prometheus
-      - --storage.tsdb.retention.time=30d
-      - --web.enable-lifecycle
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD", "wget", "--tries=1", "--spider", "http://127.0.0.1:9090/-/healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 4G # Prevents OOM on Pi 5 during heavy queries
-    labels:
-      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
-    cap_drop: [ALL]
-    read_only: true
-    tmpfs:
-      - /tmp
 
   alertmanager:
     image: prom/alertmanager:v0.28.0

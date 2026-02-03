@@ -1,4 +1,4 @@
-# grafana/provisioning/datasources/prometheus.yml
+# grafana/provisioning/datasources/victoriametrics.yml
 apiVersion: 1
 
 # Automatically remove any data sources not defined in this file

@@ -81,25 +81,6 @@ make cleanup-check --apply
 
 ## Details on Services
 
-### Prometheus
-
-**Role:**
-Prometheus is the central time-series database for metrics. It scrapes metrics from exporters such as Node Exporter and cAdvisor and provides querying (PromQL) and alerting capabilities.
-
-**Persistence:**
-
-- **Time-series database (TSDB)**
-  Stores all collected metrics.
-  - Mount: `/prometheus`
-- **Configuration (IaC, Git-managed)**
-  Scrape targets, rules, and global settings.
-  - Mount: `/etc/prometheus/prometheus.yml` (read-only)
-
-**Note:**
-Without persistence, all historical metrics are lost on restart.
-
----
-
 ### Alertmanager
 
 **Role:**

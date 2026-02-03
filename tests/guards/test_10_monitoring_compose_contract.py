@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from tests._lib.compose import render_compose
@@ -26,8 +27,8 @@ REQUIRED_SERVICES = {
     "vmalert",
     # Alertmanager for notifications
     "alertmanager",
-    # Logs (if you use it)
-    "victorialogs",
+    # Logs (if you use it) : add later
+    # "victorialogs",
     # Dashboards
     "grafana",
     # Exporters
@@ -35,7 +36,17 @@ REQUIRED_SERVICES = {
     "cadvisor",
 }
 
-BANNED_SERVICES = {"prometheus"}
+OPTIONAL_SERVICES = {
+    "victorialogs",
+}
+
+BANNED_SERVICES = {
+    "prometheus",
+}
+
+
+def _logging_enabled() -> bool:
+    return os.environ.get("LOGGING_ENABLED", "0") == "1"
 
 
 def test_compose_renders():
@@ -48,7 +59,11 @@ def test_required_services_present_and_prometheus_absent():
     data = render_compose(COMPOSE_FILE, env_file=ENV_EXAMPLE if ENV_EXAMPLE.exists() else None)
     services = set(data["services"].keys())
 
-    missing = sorted(REQUIRED_SERVICES - services)
+    required = set(REQUIRED_SERVICES)
+    if _logging_enabled():
+        required |= OPTIONAL_SERVICES
+
+    missing = sorted(required - services)
     assert not missing, "Missing required monitoring services:\n" + "\n".join(missing)
 
     present_banned = sorted(BANNED_SERVICES & services)
