@@ -36,6 +36,8 @@ services:
       resources:
         limits:
           memory: 4G # Prevents OOM on Pi 5 during heavy queries
+    labels:
+      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     logging:
       driver: "json-file"
       options:
@@ -166,6 +168,8 @@ services:
         echo "Rendered /out/alertmanager.yml and copied templates to /out/templates"
         test -s /out/alertmanager.yml
 
+    labels:
+      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
@@ -197,8 +201,6 @@ services:
       resources:
         limits:
           memory: 4G
-    labels:
-      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     logging:
       driver: "json-file"
       options:
