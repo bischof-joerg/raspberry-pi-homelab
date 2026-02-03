@@ -205,19 +205,6 @@ compose_references_prometheus() {
   grep -Eq 'service:\s*prometheus\b' "$COMPOSE_FILE"
 }
 
-warn_or_fail_if_prometheus_present() {
-  if compose_references_prometheus; then
-    if [[ "$PROMETHEUS_REMOVAL_ENFORCE" == "1" ]]; then
-      die "Prometheus is still referenced by compose ($COMPOSE_FILE) but PROMETHEUS_REMOVAL_ENFORCE=1. Remove Prometheus from the stack before deploying."
-    fi
-    log "NOTICE: Prometheus is still referenced by compose. Migration planned: Prometheus will be removed."
-    log "NOTICE: Action items:"
-    log "NOTICE: - Ensure Grafana data sources + dashboards use VictoriaMetrics (not Prometheus)."
-    log "NOTICE: - Ensure vmagent scrapes all required targets and remote_writes to VictoriaMetrics."
-    log "NOTICE: - Ensure alerts are evaluated by vmalert (not Prometheus rules)."
-  fi
-}
-
 with_ephemeral_docker_config() {
   local docker_cfg_tmp=""
   docker_cfg_tmp="$(mktemp -d)"

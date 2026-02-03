@@ -44,12 +44,11 @@ Notes:
 
 ### 2.2 Persistent Docker Volumes (Critical)
 
+** NEEDS LOVE**
+
 | Service      | Data                  | Typical Path                                   |
 | ------------ | --------------------- | ---------------------------------------------- |
-| Prometheus   | TSDB metrics          | `/var/lib/docker/volumes/*prometheus*/_data`   |
 | Grafana      | DB, users, dashboards | `/var/lib/docker/volumes/*grafana*/_data`      |
-| Loki         | Log chunks + index    | `/var/lib/docker/volumes/*loki*/_data`         |
-| Promtail     | Positions file        | `/var/lib/docker/volumes/*promtail*/_data`     |
 | Alertmanager | Silences, state       | `/var/lib/docker/volumes/*alertmanager*/_data` |
 
 These volumes **must** be backed up together to ensure consistency.
@@ -124,7 +123,7 @@ DEST="$BACKUP_ROOT/$DATE"
 
 mkdir -p "$DEST"
 
-for v in prometheus grafana loki promtail alertmanager; do
+for v in grafana alertmanager; do
   docker run --rm \
     -v ${v}:/volume:ro \
     -v "$DEST":/backup \
@@ -220,10 +219,10 @@ Steps:
 
 3. Restore volumes:
 
+**NEEDS LOVE**
+
     ```bash
-    docker volume create prometheus
-    docker run --rm -v prometheus:/volume -v backup:/backup alpine \
-    tar xzf /backup/prometheus.tar.gz -C /volume
+
     ```
 
 4. Deploy:

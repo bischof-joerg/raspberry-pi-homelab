@@ -47,26 +47,6 @@ repos:
         files: \.py$
 
   # ------------------------------------------------------------
-  # Prometheus: Konfiguration & Rules
-  # (läuft nur, wenn promtool vorhanden ist)
-  # ------------------------------------------------------------
-  - repo: local
-    hooks:
-      - id: promtool-check-config
-        name: promtool check config
-        entry: promtool check config monitoring/prometheus/prometheus.yml
-        language: system
-        files: ^monitoring/prometheus/prometheus\.yml$
-        pass_filenames: false
-
-      - id: promtool-check-rules
-        name: promtool check rules
-        entry: bash -lc 'ls monitoring/prometheus/rules/*.yml >/dev/null 2>&1 && promtool check rules monitoring/prometheus/rules/*.yml || true'
-        language: system
-        files: ^monitoring/prometheus/rules/.*\.yml$
-        pass_filenames: false
-
-  # ------------------------------------------------------------
   # Docker Compose (Syntax + Interpolation)
   # Hermetisch, ohne echte Secrets
   # ------------------------------------------------------------

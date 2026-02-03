@@ -70,14 +70,12 @@ main() {
   fi
 
   local grafana_dir="$BASE_DIR/grafana"
-  local prometheus_dir="$BASE_DIR/prometheus"
   local alertmanager_dir="$BASE_DIR/alertmanager"
   local alertmanager_cfg_dir="$BASE_DIR/alertmanager-config"
 
   if [[ "$mode" == "check" ]]; then
     local ok=0
     check_one "$grafana_dir" "$graf_uid" "$graf_gid" "750" || ok=1
-    check_one "$prometheus_dir" "$prom_user" "$prom_group" "750" || ok=1
     check_one "$alertmanager_dir" "$prom_user" "$prom_group" "750" || ok=1
     check_one "$alertmanager_cfg_dir" "root" "root" "755" || ok=1
 
@@ -92,7 +90,6 @@ main() {
   log "init-permissions(apply): base=$BASE_DIR"
 
   ensure_dir "$grafana_dir"
-  ensure_dir "$prometheus_dir"
   ensure_dir "$alertmanager_dir"
   ensure_dir "$alertmanager_cfg_dir"
 
@@ -100,11 +97,6 @@ main() {
   chown -R "${graf_uid}:${graf_gid}" "$grafana_dir"
   chmod 0750 "$grafana_dir"
   chmod -R u+rwX,go-rwx "$grafana_dir"
-
-  # Prometheus/Alertmanager images run as "nobody" (as you confirmed via docker image inspect).
-  chown -R "${prom_user}:${prom_group}" "$prometheus_dir"
-  chmod 0750 "$prometheus_dir"
-  chmod -R u+rwX,go-rwx "$prometheus_dir"
 
   chown -R "${prom_user}:${prom_group}" "$alertmanager_dir"
   chmod 0750 "$alertmanager_dir"

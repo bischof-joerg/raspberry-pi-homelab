@@ -30,11 +30,10 @@ The monitoring stack is implemented as an isolated, hardened Docker stack and pr
 
 ## Repository Layout (excerpt)
 
+**NEEDS LOVE**
+
 - `monitoring/compose/`
   - `docker-compose.yml`
-- `monitoring/prometheus/`
-  - `prometheus.yml`
-  - `rules/`
 - `monitoring/grafana/`
   - provisioning (datasources, dashboards)
 - `tests/`
