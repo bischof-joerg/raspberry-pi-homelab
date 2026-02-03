@@ -2,7 +2,6 @@ import json
 import os
 import pathlib
 import time
-import urllib.parse
 import urllib.request
 
 import pytest
@@ -32,18 +31,6 @@ def require_postdeploy_target() -> None:
 
 def http_get(url: str, headers: dict | None = None, timeout: int = 5) -> tuple[int, str]:
     req = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.status, r.read().decode()
-
-
-def http_post_form(
-    url: str,
-    data: dict[str, str],
-    headers: dict | None = None,
-    timeout: int = 10,
-) -> tuple[int, str]:
-    payload = urllib.parse.urlencode(data).encode("utf-8")
-    req = urllib.request.Request(url, data=payload, headers=headers or {}, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, r.read().decode()
 
