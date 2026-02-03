@@ -152,7 +152,7 @@ def test_vm_expected_jobs_optional(retry, http_get):
     if not jobs:
         pytest.skip("VM_EXPECT_JOBS not set (or disabled)")
 
-    # Allow explicit opt-out (e.g. "prometheus") without breaking defaults
+    # Allow explicit opt-out without breaking defaults
     ignore = set(_env_list_or_default("VM_IGNORE_JOBS", default=[]))
 
     required = sorted(set(jobs) - ignore)

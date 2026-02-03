@@ -27,6 +27,10 @@ POSTDEPLOY_HEALTH_INTERVAL_S = float(os.environ.get("POSTDEPLOY_HEALTH_INTERVAL_
 POSTDEPLOY_LOG_TAIL = int(os.environ.get("POSTDEPLOY_LOG_TAIL", "200"))
 
 
+def _prometheus_removed() -> bool:
+    return os.getenv("PROMETHEUS_REMOVED") == "1"
+
+
 def _docker_logs_tail(container: str, tail: int = POSTDEPLOY_LOG_TAIL) -> str:
     if not which_ok("docker"):
         return "(docker not available to collect logs)"
@@ -57,10 +61,10 @@ def test_compose_services_state_json(retry):
     banned: set[str] = set()
 
     # Migration gate: once Prometheus is removed, it must not be expected anymore
-    if os.getenv("PROMETHEUS_REMOVED") != "1":
+    if not _prometheus_removed():
         expected["prometheus"] = "running"
 
-    if os.getenv("PROMETHEUS_REMOVED") == "1":
+    if _prometheus_removed():
         banned.add("prometheus")
 
     rows: dict[str, dict] = {}
@@ -117,7 +121,7 @@ def test_compose_services_not_restarting_or_unhealthy(retry):
 
     banned: set[str] = set()
 
-    if os.getenv("PROMETHEUS_REMOVED") == "1":
+    if _prometheus_removed():
         banned.add("prometheus")
     else:
         services.insert(0, "prometheus")
