@@ -261,11 +261,11 @@ main() {
     log "compose: pull + up (single ghcr session)"
     with_ephemeral_docker_config bash -euo pipefail -c '
       docker compose --env-file "'"$SECRETS_FILE"'" -f "'"$COMPOSE_FILE"'" pull
-      docker compose --env-file "'"$SECRETS_FILE"'" -f "'"$COMPOSE_FILE"'" up -d
+      docker compose --env-file "'"$SECRETS_FILE"'" -f "'"$COMPOSE_FILE"'" up -d --force-recreate
     '
   else
     log "compose: pull skipped (PULL_IMAGES=0)"
-    compose up -d
+    compose up -d --force-recreate
   fi
 
   log "compose: ps"

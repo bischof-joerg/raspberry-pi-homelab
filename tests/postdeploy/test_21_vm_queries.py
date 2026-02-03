@@ -147,7 +147,7 @@ def test_vm_expected_metrics_optional(retry, http_get):
 def test_vm_expected_jobs_optional(retry, http_get):
     jobs = _env_list_or_default(
         "VM_EXPECT_JOBS",
-        default=["alertmanager", "cadvisor", "node-exporter", "victoriametrics", "vmagent", "vmalert"],
+        default=["alertmanager", "cadvisor", "docker-engine", "node-exporter", "victoriametrics", "vmagent", "vmalert"],
     )
     if not jobs:
         pytest.skip("VM_EXPECT_JOBS not set (or disabled)")
