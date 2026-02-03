@@ -1,5 +1,4 @@
-import time
-
+# tests/postdeploy/test_31_vmagent_targets.py
 import pytest
 
 from tests._helpers import run, which_ok
@@ -9,7 +8,7 @@ VMAGENT_URL = "http://vmagent:8429/targets"
 
 
 @pytest.mark.postdeploy
-def test_vmagent_targets_ui_reachable():
+def test_vmagent_targets_ui_reachable(retry):
     if not which_ok("docker"):
         pytest.skip("docker not available")
 
@@ -26,14 +25,15 @@ def test_vmagent_targets_ui_reachable():
     ]
 
     last = None
-    for _ in range(20):
-        last = run(cmd)
-        if last.returncode == 0 and (last.stdout or "").strip():
-            return
-        time.sleep(0.5)
 
-    raise AssertionError(
-        "vmagent /targets not reachable from within monitoring network.\n"
-        f"url={VMAGENT_URL}\n"
-        f"last rc={last.returncode}\nstdout:\n{last.stdout}\nstderr:\n{last.stderr}"
-    )
+    def _check():
+        nonlocal last
+        last = run(cmd)
+        ok = last.returncode == 0 and (last.stdout or "").strip()
+        assert ok, (
+            "vmagent /targets not reachable from within monitoring network.\n"
+            f"url={VMAGENT_URL}\n"
+            f"last rc={last.returncode}\nstdout:\n{last.stdout}\nstderr:\n{last.stderr}"
+        )
+
+    retry(_check, timeout_s=20, interval_s=0.5)

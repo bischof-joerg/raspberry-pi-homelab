@@ -1,4 +1,6 @@
 # tests/postdeploy/conftest.py
+from __future__ import annotations
+
 import os
 import pathlib
 import time
@@ -30,10 +32,7 @@ def _enforce_postdeploy_target(request: pytest.FixtureRequest) -> None:
 
 @pytest.fixture
 def http_get():
-    """Simple HTTP GET helper.
-
-    Returns (status_code, body_text). Does not raise for HTTP status errors.
-    """
+    """HTTP GET helper returning (status_code, body_text). Does not raise on HTTP status errors."""
 
     def _get(url: str, headers: dict | None = None, timeout: int = 8) -> tuple[int, str]:
         req = urllib.request.Request(url, headers=headers or {})
@@ -48,7 +47,6 @@ def http_get():
                 body = ""
             return e.code, body
         except urllib.error.URLError as e:
-            # Surface networking issues as assertion-friendly failures at callsite
             raise AssertionError(f"network error for {url}: {e}") from e
 
     return _get
@@ -56,7 +54,7 @@ def http_get():
 
 @pytest.fixture
 def retry():
-    """Retry helper for eventual-consistency endpoints (scrapes, rule loads)."""
+    """Retry helper for eventual consistency (scrapes, rule loads)."""
 
     def _retry(assert_fn, timeout_s: int = 60, interval_s: float = 2.5) -> None:
         deadline = time.time() + timeout_s
