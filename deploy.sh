@@ -264,8 +264,6 @@ main() {
   check_prereqs
   validate_secrets_file
 
-  warn_or_fail_if_prometheus_present
-
   maybe_init_permissions
 
   # Compute once in parent shell so it's deterministic and shellcheck-clean.
