@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.parse
 
 import pytest
 
 VM_BASE = "http://127.0.0.1:8428"
+_METRIC_NAME_RE = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]*$")
 
 
 def _env_csv(name: str) -> list[str]:
@@ -73,20 +75,40 @@ def test_vm_expected_metrics_optional(retry, http_get):
     if not expected:
         pytest.skip("VM_EXPECT_METRICS not set")
 
-    # Exact-match metric names using regex alternation
-    selector = '{__name__=~"(' + "|".join(expected) + ')"}'
+    def _normalize(item: str) -> str:
+        # tolerate accidental quoting in env var, e.g. '"up"' or "'up'"
+        s = item.strip()
+        if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+            s = s[1:-1].strip()
+        return s
 
-    def _check():
-        payload = vm_query(http_get, selector)
+    expected = [_normalize(x) for x in expected if _normalize(x)]
+    assert expected, "VM_EXPECT_METRICS was set but empty after normalization"
+
+    def _check_one(expr_or_name: str) -> None:
+        # If it's a plain metric name, query by name; otherwise treat as PromQL expression.
+        expr = expr_or_name if not _METRIC_NAME_RE.match(expr_or_name) else expr_or_name
+
+        payload = vm_query(http_get, expr)
         result_type, result = _result(payload)
-        assert result_type == "vector", payload
-        assert result, payload
 
-        names = _metric_names_from_vector(result)
-        missing = sorted(set(expected) - names)
-        assert not missing, {"missing": missing, "present": sorted(names)}
+        # Most instant queries yield vector; allow scalar for expressions like "1".
+        assert result_type in {"vector", "scalar"}, {"expr": expr, "payload": payload}
 
-    retry(_check, timeout_s=120, interval_s=3.0)
+        if result_type == "vector":
+            assert result, {"expr": expr, "payload": payload}
+
+    # Retry the whole set to allow scrape/ingestion to settle
+    def _check_all():
+        missing = []
+        for item in expected:
+            try:
+                _check_one(item)
+            except AssertionError:
+                missing.append(item)
+        assert not missing, {"missing_or_empty": missing, "expected": expected}
+
+    retry(_check_all, timeout_s=120, interval_s=3.0)
 
 
 @pytest.mark.postdeploy
