@@ -215,7 +215,7 @@ run_postdeploy_tests() {
   [[ -f "$REPO_ROOT/Makefile" ]] || die "tests requested but Makefile not found in repo root"
 
   log "tests: make postdeploy"
-  (cd "$REPO_ROOT" && make postdeploy)
+  (cd "$REPO_ROOT" && POSTDEPLOY_ON_TARGET=1 make postdeploy)
   log "tests: passed"
 }
 

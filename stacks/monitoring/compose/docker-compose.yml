@@ -28,7 +28,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      test: ["CMD", "wget", "--tries=1", "--spider", "http://127.0.0.1:9090/-/healthy"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -65,7 +65,7 @@ services:
       alertmanager-config-render:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      test: ["CMD", "wget", "--tries=1", "--spider", "http://127.0.0.1:9093/-/healthy"]
     logging:
       driver: "json-file"
       options:
@@ -187,7 +187,7 @@ services:
       - -httpListenAddr=:8428
     # temporarily disable healthchecks as it seems that endpoints are not available
     # healthcheck:
-    #   test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:8428/health"]
+    #   test: ["CMD", "wget", "--tries=1", "--spider", "http://127.0.0.1:8428/health"]
     #   interval: 30s
     #   timeout: 10s
     #   retries: 3
@@ -301,7 +301,7 @@ services:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 10s
     logging:
