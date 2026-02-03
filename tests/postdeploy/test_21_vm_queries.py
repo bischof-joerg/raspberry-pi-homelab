@@ -76,8 +76,13 @@ def _vm_jobs_present(http_get) -> set[str]:
     return jobs
 
 
-def _skip_with_hint(flag: str) -> None:
-    pytest.skip(f"{flag} not set (or disabled). Run with: {flag}=1 POSTDEPLOY_ON_TARGET=1 make postdeploy")
+def _hint_run_both_vm_expectation_tests() -> str:
+    return (
+        "Run both VM expectation tests only with:\n"
+        "VM_EXPECT_METRICS=1 VM_EXPECT_JOBS=1 POSTDEPLOY_ON_TARGET=1 "
+        "pytest tests/postdeploy/test_21_vm_queries.py -m postdeploy "
+        "-k 'expected_metrics_present or expected_jobs_present'"
+    )
 
 
 @pytest.mark.postdeploy
@@ -109,7 +114,7 @@ def test_vm_expected_metrics_optional(retry, http_get):
         default=["up"],
     )
     if not expected:
-        _skip_with_hint("VM_EXPECT_METRICS")
+        pytest.skip("VM_EXPECT_METRICS not set (or disabled).\n" + _hint_run_both_vm_expectation_tests())
 
     def _normalize(item: str) -> str:
         # tolerate accidental quoting in env var, e.g. '"up"' or "'up'"
@@ -154,7 +159,7 @@ def test_vm_expected_jobs_optional(retry, http_get):
         default=["alertmanager", "cadvisor", "docker-engine", "node-exporter", "victoriametrics", "vmagent", "vmalert"],
     )
     if not jobs:
-        _skip_with_hint("VM_EXPECT_JOBS")
+        pytest.skip("VM_EXPECT_JOBS not set (or disabled).\n" + _hint_run_both_vm_expectation_tests())
 
     # Allow explicit opt-out without breaking defaults
     ignore = set(_env_list_or_default("VM_IGNORE_JOBS", default=[]))
