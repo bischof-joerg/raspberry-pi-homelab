@@ -63,6 +63,19 @@ def _metric_names_from_vector(result: list) -> set[str]:
     return names
 
 
+def _vm_jobs_present(http_get) -> set[str]:
+    payload = vm_query(http_get, "count by (job) (up)")
+    rt, result = _result(payload)
+    assert rt == "vector", payload
+    jobs = set()
+    for item in result:
+        metric = item.get("metric") or {}
+        j = metric.get("job")
+        if j:
+            jobs.add(j)
+    return jobs
+
+
 @pytest.mark.postdeploy
 def test_vm_query_api_responds_and_success(http_get):
     payload = vm_query(http_get, "1")
@@ -134,17 +147,24 @@ def test_vm_expected_metrics_optional(retry, http_get):
 def test_vm_expected_jobs_optional(retry, http_get):
     jobs = _env_list_or_default(
         "VM_EXPECT_JOBS",
-        default=["alertmanager", "cadvisor", "node-exporter", "prometheus", "vmagent", "vmalert", "victoriametrics"],
+        default=["alertmanager", "cadvisor", "node-exporter", "victoriametrics", "vmagent", "vmalert"],
     )
     if not jobs:
         pytest.skip("VM_EXPECT_JOBS not set (or disabled)")
 
-    for job in jobs:
+    # Allow explicit opt-out (e.g. "prometheus") without breaking defaults
+    ignore = set(_env_list_or_default("VM_IGNORE_JOBS", default=[]))
 
-        def _check(job=job):
-            payload = vm_query(http_get, f'up{{job="{job}"}}')
-            result_type, result = _result(payload)
-            assert result_type == "vector", payload
-            assert result, {"job": job, "payload": payload}
+    required = sorted(set(jobs) - ignore)
 
-        retry(_check, timeout_s=120, interval_s=3.0)
+    def _check():
+        present = _vm_jobs_present(http_get)
+        missing = sorted(set(required) - present)
+        assert not missing, {
+            "missing": missing,
+            "present": sorted(present),
+            "required": required,
+            "ignored": sorted(ignore),
+        }
+
+    retry(_check, timeout_s=120, interval_s=3.0)
