@@ -12,8 +12,8 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
 
 @pytest.mark.postdeploy
 def test_prometheus_is_removed_when_flag_set() -> None:
-    if os.environ.get("PROMETHEUS_REMOVED", "0") != "1":
-        return  # gated: only enforce once migration is complete
+    if os.environ.get("PROMETHEUS_REMOVED", "1") != "1":
+        pytest.skip("PROMETHEUS_REMOVED=0 (legacy mode)")
 
     # Hard requirement: no running container/service named "prometheus"
     cp = _run(["docker", "ps", "--format", "{{.Names}}"])

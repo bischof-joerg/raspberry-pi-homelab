@@ -28,7 +28,7 @@ POSTDEPLOY_LOG_TAIL = int(os.environ.get("POSTDEPLOY_LOG_TAIL", "200"))
 
 
 def _prometheus_removed() -> bool:
-    return os.getenv("PROMETHEUS_REMOVED") == "1"
+    return os.getenv("PROMETHEUS_REMOVED", "1") == "1"
 
 
 def _docker_logs_tail(container: str, tail: int = POSTDEPLOY_LOG_TAIL) -> str:

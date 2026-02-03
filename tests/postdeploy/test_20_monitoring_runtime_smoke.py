@@ -122,8 +122,8 @@ def test_prometheus_endpoint_absent_when_expected() -> None:
     After Prometheus removal, set PROMETHEUS_REMOVED=1 in deploy/test env
     to enforce that 127.0.0.1:9090 is not reachable anymore.
     """
-    if os.getenv("PROMETHEUS_REMOVED") != "1":
-        pytest.skip("PROMETHEUS_REMOVED not set")
+    if os.getenv("PROMETHEUS_REMOVED", "1") != "1":
+        pytest.skip("PROMETHEUS_REMOVED=0 (legacy mode)")
 
     try:
         r = requests.get("http://127.0.0.1:9090/-/ready", timeout=2)

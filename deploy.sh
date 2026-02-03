@@ -21,6 +21,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+PROMETHEUS_REMOVED="${PROMETHEUS_REMOVED:-1}"
+export PROMETHEUS_REMOVED
+
 # Prefer new target layout; allow override for transitions
 COMPOSE_FILE="${COMPOSE_FILE:-$REPO_ROOT/stacks/monitoring/compose/docker-compose.yml}"
 if [[ ! -f "$COMPOSE_FILE" ]]; then
@@ -248,7 +251,7 @@ run_postdeploy_tests() {
   (
     cd "$REPO_ROOT" && \
     POSTDEPLOY_ON_TARGET=1 \
-    PROMETHEUS_REMOVED="${PROMETHEUS_REMOVED:-0}" \
+    PROMETHEUS_REMOVED="${PROMETHEUS_REMOVED}" \
     make postdeploy
   )
   log "tests: passed"
