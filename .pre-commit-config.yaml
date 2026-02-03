@@ -32,9 +32,12 @@ repos:
     hooks:
       - id: pytest-precommit
         name: pytest (marker=precommit)
-        entry: pytest -m precommit --maxfail=1 -q
+        entry: pytest -q -m precommit
         language: python
-        additional_dependencies: ["pytest==8.3.4", "PyYAML==6.0.2"]
+        additional_dependencies:
+          - pytest>=8.0,<9.0
+          - requests>=2.31,<3.0
+          - PyYAML>=6.0,<7.0
         pass_filenames: false
 
   # Ruff for Python linting/formatting

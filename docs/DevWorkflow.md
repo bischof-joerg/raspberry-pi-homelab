@@ -9,6 +9,15 @@
 5. Ideally, no manual changes are performed on the Pi
 6. Secure defaults, hardening and reviewed / new tests is part of integrating new services
 
+## Development & Tests
+
+All Python-based tooling (tests, linters) is installed via:
+
+- `requirements-dev.txt`
+- Python virtual environment `.venv`
+
+This repository has **no Python runtime dependencies** for production.
+
 ## on WSL
 
 - git commit handling in Visual Studio or explicitely ...

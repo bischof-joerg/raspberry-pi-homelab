@@ -1,0 +1,17 @@
+# Test runner
+pytest>=8.0,<9.0
+
+# HTTP client for runtime smoke tests
+requests>=2.31,<3.0
+
+# YAML parsing (Alertmanager config.original, config checks)
+PyYAML>=6.0,<7.0
+
+# Lint/format
+ruff>=0.9,<1.0
+
+# YAML lint (matches your pre-commit yamllint hook family)
+yamllint>=1.35,<2.0
+
+# Optional (nice-to-have if you want to run "pre-commit run" locally from the venv)
+pre-commit>=3.7,<4.0
