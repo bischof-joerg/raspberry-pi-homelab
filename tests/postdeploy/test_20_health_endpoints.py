@@ -5,7 +5,6 @@ import json
 
 import pytest
 
-PROM_BASE = "http://127.0.0.1:9090"
 ALERTMANAGER_BASE = "http://127.0.0.1:9093"
 GRAFANA_BASE = "http://127.0.0.1:3000"
 VM_BASE = "http://127.0.0.1:8428"
@@ -16,8 +15,6 @@ VMALERT_BASE = "http://127.0.0.1:8880"
 @pytest.mark.parametrize(
     "url",
     [
-        f"{PROM_BASE}/-/ready",
-        f"{PROM_BASE}/-/healthy",
         f"{ALERTMANAGER_BASE}/-/ready",
         f"{ALERTMANAGER_BASE}/-/healthy",
         f"{VM_BASE}/health",
@@ -54,6 +51,6 @@ def test_vmalert_rules_endpoint(retry, http_get):
             groups = payload.get("groups")
 
         assert isinstance(groups, list), payload
-        assert groups, payload  # vmalert rules should exist once shipped
+        assert groups, payload  # rules should exist once shipped
 
     retry(_check, timeout_s=90, interval_s=3.0)

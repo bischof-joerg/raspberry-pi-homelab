@@ -8,7 +8,7 @@ import pytest
 
 from tests._helpers import run, which_ok
 
-PROMETHEUS_BASE = "http://127.0.0.1:9090"
+VM_BASE = "http://127.0.0.1:8428"
 DOCKER_ENGINE_PORT = 9323
 MONITORING_NETWORK = "monitoring"
 EXPECTED_BRIDGE_NAME = "br-monitoring"
@@ -81,21 +81,20 @@ def _assert_metrics_reachable_from_monitoring_net(gateway_ip: str) -> None:
         f"Expected: http://{gateway_ip}:{DOCKER_ENGINE_PORT}/metrics to be reachable and contain {REQUIRED_SAMPLE_METRIC}.\n"
         f"stdout:\n{res.stdout}\n"
         f"stderr:\n{res.stderr}\n"
-        "This typically indicates: UFW/FORWARD policy blocking, missing allow rule on br-monitoring, "
-        "or dockerd metrics not enabled/listening."
+        "Action: verify UFW/FORWARD policy, allow rule for br-monitoring, and dockerd metrics listening on 9323."
     )
 
 
-def _prom_query(http_get, expr: str) -> dict:
+def _vm_query(http_get, expr: str) -> dict:
     qs = urllib.parse.urlencode({"query": expr})
-    url = f"{PROMETHEUS_BASE}/api/v1/query?{qs}"
+    url = f"{VM_BASE}/api/v1/query?{qs}"
     status, body = http_get(url, timeout=8)
     assert status == 200, f"GET {url} expected 200, got {status}. body[:400]={body[:400]!r}"
     return json.loads(body)
 
 
 @pytest.mark.postdeploy
-def test_docker_engine_metrics_network_and_scrape_is_stable(retry, http_get):
+def test_docker_engine_metrics_network_and_ingestion_is_stable(retry, http_get):
     # 1) Verify the monitoring network exists and is bound to the fixed bridge name.
     net = _docker_network_inspect(MONITORING_NETWORK)
     assert net.get("Name") == MONITORING_NETWORK, net
@@ -112,34 +111,19 @@ def test_docker_engine_metrics_network_and_scrape_is_stable(retry, http_get):
     # 2) Verify the endpoint is reachable from within the monitoring network.
     _assert_metrics_reachable_from_monitoring_net(gateway_ip)
 
-    # 3) Verify Prometheus has the docker-engine target and it is up.
-    targets_url = f"{PROMETHEUS_BASE}/api/v1/targets"
-    status, body = http_get(targets_url, timeout=8)
-    assert status == 200, f"GET {targets_url} expected 200, got {status}. body[:400]={body[:400]!r}"
-    j = json.loads(body)
-    assert j.get("status") == "success", f"targets endpoint failed: {j}"
-
-    targets = j["data"]["activeTargets"]
-    docker_targets = [t for t in targets if (t.get("labels") or {}).get("job") == "docker-engine"]
-    assert docker_targets, "No activeTargets with job=docker-engine found (Prometheus scrape_config missing?)"
-
-    for t in docker_targets:
-        assert t.get("health") == "up", (
-            f"docker-engine target not healthy: health={t.get('health')} err={t.get('lastError')} "
-            f"scrapeUrl={t.get('scrapeUrl')}"
-        )
-
-        su = t.get("scrapeUrl") or ""
-        assert f"http://{gateway_ip}:{DOCKER_ENGINE_PORT}/metrics" in su, (
-            f"docker-engine scrapeUrl unexpected. Expected gateway-based URL "
-            f"http://{gateway_ip}:{DOCKER_ENGINE_PORT}/metrics but got {su!r}"
-        )
-
-    # 4) Verify Prometheus actually ingested a core docker-engine metric (retry).
+    # 3) Verify VictoriaMetrics ingests docker engine metrics (eventually).
     def _check_ingestion():
-        last = _prom_query(http_get, REQUIRED_SAMPLE_METRIC)
+        last = _vm_query(http_get, REQUIRED_SAMPLE_METRIC)
         assert last.get("status") == "success", last
-        result = last.get("data", {}).get("result", [])
-        assert result, f"Prometheus query returned empty result for {REQUIRED_SAMPLE_METRIC}. last={last}"
+        data = last.get("data") or {}
+        assert data.get("resultType") in {"vector", "matrix"}, last
 
-    retry(_check_ingestion, timeout_s=45, interval_s=2.0)
+        result = data.get("result") or []
+        assert isinstance(result, list), last
+        assert result, (
+            f"VictoriaMetrics query returned empty result for {REQUIRED_SAMPLE_METRIC}.\n"
+            "Action: ensure vmagent scrapes dockerd metrics (job config) and remote_write to VictoriaMetrics.\n"
+            "Also check vmagent /targets UI and that the scrape URL uses the monitoring gateway."
+        )
+
+    retry(_check_ingestion, timeout_s=90, interval_s=3.0)

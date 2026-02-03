@@ -11,6 +11,11 @@
 # Notes:
 # - docker compose auto-loads ".env" from the working directory. We refuse repo-root .env.
 # - GHCR login is OPTIONAL. If GHCR_USER/GHCR_PAT are absent and images are public, we proceed.
+#
+# Migration note (Prometheus removal):
+# - The monitoring stack is migrating to VictoriaMetrics + vmagent as the primary ingestion/storage path.
+# - Postdeploy tests are being updated to stop relying on Prometheus.
+# - If Prometheus is still present in compose, this script will warn (or fail if PROMETHEUS_REMOVAL_ENFORCE=1).
 
 set -euo pipefail
 
@@ -41,6 +46,9 @@ RUN_TESTS="${RUN_TESTS:-1}"                              # 1|0
 FIX_REPO_OWNERSHIP="${FIX_REPO_OWNERSHIP:-auto}"         # auto|always|never
 REPO_OWNER_USER="${REPO_OWNER_USER:-admin}"
 REPO_OWNER_GROUP="${REPO_OWNER_GROUP:-admin}"
+
+# Prometheus removal preparation
+PROMETHEUS_REMOVAL_ENFORCE="${PROMETHEUS_REMOVAL_ENFORCE:-0}"  # 1 => fail deploy if prometheus is still referenced
 
 log(){ echo "[$(date -Is)] $*"; }
 die(){ echo "ERROR: $*" >&2; exit 2; }
@@ -170,8 +178,25 @@ maybe_init_permissions() {
 }
 
 needs_ghcr_auth() {
-  # If compose file references ghcr.io images, auth might be needed.
   grep -Eq 'image:\s*ghcr\.io/' "$COMPOSE_FILE"
+}
+
+compose_references_prometheus() {
+  grep -Eq 'image:\s*(prom/prometheus|quay\.io/prometheus/prometheus|ghcr\.io/.*/prometheus)' "$COMPOSE_FILE" || \
+  grep -Eq 'service:\s*prometheus\b' "$COMPOSE_FILE"
+}
+
+warn_or_fail_if_prometheus_present() {
+  if compose_references_prometheus; then
+    if [[ "$PROMETHEUS_REMOVAL_ENFORCE" == "1" ]]; then
+      die "Prometheus is still referenced by compose ($COMPOSE_FILE) but PROMETHEUS_REMOVAL_ENFORCE=1. Remove Prometheus from the stack before deploying."
+    fi
+    log "NOTICE: Prometheus is still referenced by compose. Migration planned: Prometheus will be removed."
+    log "NOTICE: Action items:"
+    log "NOTICE: - Ensure Grafana data sources + dashboards use VictoriaMetrics (not Prometheus)."
+    log "NOTICE: - Ensure vmagent scrapes all required targets and remote_writes to VictoriaMetrics."
+    log "NOTICE: - Ensure alerts are evaluated by vmalert (not Prometheus rules)."
+  fi
 }
 
 with_ephemeral_docker_config() {
@@ -186,7 +211,6 @@ with_ephemeral_docker_config() {
     # shellcheck disable=SC1090
     source "$SECRETS_FILE"
 
-    # Optional: only login if creds are present.
     if [[ -n "${GHCR_USER:-}" && -n "${GHCR_PAT:-}" ]]; then
       log "ghcr: logging in (ephemeral DOCKER_CONFIG)"
       if ! echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
@@ -229,7 +253,8 @@ main() {
   check_prereqs
   validate_secrets_file
 
-  # Ensure host paths are correctly owned BEFORE starting services.
+  warn_or_fail_if_prometheus_present
+
   maybe_init_permissions
 
   if [[ "$PULL_IMAGES" == "1" ]]; then
