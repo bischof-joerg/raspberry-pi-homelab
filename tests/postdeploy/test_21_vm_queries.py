@@ -80,8 +80,9 @@ def _hint_run_both_vm_expectation_tests() -> str:
     return (
         "Run both VM expectation tests only with:\n"
         "VM_EXPECT_METRICS=1 VM_EXPECT_JOBS=1 POSTDEPLOY_ON_TARGET=1 "
-        "pytest tests/postdeploy/test_21_vm_queries.py -m postdeploy "
-        "-k 'expected_metrics_present or expected_jobs_present'"
+        "pytest -m postdeploy "
+        "tests/postdeploy/test_21_vm_queries.py::test_vm_expected_metrics_optional "
+        "tests/postdeploy/test_21_vm_queries.py::test_vm_expected_jobs_optional\n"
     )
 
 
