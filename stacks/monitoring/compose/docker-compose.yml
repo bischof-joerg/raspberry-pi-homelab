@@ -144,8 +144,11 @@ services:
         export ALERT_EMAIL_CRITICAL_YAML ALERT_EMAIL_WARNING_YAML
 
         # Render config (limit substitution strictly to our two injected YAML blocks)
-        envsubst '$$ALERT_EMAIL_CRITICAL_YAML $$ALERT_EMAIL_WARNING_YAML' \
+        envsubst '$ALERT_EMAIL_CRITICAL_YAML $ALERT_EMAIL_WARNING_YAML \
+          $ALERT_EMAIL_TO $ALERT_SMTP_FROM $ALERT_SMTP_SMARTHOST \
+          $ALERT_SMTP_AUTH_USERNAME $ALERT_SMTP_AUTH_PASSWORD $ALERT_SMTP_REQUIRE_TLS' \
           < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
+
         chmod 0644 /out/alertmanager.yml
 
         # Copy templates (optional; works even if empty)
