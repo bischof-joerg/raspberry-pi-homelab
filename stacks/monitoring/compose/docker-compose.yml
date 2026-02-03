@@ -107,51 +107,41 @@ services:
         set -euo pipefail
         apk add --no-cache gettext
 
+        # Build the YAML blocks as final YAML (with real values),
+        # then substitute only the placeholders in the template.
         if [ "$${ALERT_EMAIL_ENABLED:-0}" = "1" ]; then
-          # Hard fail early if required env is missing. Prevents rendering empty config fields.
           : "$${ALERT_EMAIL_TO:?missing ALERT_EMAIL_TO}"
           : "$${ALERT_SMTP_SMARTHOST:?missing ALERT_SMTP_SMARTHOST}"
           : "$${ALERT_SMTP_FROM:?missing ALERT_SMTP_FROM}"
           : "$${ALERT_SMTP_AUTH_USERNAME:?missing ALERT_SMTP_AUTH_USERNAME}"
           : "$${ALERT_SMTP_AUTH_PASSWORD:?missing ALERT_SMTP_AUTH_PASSWORD}"
-          # ALERT_SMTP_REQUIRE_TLS=true|false.
           : "$${ALERT_SMTP_REQUIRE_TLS:?missing ALERT_SMTP_REQUIRE_TLS}"
 
-          # These blocks are inserted under:
-          #   - name: "email-critical"
-          #   - name: "email-warning"
-          # in alertmanager.yml.tmpl.
-          #
-          # IMPORTANT: The indentation here must match the template location.
-          # We start at 4 spaces so it becomes valid YAML under the receiver item.
-          ALERT_EMAIL_CRITICAL_YAML="$$(printf '%s\n' \
-            '    email_configs:' \
-            '      - to: "$${ALERT_EMAIL_TO}"' \
-            '        from: "$${ALERT_SMTP_FROM}"' \
-            '        smarthost: "$${ALERT_SMTP_SMARTHOST}"' \
-            '        auth_username: "$${ALERT_SMTP_AUTH_USERNAME}"' \
-            '        auth_password: "$${ALERT_SMTP_AUTH_PASSWORD}"' \
-            '        require_tls: '"$${ALERT_SMTP_REQUIRE_TLS}" \
-            '        send_resolved: true' \
+          ALERT_EMAIL_CRITICAL_YAML="$$(cat <<EOF
+            email_configs:
+              - to: "$${ALERT_EMAIL_TO}"
+            from: "$${ALERT_SMTP_FROM}"
+            smarthost: "$${ALERT_SMTP_SMARTHOST}"
+            auth_username: "$${ALERT_SMTP_AUTH_USERNAME}"
+            auth_password: "$${ALERT_SMTP_AUTH_PASSWORD}"
+            require_tls: $${ALERT_SMTP_REQUIRE_TLS}
+            send_resolved: true
+            EOF
           )"
           ALERT_EMAIL_WARNING_YAML="$${ALERT_EMAIL_CRITICAL_YAML}"
         else
-          # Email disabled: keep receivers defined, but empty (no-op receivers).
           ALERT_EMAIL_CRITICAL_YAML=""
           ALERT_EMAIL_WARNING_YAML=""
         fi
 
         export ALERT_EMAIL_CRITICAL_YAML ALERT_EMAIL_WARNING_YAML
 
-        # Render config (limit substitution strictly to our two injected YAML blocks)
-        envsubst '$ALERT_EMAIL_CRITICAL_YAML $ALERT_EMAIL_WARNING_YAML \
-          $ALERT_EMAIL_TO $ALERT_SMTP_FROM $ALERT_SMTP_SMARTHOST \
-          $ALERT_SMTP_AUTH_USERNAME $ALERT_SMTP_AUTH_PASSWORD $ALERT_SMTP_REQUIRE_TLS' \
+        # Render config: substitute ONLY the two injected blocks.
+        envsubst '$$ALERT_EMAIL_CRITICAL_YAML $$ALERT_EMAIL_WARNING_YAML' \
           < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
 
         chmod 0644 /out/alertmanager.yml
 
-        # Copy templates (optional; works even if empty)
         mkdir -p /out/templates
         if [ -d /in/templates ]; then
           cp -a /in/templates/. /out/templates/ 2>/dev/null || true
@@ -164,8 +154,8 @@ services:
     security_opt:
       - no-new-privileges:true
     cap_drop: [ALL]
-    # IMPORTANT: must be able to write to /out
     read_only: false
+
     # no mpfs: - /tmp section as the alertmanager-config-render service is a one-shot initialization container (it runs once and exits).
     # it woult only add slight overhead and is not needed.
 
