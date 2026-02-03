@@ -9,7 +9,7 @@ datasources:
     uid: DS_PROMETHEUS
     type: prometheus
     access: proxy
-    url: http://prometheus:9090
+    url: http://victoriametrics:8428
     isDefault: true
     editable: false
     jsonData:
