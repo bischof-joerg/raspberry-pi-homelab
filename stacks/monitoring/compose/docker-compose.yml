@@ -219,10 +219,11 @@ services:
       - -promscrape.suppressScrapeErrors
       - -remoteWrite.tmpDataPath=/tmp/vmagent-remotewrite-data
     healthcheck:
-      test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:8429/health"]
+      test: ["CMD", "wget", "--tries=1", "--spider", "http://127.0.0.1:8429/ready"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 20s
     logging:
       driver: "json-file"
       options:
@@ -257,10 +258,11 @@ services:
       - -remoteRead.url=http://victoriametrics:8428
       - -httpListenAddr=:8880
     healthcheck:
-      test: ["CMD", "wget", "--tries=1", "--spider", "http://localhost:8880/health"]
+      test: ["CMD", "wget", "--tries=1", "--spider", "http://127.0.0.1:8880/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 20s
     logging:
       driver: "json-file"
       options:
