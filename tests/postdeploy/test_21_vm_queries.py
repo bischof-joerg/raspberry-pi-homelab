@@ -12,11 +12,27 @@ VM_BASE = "http://127.0.0.1:8428"
 _METRIC_NAME_RE = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]*$")
 
 
-def _env_csv(name: str) -> list[str]:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
+def _env_list_or_default(var_name: str, default: list[str]) -> list[str]:
+    raw = os.environ.get(var_name, "")
+    if raw is None:
         return []
-    return [x.strip() for x in raw.split(",") if x.strip()]
+
+    s = raw.strip()
+    if not s:
+        return []
+
+    lowered = s.lower()
+
+    # Disabled feature flags
+    if lowered in {"0", "false", "no", "off"}:
+        return []
+
+    # Enabled feature flags (use defaults)
+    if lowered in {"1", "true", "yes", "on"}:
+        return default
+
+    # Otherwise treat as CSV list
+    return [x.strip() for x in s.split(",") if x.strip()]
 
 
 def vm_query(http_get, expr: str) -> dict:
@@ -71,9 +87,12 @@ def test_vm_query_up_metric_exists(retry, http_get):
 
 @pytest.mark.postdeploy
 def test_vm_expected_metrics_optional(retry, http_get):
-    expected = _env_csv("VM_EXPECT_METRICS")
+    expected = _env_list_or_default(
+        "VM_EXPECT_METRICS",
+        default=["up"],
+    )
     if not expected:
-        pytest.skip("VM_EXPECT_METRICS not set")
+        pytest.skip("VM_EXPECT_METRICS not set (or disabled)")
 
     def _normalize(item: str) -> str:
         # tolerate accidental quoting in env var, e.g. '"up"' or "'up'"
@@ -113,9 +132,12 @@ def test_vm_expected_metrics_optional(retry, http_get):
 
 @pytest.mark.postdeploy
 def test_vm_expected_jobs_optional(retry, http_get):
-    jobs = _env_csv("VM_EXPECT_JOBS")
+    jobs = _env_list_or_default(
+        "VM_EXPECT_JOBS",
+        default=["alertmanager", "cadvisor", "node-exporter", "prometheus", "vmagent", "vmalert", "victoriametrics"],
+    )
     if not jobs:
-        pytest.skip("VM_EXPECT_JOBS not set")
+        pytest.skip("VM_EXPECT_JOBS not set (or disabled)")
 
     for job in jobs:
 
