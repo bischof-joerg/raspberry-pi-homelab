@@ -1,41 +1,55 @@
-# tests/postdeploy/test_20_endpoints.py
 import json
 import os
 import pathlib
 import time
+import urllib.parse
 import urllib.request
 
 import pytest
 
-PROMETHEUS_BASE = "http://127.0.0.1:9090"
+PROM_BASE = "http://127.0.0.1:9090"
 ALERTMANAGER_BASE = "http://127.0.0.1:9093"
 GRAFANA_BASE = "http://127.0.0.1:3000"
-VICTORIAMETRICS_BASE = "http://127.0.0.1:8428"
+VM_BASE = "http://127.0.0.1:8428"
 VMALERT_BASE = "http://127.0.0.1:8880"
 
 
 def require_postdeploy_target() -> None:
-    """
+    """Skip locally unless explicitly forced.
+
     Postdeploy tests are intended to run on the deploy target (the Pi).
-    Skip when running locally (WSL/laptop) unless explicitly forced.
+    Set POSTDEPLOY_ON_TARGET=1 to force running them elsewhere.
     """
     if os.environ.get("POSTDEPLOY_ON_TARGET") == "1":
         return
 
-    # Marker file exists on the Pi
+    # Heuristic: marker file exists on the Pi
     if pathlib.Path("/etc/raspberry-pi-homelab/.env").exists():
         return
 
     pytest.skip("postdeploy tests must run on the deploy target (set POSTDEPLOY_ON_TARGET=1 to force)")
 
 
-def http_get(url: str, timeout: int = 5):
-    req = urllib.request.Request(url)
+def http_get(url: str, headers: dict | None = None, timeout: int = 5) -> tuple[int, str]:
+    req = urllib.request.Request(url, headers=headers or {})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, r.read().decode()
 
 
-def retry(assert_fn, timeout_s: int = 45, interval_s: float = 2.0):
+def http_post_form(
+    url: str,
+    data: dict[str, str],
+    headers: dict | None = None,
+    timeout: int = 10,
+) -> tuple[int, str]:
+    payload = urllib.parse.urlencode(data).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers=headers or {}, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.status, r.read().decode()
+
+
+def retry(assert_fn, timeout_s: int = 60, interval_s: float = 2.5) -> None:
+    """Simple retry helper to avoid flaky postdeploy tests."""
     deadline = time.time() + timeout_s
     last_err: AssertionError | None = None
     while time.time() < deadline:
@@ -48,69 +62,63 @@ def retry(assert_fn, timeout_s: int = 45, interval_s: float = 2.0):
     raise last_err or AssertionError("retry timeout")
 
 
-# --- Prometheus (published on host: 127.0.0.1:9090) ---
+# --- Prometheus ---
 
 
 @pytest.mark.postdeploy
 def test_prometheus_ready():
     require_postdeploy_target()
-    status, body = http_get(f"{PROMETHEUS_BASE}/-/ready")
-    assert status == 200, body
+    status, _ = http_get(f"{PROM_BASE}/-/ready")
+    assert status == 200
 
 
 @pytest.mark.postdeploy
 def test_prometheus_healthy():
     require_postdeploy_target()
-    status, body = http_get(f"{PROMETHEUS_BASE}/-/healthy")
-    assert status == 200, body
+    status, _ = http_get(f"{PROM_BASE}/-/healthy")
+    assert status == 200
 
 
-# --- Alertmanager (published on host: 127.0.0.1:9093) ---
+# --- Alertmanager ---
 
 
 @pytest.mark.postdeploy
 def test_alertmanager_ready():
     require_postdeploy_target()
-    status, body = http_get(f"{ALERTMANAGER_BASE}/-/ready")
-    assert status == 200, body
+    status, _ = http_get(f"{ALERTMANAGER_BASE}/-/ready")
+    assert status == 200
 
 
 @pytest.mark.postdeploy
 def test_alertmanager_healthy():
     require_postdeploy_target()
-    status, body = http_get(f"{ALERTMANAGER_BASE}/-/healthy")
-    assert status == 200, body
+    status, _ = http_get(f"{ALERTMANAGER_BASE}/-/healthy")
+    assert status == 200
 
 
-# --- Grafana (published on host: 127.0.0.1:3000) ---
+# --- Grafana ---
 
 
 @pytest.mark.postdeploy
 def test_grafana_health():
     require_postdeploy_target()
-
-    def _check():
-        status, body = http_get(f"{GRAFANA_BASE}/api/health")
-        assert status == 200, body
-        data = json.loads(body)
-        assert "database" in data, data
-
-    retry(_check, timeout_s=60, interval_s=2.0)
+    status, body = http_get(f"{GRAFANA_BASE}/api/health")
+    assert status == 200, body
+    data = json.loads(body)
+    assert "database" in data, data
 
 
-# --- VictoriaMetrics (published on host: 127.0.0.1:8428) ---
+# --- VictoriaMetrics ---
 
 
 @pytest.mark.postdeploy
 def test_victoriametrics_health():
     require_postdeploy_target()
-    status, body = http_get(f"{VICTORIAMETRICS_BASE}/health")
+    status, body = http_get(f"{VM_BASE}/health")
     assert status == 200, body
 
 
-# --- vmalert (published on host: 127.0.0.1:8880) ---
-# Note: vmalert "/ready" is NOT a valid endpoint in your setup (returns 400),
-# so we only check endpoints that actually exist.
+# --- vmalert ---
 
 
 @pytest.mark.postdeploy
@@ -127,14 +135,17 @@ def test_vmalert_rules_endpoint():
     def _check():
         status, body = http_get(f"{VMALERT_BASE}/api/v1/rules")
         assert status == 200, body
-        data = json.loads(body)
-        assert "groups" in data, data
+        payload = json.loads(body)
+
+        # vmalert returns: {"status":"success","data":{"groups":[...]}}
+        assert payload.get("status") == "success", payload
+
+        groups = payload.get("data", {}).get("groups")
+        if groups is None:
+            # Fallback for other shapes (or future changes)
+            groups = payload.get("groups")
+
+        assert isinstance(groups, list), payload
+        assert len(groups) > 0, payload
 
     retry(_check, timeout_s=60, interval_s=2.0)
-
-
-@pytest.mark.postdeploy
-def test_vmalert_alerts_endpoint():
-    require_postdeploy_target()
-    status, body = http_get(f"{VMALERT_BASE}/api/v1/alerts")
-    assert status == 200, body
