@@ -52,4 +52,11 @@ while IFS= read -r -d '' f; do
 done < <(find "$ROOT" -name '*.json' -not -name 'manifest.json' -not -name '.*' -print0)
 [[ "$bad_ds" -eq 0 ]] || exit 1
 
+# 5) Disallow hardcoded instance hostname matchers (GitOps determinism)
+if rg -n "instance=~'rpi-hub'|instance=~\"rpi-hub\"" "$ROOT" >/dev/null 2>&1; then
+  echo "❌ ERROR: hardcoded instance matcher 'rpi-hub' found in dashboards. Normalize dashboards or patch expressions."
+  rg -n "instance=~'rpi-hub'|instance=~\"rpi-hub\"" "$ROOT" || true
+  exit 1
+fi
+
 echo "✅ All dashboards are valid and normalized."

@@ -358,7 +358,7 @@ providers:
 3. Run:
 
    ```bash
-   scripts/grafana/normalize-dashboard.py monitoring/grafana/dashboards
+   scripts/grafana/normalize_dashboards.py stacks/monitoring/grafana/dashboards
    ```
 
 4. Validate:

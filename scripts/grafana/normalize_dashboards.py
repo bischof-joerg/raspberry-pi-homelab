@@ -74,6 +74,33 @@ def walk_and_patch(node: Any) -> Any:
     return node
 
 
+def patch_promql_expr(expr: Any, rel_path: str) -> Any:
+    """Patch known-bad PromQL patterns for our environment."""
+    if not isinstance(expr, str):
+        return expr
+
+    # Dashboard-specific fix: docker-engine-health-21040 expects instance=~'rpi-hub'
+    # but our docker-engine metrics have job="docker-engine" and instance like 172.20.0.1:9323.
+    if rel_path.endswith("docker/docker-engine-health-21040.json"):
+        expr = expr.replace("{instance=~'rpi-hub'}", '{job="docker-engine"}')
+        expr = expr.replace('{instance=~"rpi-hub"}', '{job="docker-engine"}')
+        expr = expr.replace('{instance=~"rpi-hub.*"}', '{job="docker-engine"}')
+    return expr
+
+
+def walk_and_patch_with_context(node: Any, rel_path: str) -> Any:
+    if isinstance(node, dict):
+        if "datasource" in node:
+            node["datasource"] = normalize_datasource_value(node["datasource"])
+        # Patch PromQL expressions in panels/queries
+        if "expr" in node:
+            node["expr"] = patch_promql_expr(node["expr"], rel_path)
+        return {k: walk_and_patch_with_context(v, rel_path) for k, v in node.items()}
+    if isinstance(node, list):
+        return [walk_and_patch_with_context(x, rel_path) for x in node]
+    return node
+
+
 def main() -> int:
     root = dash_root()
     if not root.exists():
@@ -99,7 +126,8 @@ def main() -> int:
 
     final_docs: list[tuple[Path, dict]] = []
     for f, data in docs:
-        data = walk_and_patch(data)
+        rel = str(f.resolve().relative_to(root.resolve())).replace("\\", "/")
+        data = walk_and_patch_with_context(data, rel)
 
         raw_json = json.dumps(data)
         for old, new in uid_map.items():
