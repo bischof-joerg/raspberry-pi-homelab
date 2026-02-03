@@ -66,6 +66,8 @@ services:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--tries=1", "--spider", "http://127.0.0.1:9093/-/healthy"]
+    labels:
+      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     logging:
       driver: "json-file"
       options:
@@ -195,6 +197,8 @@ services:
       resources:
         limits:
           memory: 4G
+    labels:
+      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     logging:
       driver: "json-file"
       options:
@@ -229,6 +233,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 20s
+    labels:
+      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     logging:
       driver: "json-file"
       options:
@@ -268,6 +274,8 @@ services:
       timeout: 10s
       retries: 5
       start_period: 20s
+    labels:
+      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     logging:
       driver: "json-file"
       options:
@@ -304,6 +312,8 @@ services:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 10s
+    labels:
+      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     logging:
       driver: "json-file"
       options:

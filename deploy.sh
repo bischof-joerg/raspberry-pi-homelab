@@ -107,6 +107,25 @@ compose() {
   docker compose --env-file "$SECRETS_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+compute_monitoring_config_hash() {
+  local files=(
+    "$REPO_ROOT/stacks/monitoring/vmagent/vmagent.yml"
+    "$REPO_ROOT/stacks/monitoring/vmalert/vmalert.yml"
+    "$REPO_ROOT/stacks/monitoring/alertmanager/alertmanager.yml"
+    "$REPO_ROOT/stacks/monitoring/victoriametrics/victoriametrics.yml"
+  )
+
+  local existing=()
+  local f
+  for f in "${files[@]}"; do
+    [[ -f "$f" ]] && existing+=("$f")
+  done
+
+  [[ ${#existing[@]} -gt 0 ]] || { echo "no-config-files"; return 0; }
+
+  sha256sum "${existing[@]}" | sha256sum | awk '{print $1}'
+}
+
 repo_ownership_mismatch_exists() {
   find "$REPO_ROOT" -xdev \( ! -user "$REPO_OWNER_USER" -o ! -group "$REPO_OWNER_GROUP" \) -print -quit 2>/dev/null | grep -q .
 }
@@ -257,15 +276,23 @@ main() {
 
   maybe_init_permissions
 
+  # Compute once in parent shell so it's deterministic and shellcheck-clean.
+  export MONITORING_CONFIG_HASH
+  MONITORING_CONFIG_HASH="$(compute_monitoring_config_hash)"
+  log "config-hash: MONITORING_CONFIG_HASH=$MONITORING_CONFIG_HASH"
+
+  # Make sure these are available to the child shell when using bash -c
+  export SECRETS_FILE COMPOSE_FILE
+
   if [[ "$PULL_IMAGES" == "1" ]]; then
     log "compose: pull + up (single ghcr session)"
-    with_ephemeral_docker_config bash -euo pipefail -c '
-      docker compose --env-file "'"$SECRETS_FILE"'" -f "'"$COMPOSE_FILE"'" pull
-      docker compose --env-file "'"$SECRETS_FILE"'" -f "'"$COMPOSE_FILE"'" up -d --force-recreate
-    '
+    with_ephemeral_docker_config bash -euo pipefail -c "
+      docker compose --env-file \"\$SECRETS_FILE\" -f \"\$COMPOSE_FILE\" pull
+      docker compose --env-file \"\$SECRETS_FILE\" -f \"\$COMPOSE_FILE\" up -d
+    "
   else
     log "compose: pull skipped (PULL_IMAGES=0)"
-    compose up -d --force-recreate
+    compose up -d
   fi
 
   log "compose: ps"
