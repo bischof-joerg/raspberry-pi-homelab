@@ -78,6 +78,51 @@ developer machines and automated checks. The test phases on WSL automatically lu
     - ```sudo ./deploy.sh```
 - Quick sanity check with postdeploy tests is always posible: ```make postdeploy```
 
+## Deterministic config changes during deploy (config-hash labels)
+
+Some services in the monitoring stack mount configuration, rules, or provisioning data directly from the Git repository (bind mounts). Docker Compose does **not reliably recreate containers** when only the *content* of such mounted files changes.
+
+To ensure deterministic and reproducible deploys without forcing a full stack recreation, the deploy process uses a **config-hash label mechanism**.
+
+### How it works
+
+- During `deploy.sh`, a combined SHA-256 hash is computed from selected repo-managed configuration files (for example `vmagent.yml`, alert rules, Grafana provisioning).
+- The hash is exported as `MONITORING_CONFIG_HASH`.
+- Services that depend on these configs define a label:
+  ```yaml
+    labels:
+      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
+  ```
+
+- If any of the hashed config files change, the label value changes.
+- Docker Compose detects a service definition change and recreates only the affected services.
+
+### Scope and intent
+
+- Only services with repo-mounted runtime configuration use the config-hash label.
+- Services without such configuration (e.g. exporters) are intentionally excluded to avoid unnecessary churn.
+- A global --force-recreate is not required for normal deploys.
+
+### Operational effect
+
+- Config changes are applied deterministically on deploy.
+- Container recreation is scoped and predictable.
+- Re-running ```sudo ./deploy.sh``` is safe and idempotent.
+- The mechanism aligns with the GitOps principle that Git is the single source of truth.
+
+### Verification
+
+After changing a monitored configuration file:
+```bash
+  sudo ./deploy.sh
+```
+
+Expected:
+
+- A new MONITORING_CONFIG_HASH is logged.
+- Only services carrying the config-hash label are recreated.
+- Post-deploy tests (make postdeploy) remain green.
+
 ## Operational Guardrails (Do Not Violate)
 
 - No manual changes on the Raspberry Pi (except git pull + sudo ./deploy.sh)
