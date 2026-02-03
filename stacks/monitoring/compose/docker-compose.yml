@@ -218,6 +218,8 @@ services:
     image: victoriametrics/vmagent:v1.135.0
     restart: unless-stopped
     networks: [monitoring]
+    ports:
+      - "127.0.0.1:8429:8429"
     depends_on:
       victoriametrics:
         condition: service_started
