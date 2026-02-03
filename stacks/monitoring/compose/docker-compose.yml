@@ -124,15 +124,15 @@ services:
           #
           # IMPORTANT: The indentation here must match the template location.
           # We start at 4 spaces so it becomes valid YAML under the receiver item.
-          ALERT_EMAIL_CRITICAL_YAML="$(printf '%s\n' \
+          ALERT_EMAIL_CRITICAL_YAML="$$(printf '%s\n' \
             '    email_configs:' \
-            '      - to: "${ALERT_EMAIL_TO}"' \
-            '        from: "${ALERT_SMTP_FROM}"' \
-            '        smarthost: "${ALERT_SMTP_SMARTHOST}"' \
-            '        auth_username: "${ALERT_SMTP_AUTH_USERNAME}"' \
-            '        auth_password: "${ALERT_SMTP_AUTH_PASSWORD}"' \
-            '        require_tls: ${ALERT_SMTP_REQUIRE_TLS}' \
-            '        send_resolved: true'
+            '      - to: "$${ALERT_EMAIL_TO}"' \
+            '        from: "$${ALERT_SMTP_FROM}"' \
+            '        smarthost: "$${ALERT_SMTP_SMARTHOST}"' \
+            '        auth_username: "$${ALERT_SMTP_AUTH_USERNAME}"' \
+            '        auth_password: "$${ALERT_SMTP_AUTH_PASSWORD}"' \
+            '        require_tls: '"$${ALERT_SMTP_REQUIRE_TLS}" \
+            '        send_resolved: true' \
           )"
           ALERT_EMAIL_WARNING_YAML="$${ALERT_EMAIL_CRITICAL_YAML}"
         else
@@ -143,10 +143,8 @@ services:
 
         export ALERT_EMAIL_CRITICAL_YAML ALERT_EMAIL_WARNING_YAML
 
-        # Render config (limit substitution to our known variables)
-        envsubst '$ALERT_EMAIL_CRITICAL_YAML $ALERT_EMAIL_WARNING_YAML \
-          $ALERT_EMAIL_TO $ALERT_SMTP_SMARTHOST $ALERT_SMTP_FROM \
-          $ALERT_SMTP_AUTH_USERNAME $ALERT_SMTP_AUTH_PASSWORD $ALERT_SMTP_REQUIRE_TLS' \
+        # Render config (limit substitution strictly to our two injected YAML blocks)
+        envsubst '$$ALERT_EMAIL_CRITICAL_YAML $$ALERT_EMAIL_WARNING_YAML' \
           < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
         chmod 0644 /out/alertmanager.yml
 
