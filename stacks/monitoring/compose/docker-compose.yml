@@ -107,13 +107,13 @@ services:
         set -euo pipefail
         apk add --no-cache gettext
 
-        if [ "${ALERT_EMAIL_ENABLED:-0}" = "1" ]; then
+        if [ "$${ALERT_EMAIL_ENABLED:-0}" = "1" ]; then
           # Hard fail early if required env is missing. Prevents rendering empty config fields.
           : "$${ALERT_EMAIL_TO:?missing ALERT_EMAIL_TO}"
           : "$${ALERT_SMTP_SMARTHOST:?missing ALERT_SMTP_SMARTHOST}"
           : "$${ALERT_SMTP_FROM:?missing ALERT_SMTP_FROM}"
           : "$${ALERT_SMTP_AUTH_USERNAME:?missing ALERT_SMTP_AUTH_USERNAME}"
-          : "${ALERT_SMTP_AUTH_PASSWORD:?missing ALERT_SMTP_AUTH_PASSWORD}"
+          : "$${ALERT_SMTP_AUTH_PASSWORD:?missing ALERT_SMTP_AUTH_PASSWORD}"
           # ALERT_SMTP_REQUIRE_TLS=true|false.
           : "$${ALERT_SMTP_REQUIRE_TLS:?missing ALERT_SMTP_REQUIRE_TLS}"
 
@@ -134,7 +134,7 @@ services:
             '        require_tls: ${ALERT_SMTP_REQUIRE_TLS}' \
             '        send_resolved: true'
           )"
-          ALERT_EMAIL_WARNING_YAML="${ALERT_EMAIL_CRITICAL_YAML}"
+          ALERT_EMAIL_WARNING_YAML="$${ALERT_EMAIL_CRITICAL_YAML}"
         else
           # Email disabled: keep receivers defined, but empty (no-op receivers).
           ALERT_EMAIL_CRITICAL_YAML=""
@@ -143,8 +143,11 @@ services:
 
         export ALERT_EMAIL_CRITICAL_YAML ALERT_EMAIL_WARNING_YAML
 
-        # Render config
-        envsubst < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
+        # Render config (limit substitution to our known variables)
+        envsubst '$ALERT_EMAIL_CRITICAL_YAML $ALERT_EMAIL_WARNING_YAML \
+          $ALERT_EMAIL_TO $ALERT_SMTP_SMARTHOST $ALERT_SMTP_FROM \
+          $ALERT_SMTP_AUTH_USERNAME $ALERT_SMTP_AUTH_PASSWORD $ALERT_SMTP_REQUIRE_TLS' \
+          < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
         chmod 0644 /out/alertmanager.yml
 
         # Copy templates (optional; works even if empty)
@@ -162,7 +165,6 @@ services:
     cap_drop: [ALL]
     # IMPORTANT: must be able to write to /out
     read_only: false
-
     # no mpfs: - /tmp section as the alertmanager-config-render service is a one-shot initialization container (it runs once and exits).
     # it woult only add slight overhead and is not needed.
 
