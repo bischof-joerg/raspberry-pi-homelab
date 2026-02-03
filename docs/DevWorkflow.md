@@ -76,7 +76,7 @@ developer machines and automated checks. The test phases on WSL automatically lu
     - ```git revert <commit-sha>```
     - ```git pull --rebase```
     - ```sudo ./deploy.sh```
-- Quick sanity check with postdeploy tests is always posible: ```make postdeploy```
+- Quick sanity check with postdeploy tests is always posible: `make postdeploy`
 
 ## Deterministic config changes during deploy (config-hash labels)
 
@@ -101,13 +101,13 @@ To ensure deterministic and reproducible deploys without forcing a full stack re
 
 - Only services with repo-mounted runtime configuration use the config-hash label.
 - Services without such configuration (e.g. exporters) are intentionally excluded to avoid unnecessary churn.
-- A global --force-recreate is not required for normal deploys.
+- A global `--force-recreate` is not required for normal deploys.
 
 ### Operational effect
 
 - Config changes are applied deterministically on deploy.
 - Container recreation is scoped and predictable.
-- Re-running ```sudo ./deploy.sh``` is safe and idempotent.
+- Re-running `sudo ./deploy.sh` is safe and idempotent.
 - The mechanism aligns with the GitOps principle that Git is the single source of truth.
 
 ### Verification
@@ -119,9 +119,9 @@ After changing a monitored configuration file:
 
 Expected:
 
-- A new MONITORING_CONFIG_HASH is logged.
+- A new `MONITORING_CONFIG_HASH` is logged.
 - Only services carrying the config-hash label are recreated.
-- Post-deploy tests (make postdeploy) remain green.
+- Post-deploy tests (`make postdeploy`) remain green.
 
 ## Operational Guardrails (Do Not Violate)
 
