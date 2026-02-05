@@ -29,25 +29,19 @@ transforms:
       # Host (stream field)
       .host = get_env_var!("HOSTNAME")
 
-      # container_name (stream field) - stepwise fallbacks (VRL 0.51.1 + yamllint-safe)
+      # container_name (stream field) - stepwise fallbacks (VRL 0.51.1 safe)
       .container_name = to_string(.container_name) ?? ""
       if .container_name == "" { .container_name = to_string(.container) ?? "" }
       if .container_name == "" { .container_name = to_string(.docker.container_name) ?? "" }
       if .container_name == "" { .container_name = to_string(.docker.container.name) ?? "" }
       if .container_name == "" { .container_name = "unknown" }
 
-      # Compose labels may exist under different paths; resolve directly without temp vars.
-      # stack = compose project label (fallback to constant)
-      .stack = to_string(.docker.container.labels."com.docker.compose.project") ??
-               to_string(.docker.labels."com.docker.compose.project") ??
-               to_string(.labels."com.docker.compose.project") ??
-               "homelab-home-prod-mon"
-
-      # service = compose service label (fallback to container_name)
-      .service = to_string(.docker.container.labels."com.docker.compose.service") ??
-                 to_string(.docker.labels."com.docker.compose.service") ??
-                 to_string(.labels."com.docker.compose.service") ??
-                 .container_name
+      # Compose metadata:
+      # docker_logs flattens labels to top-level keys like:
+      #   label.com.docker.compose.project
+      #   label.com.docker.compose.service
+      .stack = to_string(."label.com.docker.compose.project") ?? "homelab-home-prod-mon"
+      .service = to_string(."label.com.docker.compose.service") ?? .container_name
 
       # namespace = fixed env marker (stream field)
       .namespace = to_string(.namespace) ?? "prod"
