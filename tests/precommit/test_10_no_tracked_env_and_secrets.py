@@ -59,7 +59,9 @@ def test_no_secret_like_files_tracked():
             blocked.append(line)
 
     assert not blocked, (
-        "❌ Secret/env-like files are tracked by git:\n" + "\n".join(f" - {f}" for f in blocked) + "\n\nFix:\n"
+        "❌ Secret/env-like files are tracked by git:\n"
+        + "\n".join(f" - {f}" for f in blocked)
+        + "\n\nFix:\n"
         " - Remove from git index: git rm --cached <file>\n"
         " - Add it to .gitignore\n"
     )

@@ -16,7 +16,9 @@ def which_ok(binary: str) -> bool:
     return which(binary) is not None
 
 
-def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
+def run(
+    cmd: list[str], *, cwd: Path | None = None, env: dict | None = None
+) -> subprocess.CompletedProcess:
     """Run a command and capture stdout/stderr (no exception on non-zero)."""
     merged_env = os.environ.copy()
     if env:
@@ -113,9 +115,13 @@ def compose_ps_json(*, compose_file: Path) -> list[dict]:
         try:
             obj = json.loads(line)
         except Exception as e:
-            raise RuntimeError(f"Failed to parse compose ps NDJSON at line {i}: {e}\nLine:\n{line}") from e
+            raise RuntimeError(
+                f"Failed to parse compose ps NDJSON at line {i}: {e}\nLine:\n{line}"
+            ) from e
         if not isinstance(obj, dict):
-            raise RuntimeError(f"Unexpected NDJSON row type at line {i}: {type(obj)}\nLine:\n{line}")
+            raise RuntimeError(
+                f"Unexpected NDJSON row type at line {i}: {type(obj)}\nLine:\n{line}"
+            )
         rows.append(obj)
 
     return rows

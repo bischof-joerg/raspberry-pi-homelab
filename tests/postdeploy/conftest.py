@@ -28,7 +28,9 @@ def _enforce_postdeploy_target(request: pytest.FixtureRequest) -> None:
     if _is_deploy_target():
         return
 
-    pytest.skip("postdeploy tests must run on the deploy target (set POSTDEPLOY_ON_TARGET=1 to force)")
+    pytest.skip(
+        "postdeploy tests must run on the deploy target (set POSTDEPLOY_ON_TARGET=1 to force)"
+    )
 
 
 @pytest.fixture

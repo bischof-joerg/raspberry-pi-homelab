@@ -68,7 +68,9 @@ def test_no_large_files():
             too_big.append(f"{relpath(p)} ({size / 1024:.1f} KB)")
 
     assert not too_big, (
-        f"❌ Files exceed max size of {MAX_KB} KB:\n" + "\n".join(f" - {x}" for x in too_big) + "\n\nFix options:\n"
+        f"❌ Files exceed max size of {MAX_KB} KB:\n"
+        + "\n".join(f" - {x}" for x in too_big)
+        + "\n\nFix options:\n"
         " - Put large artifacts into releases/object storage\n"
         " - Add to .gitignore (if generated)\n"
         " - Use Git LFS if really needed\n"

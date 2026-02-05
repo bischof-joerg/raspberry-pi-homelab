@@ -49,7 +49,9 @@ def _compose_config_json(compose_file: Path) -> dict:
     res = run([*cmd, "-f", str(compose_file), "config", "--format", "json"], env=env)
     if res.returncode != 0:
         # Some older compose builds may not support --format json.
-        pytest.skip(f"docker compose config --format json not supported or config failed.\nstderr:\n{res.stderr}")
+        pytest.skip(
+            f"docker compose config --format json not supported or config failed.\nstderr:\n{res.stderr}"
+        )
 
     try:
         data = json.loads(res.stdout)

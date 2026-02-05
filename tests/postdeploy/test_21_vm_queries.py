@@ -115,7 +115,9 @@ def test_vm_expected_metrics_optional(retry, http_get):
         default=["up"],
     )
     if not expected:
-        pytest.skip("VM_EXPECT_METRICS not set (or disabled).\n" + _hint_run_both_vm_expectation_tests())
+        pytest.skip(
+            "VM_EXPECT_METRICS not set (or disabled).\n" + _hint_run_both_vm_expectation_tests()
+        )
 
     def _normalize(item: str) -> str:
         # tolerate accidental quoting in env var, e.g. '"up"' or "'up'"
@@ -157,10 +159,20 @@ def test_vm_expected_metrics_optional(retry, http_get):
 def test_vm_expected_jobs_optional(retry, http_get):
     jobs = _env_list_or_default(
         "VM_EXPECT_JOBS",
-        default=["alertmanager", "cadvisor", "docker-engine", "node-exporter", "victoriametrics", "vmagent", "vmalert"],
+        default=[
+            "alertmanager",
+            "cadvisor",
+            "docker-engine",
+            "node-exporter",
+            "victoriametrics",
+            "vmagent",
+            "vmalert",
+        ],
     )
     if not jobs:
-        pytest.skip("VM_EXPECT_JOBS not set (or disabled).\n" + _hint_run_both_vm_expectation_tests())
+        pytest.skip(
+            "VM_EXPECT_JOBS not set (or disabled).\n" + _hint_run_both_vm_expectation_tests()
+        )
 
     # Allow explicit opt-out without breaking defaults
     ignore = set(_env_list_or_default("VM_IGNORE_JOBS", default=[]))
