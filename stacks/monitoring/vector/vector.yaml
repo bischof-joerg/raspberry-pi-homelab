@@ -15,7 +15,9 @@ transforms:
     inputs: [journald]
     source: |
       # Timestamp
-      .timestamp = to_timestamp!(.timestamp)
+      if exists(.timestamp) && is_string(.timestamp) {
+        .timestamp = parse_timestamp!(.timestamp, "%+")
+      }
 
       # Message
       .message = to_string!(.message)
@@ -52,7 +54,6 @@ sinks:
     # Backpressure guardrail:
     # Use disk buffering with explicit max size to avoid unbounded RAM growth.
     buffer:
-      type: memory
       # hard cap: prevents unbounded RAM growth
       max_events: 20000
       when_full: drop_newest
