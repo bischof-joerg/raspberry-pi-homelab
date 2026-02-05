@@ -1,0 +1,57 @@
+api:
+  enabled: true
+  address: 127.0.0.1:8686
+
+sources:
+  journald:
+    type: journald
+    # Keep this broad initially; refine later (units/include_matches)
+    # to avoid surprises during bring-up.
+    # Since Docker logs are routed to journald, they’ll appear here too.
+
+transforms:
+  normalize:
+    type: remap
+    inputs: [journald]
+    source: |
+      # Timestamp
+      .timestamp = to_timestamp!(.timestamp)
+
+      # Message
+      .message = to_string!(.message)
+
+      # Host
+      .host = get_env_var!("HOSTNAME")
+
+      # Attempt to extract container name / service hints from journald fields.
+      # These keys vary depending on docker+journald; keep best-effort, not fragile.
+      .container_name = to_string(.CONTAINER_NAME) ?? to_string(.container_name) ?? to_string(.SYSLOG_IDENTIFIER) ?? "unknown"
+      .service = to_string(.COMPOSE_SERVICE) ?? to_string(.service) ?? .container_name
+      .stack = to_string(.COMPOSE_PROJECT) ?? to_string(.stack) ?? "homelab-home-prod-mon"
+      .namespace = to_string(.namespace) ?? "prod"
+
+      # Level normalization (best-effort)
+      .level = downcase(to_string(.PRIORITY) ?? to_string(.level) ?? "info")
+      if .level == "3" { .level = "error" }
+      if .level == "4" { .level = "warn" }
+      if .level == "6" { .level = "info" }
+      if .level == "7" { .level = "debug" }
+
+sinks:
+  vlogs:
+    type: http
+    inputs: [normalize]
+    uri: "http://victorialogs:9428/insert/jsonline?_stream_fields=host,stack,service,namespace,container_name&_msg_field=message&_time_field=timestamp"
+    compression: gzip
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+    healthcheck:
+      enabled: false
+
+    # Backpressure guardrail:
+    # Use disk buffering with explicit max size to avoid unbounded RAM growth.
+    buffer:
+      type: disk
+      max_size: 512mb

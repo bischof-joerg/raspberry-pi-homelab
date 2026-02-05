@@ -265,6 +265,9 @@ services:
       # Disabling sending usage statistics to Grafana Labs
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_SERVER_ENABLE_GZIP: "true" # Better performance on Pi
+      # Grafana plugin preinstall (pinned)
+      # Prefer the newer env var over GF_INSTALL_PLUGINS
+      GF_PLUGINS_PREINSTALL: victoriametrics-logs-datasource@0.24.0
     volumes:
       - /srv/data/stacks/monitoring/grafana:/var/lib/grafana
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
@@ -354,6 +357,54 @@ services:
       options:
         max-size: "5m"
 
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.44.0-victorialogs
+    command:
+      - --storageDataPath=/vlogs
+      - --httpListenAddr=:9428
+      # Guardrail: cap disk usage for logs (bytes)
+      - --retention.maxDiskSpaceUsageBytes=200000000000
+    mem_limit: 2g
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9428/metrics"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - victorialogs-data:/vlogs
+    networks:
+      - apps
+
+  vector:
+    image: timberio/vector:0.51.1-distroless-libc
+    command: ["--config", "/etc/vector/vector.yaml"]
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    # Needs journald access; see runbook notes below.
+    user: "0:0"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/lib/vector
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ../vector/vector.yaml:/etc/vector/vector.yaml:ro
+      # journald access (runtime + persistent)
+      - /run/log/journal:/run/log/journal:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+    networks:
+      - apps
+
 networks:
   monitoring:
     name: monitoring
@@ -364,3 +415,9 @@ networks:
       config:
         - subnet: 172.20.0.0/16
           gateway: 172.20.0.1
+  apps:
+    external: true
+    name: apps
+
+volumes:
+  victorialogs-data:
