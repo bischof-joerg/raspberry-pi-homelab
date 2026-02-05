@@ -1,6 +1,7 @@
 api:
   enabled: true
   address: 127.0.0.1:8686
+  playground: false
 
 sources:
   docker:
@@ -12,58 +13,52 @@ transforms:
     type: remap
     inputs: ["docker"]
     source: |
-      # Timestamp (best effort)
-      if exists(.timestamp) && is_string(.timestamp) {
-        .timestamp = parse_timestamp!(.timestamp, "%+")
-      }
+      # 1) Message
+      .message = to_string(.message) ?? to_string(.log) ?? ""
 
-      # Message (docker_logs: usually .message, sometimes .log)
-      if exists(.message) {
-        .message = to_string!(.message)
-      } else if exists(.log) {
-        .message = to_string!(.log)
-      } else {
-        .message = ""
-      }
+      # 2) Timestamp (best-effort)
+      .timestamp = parse_timestamp(.timestamp, "%+") ?? now()
 
-      # Host (stream field)
-      .host = get_env_var!("HOSTNAME")
+      # 3) Low-cardinality stream fields
+      .host = get_env_var("HOSTNAME") ?? "unknown-pi"
 
-      # container_name (stream field) - stepwise fallbacks
       .container_name = to_string(.container_name) ?? ""
       if .container_name == "" { .container_name = to_string(.container) ?? "" }
       if .container_name == "" { .container_name = to_string(.docker.container_name) ?? "" }
-      if .container_name == "" { .container_name = to_string(.docker.container.name) ?? "" }
       if .container_name == "" { .container_name = "unknown" }
 
-      # stack (compose project label) - stepwise fallbacks
-      .stack = to_string(.docker.container.labels."com.docker.compose.project") ?? ""
-      if .stack == "" { .stack = to_string(.docker.labels."com.docker.compose.project") ?? "" }
-      if .stack == "" { .stack = to_string(.labels."com.docker.compose.project") ?? "" }
-      if .stack == "" { .stack = "homelab-home-prod-mon" }
-
-      # service (compose service label) - stepwise fallbacks
-      .service = to_string(.docker.container.labels."com.docker.compose.service") ?? ""
-      if .service == "" { .service = to_string(.docker.labels."com.docker.compose.service") ?? "" }
-      if .service == "" { .service = to_string(.labels."com.docker.compose.service") ?? "" }
-      if .service == "" { .service = .container_name }
-
-      # namespace (fixed env marker)
+      # IMPORTANT: in deinem Setup kommen Compose-Labels als flache Felder mit Punkten im Key:
+      #   label.com.docker.compose.project
+      #   label.com.docker.compose.service
+      .stack = to_string(."label.com.docker.compose.project") ?? "homelab-home-prod-mon"
+      .service = to_string(."label.com.docker.compose.service") ?? .container_name
       .namespace = to_string(.namespace) ?? "prod"
 
-      # Level normalization (best-effort)
-      .level = downcase(to_string(.level) ?? "")
-      if .level == "" {
+      # 4) Level normalization (VRL 0.51: kein else-if; robust verschachteln)
+      lvl = downcase(to_string(.level) ?? "")
+      if lvl == "" {
         msg = downcase(.message)
-
-        if contains(msg, " error") || starts_with(msg, "error") { .level = "error" }
+        if contains(msg, "error") { lvl = "error" }
         else {
-          if contains(msg, " warn") || starts_with(msg, "warn") { .level = "warn" }
+          if contains(msg, "warn") { lvl = "warn" }
           else {
-            if contains(msg, " debug") || starts_with(msg, "debug") { .level = "debug" }
-            else { .level = "info" }
+            if contains(msg, "debug") { lvl = "debug" }
+            else { lvl = "info" }
           }
         }
+      }
+      .level = lvl
+
+      # 5) Ballast abwerfen: exakt das Ziel-Event bauen (verhindert Label-/Metadata-Flut)
+      . = {
+        "timestamp": .timestamp,
+        "message": .message,
+        "level": .level,
+        "host": .host,
+        "stack": .stack,
+        "service": .service,
+        "namespace": .namespace,
+        "container_name": .container_name
       }
 
 sinks:
@@ -71,15 +66,19 @@ sinks:
     type: http
     inputs: ["normalize"]
     uri: >-
-      http://victorialogs:9428/insert/jsonline?_stream_fields=host,stack,service,namespace,container_name&_msg_field=message&_time_field=timestamp
+      http://victorialogs:9428/insert/jsonline
+      ?_stream_fields=host,stack,service,namespace,container_name
+      &_msg_field=message
+      &_time_field=timestamp
     compression: gzip
     encoding:
       codec: json
     framing:
       method: newline_delimited
     healthcheck:
-      enabled: false
-    # Backpressure guardrail: bounded in-memory buffering (Pi-safe)
+      enabled: true
     buffer:
-      max_events: 20000
+      type: memory
+      max_events: 10000
+      max_size: 67108864 # 64 MiB hard cap (Pi-safe)
       when_full: drop_newest
