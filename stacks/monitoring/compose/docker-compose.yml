@@ -358,7 +358,7 @@ services:
         max-size: "5m"
 
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.44.0-victorialogs
+    image: victoriametrics/victoria-logs:v1.44.0
     command:
       - --storageDataPath=/vlogs
       - --httpListenAddr=:9428
