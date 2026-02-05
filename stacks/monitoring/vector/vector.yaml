@@ -29,19 +29,28 @@ transforms:
       # Host (stream field)
       .host = get_env_var!("HOSTNAME")
 
-      # container_name (stream field) - stepwise fallbacks (VRL 0.51.1 safe)
+      # container_name (stream field) - stepwise fallbacks (VRL 0.51.1 + yamllint-safe)
       .container_name = to_string(.container_name) ?? ""
       if .container_name == "" { .container_name = to_string(.container) ?? "" }
       if .container_name == "" { .container_name = to_string(.docker.container_name) ?? "" }
       if .container_name == "" { .container_name = to_string(.docker.container.name) ?? "" }
       if .container_name == "" { .container_name = "unknown" }
 
-      # Compose metadata:
-      # docker_logs flattens labels to top-level keys like:
-      #   label.com.docker.compose.project
-      #   label.com.docker.compose.service
-      .stack = to_string(."label.com.docker.compose.project") ?? "homelab-home-prod-mon"
-      .service = to_string(."label.com.docker.compose.service") ?? .container_name
+      # stack = compose project label (fallback to constant)
+      .stack = (
+        to_string(.docker.container.labels."com.docker.compose.project") ??
+        to_string(.docker.labels."com.docker.compose.project") ??
+        to_string(.labels."com.docker.compose.project") ??
+        "homelab-home-prod-mon"
+        )
+
+      # service = compose service label (fallback to container_name)
+      .service = (
+        to_string(.docker.container.labels."com.docker.compose.service") ??
+        to_string(.docker.labels."com.docker.compose.service") ??
+        to_string(.labels."com.docker.compose.service") ??
+        .container_name
+      )
 
       # namespace = fixed env marker (stream field)
       .namespace = to_string(.namespace) ?? "prod"
@@ -70,7 +79,8 @@ sinks:
   vlogs:
     type: http
     inputs: ["normalize"]
-    uri: "http://victorialogs:9428/insert/jsonline?_stream_fields=host,stack,service,namespace,container_name&_msg_field=message&_time_field=timestamp"
+    uri: >-
+      http://victorialogs:9428/insert/jsonline?_stream_fields=host,stack,service,namespace,container_name&_msg_field=message&_time_field=timestamp
     compression: gzip
     encoding:
       codec: json
