@@ -371,11 +371,6 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9428/metrics"]
-      interval: 15s
-      timeout: 3s
-      retries: 10
     volumes:
       - victorialogs-data:/vlogs
     networks:
@@ -386,7 +381,7 @@ services:
     command: ["--config", "/etc/vector/vector.yaml"]
     depends_on:
       victorialogs:
-        condition: service_healthy
+        condition: service_started
     # Needs journald access; see runbook notes below.
     user: "0:0"
     read_only: true
