@@ -29,48 +29,39 @@ transforms:
       # Host (stream field)
       .host = get_env_var!("HOSTNAME")
 
-      # container_name (stream field) - stepwise fallbacks (VRL 0.51.1 + yamllint-safe)
+      # container_name (stream field) - stepwise fallbacks
       .container_name = to_string(.container_name) ?? ""
       if .container_name == "" { .container_name = to_string(.container) ?? "" }
       if .container_name == "" { .container_name = to_string(.docker.container_name) ?? "" }
       if .container_name == "" { .container_name = to_string(.docker.container.name) ?? "" }
       if .container_name == "" { .container_name = "unknown" }
 
-      # stack = compose project label (fallback to constant)
-      .stack = (
-        to_string(.docker.container.labels."com.docker.compose.project") ??
-        to_string(.docker.labels."com.docker.compose.project") ??
-        to_string(.labels."com.docker.compose.project") ??
-        "homelab-home-prod-mon"
-        )
+      # stack (compose project label) - stepwise fallbacks
+      .stack = to_string(.docker.container.labels."com.docker.compose.project") ?? ""
+      if .stack == "" { .stack = to_string(.docker.labels."com.docker.compose.project") ?? "" }
+      if .stack == "" { .stack = to_string(.labels."com.docker.compose.project") ?? "" }
+      if .stack == "" { .stack = "homelab-home-prod-mon" }
 
-      # service = compose service label (fallback to container_name)
-      .service = (
-        to_string(.docker.container.labels."com.docker.compose.service") ??
-        to_string(.docker.labels."com.docker.compose.service") ??
-        to_string(.labels."com.docker.compose.service") ??
-        .container_name
-      )
+      # service (compose service label) - stepwise fallbacks
+      .service = to_string(.docker.container.labels."com.docker.compose.service") ?? ""
+      if .service == "" { .service = to_string(.docker.labels."com.docker.compose.service") ?? "" }
+      if .service == "" { .service = to_string(.labels."com.docker.compose.service") ?? "" }
+      if .service == "" { .service = .container_name }
 
-      # namespace = fixed env marker (stream field)
+      # namespace (fixed env marker)
       .namespace = to_string(.namespace) ?? "prod"
 
-      # Level normalization (best-effort, VRL 0.51-friendly without else-if chain)
+      # Level normalization (best-effort)
       .level = downcase(to_string(.level) ?? "")
       if .level == "" {
         msg = downcase(.message)
 
-        if contains(msg, " error") || starts_with(msg, "error") {
-          .level = "error"
-        } else {
-          if contains(msg, " warn") || starts_with(msg, "warn") {
-            .level = "warn"
-          } else {
-            if contains(msg, " debug") || starts_with(msg, "debug") {
-              .level = "debug"
-            } else {
-              .level = "info"
-            }
+        if contains(msg, " error") || starts_with(msg, "error") { .level = "error" }
+        else {
+          if contains(msg, " warn") || starts_with(msg, "warn") { .level = "warn" }
+          else {
+            if contains(msg, " debug") || starts_with(msg, "debug") { .level = "debug" }
+            else { .level = "info" }
           }
         }
       }
