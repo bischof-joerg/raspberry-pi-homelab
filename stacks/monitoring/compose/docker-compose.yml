@@ -398,6 +398,7 @@ services:
       # journald access (runtime + persistent)
       - /run/log/journal:/run/log/journal:ro
       - /var/log/journal:/var/log/journal:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/machine-id:/etc/machine-id:ro
     networks:
       - apps

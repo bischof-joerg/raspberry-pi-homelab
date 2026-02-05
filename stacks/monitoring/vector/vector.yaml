@@ -3,46 +3,110 @@ api:
   address: 127.0.0.1:8686
 
 sources:
-  journald:
-    type: journald
-    # Keep this broad initially; refine later (units/include_matches)
-    # to avoid surprises during bring-up.
-    # Since Docker logs are routed to journald, they’ll appear here too.
+  docker:
+    type: docker_logs
+    docker_host: unix:///var/run/docker.sock
 
 transforms:
   normalize:
     type: remap
-    inputs: [journald]
+    inputs: ["docker"]
     source: |
-      # Timestamp
+      # -------------------------
+      # Timestamp normalization
+      # -------------------------
+      # docker_logs usually provides `timestamp` already, but be defensive.
       if exists(.timestamp) && is_string(.timestamp) {
         .timestamp = parse_timestamp!(.timestamp, "%+")
       }
 
-      # Message
-      .message = to_string!(.message)
+      # -------------------------
+      # Message normalization
+      # -------------------------
+      # docker_logs often uses `.message` (string). Ensure string.
+      if exists(.message) {
+        .message = to_string!(.message)
+      } else if exists(.log) {
+        .message = to_string!(.log)
+      } else {
+        .message = ""
+      }
 
+      # -------------------------
       # Host
+      # -------------------------
       .host = get_env_var!("HOSTNAME")
 
-      # Attempt to extract container name / service hints from journald fields.
-      # These keys vary depending on docker+journald; keep best-effort, not fragile.
-      .container_name = to_string(.CONTAINER_NAME) ?? to_string(.container_name) ?? to_string(.SYSLOG_IDENTIFIER) ?? "unknown"
-      .service = to_string(.COMPOSE_SERVICE) ?? to_string(.service) ?? .container_name
-      .stack = to_string(.COMPOSE_PROJECT) ?? to_string(.stack) ?? "homelab-home-prod-mon"
+      # -------------------------
+      # Docker metadata extraction (defensive)
+      # -------------------------
+      # Vector's docker_logs enriches events with docker-related fields,
+      # but shapes can differ by version. Use best-effort paths.
+      .container_name = (
+        to_string(.container_name) ??
+        to_string(.container) ??
+        to_string(.docker.container_name) ??
+        to_string(.docker.container.name) ??
+        "unknown"
+      )
+
+      # Pull labels if present (Compose labels are the best source for low-cardinality fields)
+      # Common labels:
+      # - com.docker.compose.project
+      # - com.docker.compose.service
+      # - com.docker.compose.container-number
+      # The labels map may appear at different paths depending on Vector version.
+      labels = (
+        .docker.container.labels ??
+        .docker.labels ??
+        .labels ??
+        {}
+      )
+
+      project = to_string(get(labels, ["com.docker.compose.project"])) ?? ""
+      service = to_string(get(labels, ["com.docker.compose.service"])) ?? ""
+
+      # Derive service/stack with safe fallbacks
+      if service != "" {
+        .service = service
+      } else {
+        .service = .container_name
+      }
+
+      # If project label exists, use it as stack. Otherwise use your default.
+      if project != "" {
+        .stack = project
+      } else {
+        .stack = "homelab-home-prod-mon"
+      }
+
+      # Keep your convention: namespace defaults to prod unless provided upstream.
       .namespace = to_string(.namespace) ?? "prod"
 
+      # -------------------------
       # Level normalization (best-effort)
-      .level = downcase(to_string(.PRIORITY) ?? to_string(.level) ?? "info")
-      if .level == "3" { .level = "error" }
-      if .level == "4" { .level = "warn" }
-      if .level == "6" { .level = "info" }
-      if .level == "7" { .level = "debug" }
+      # -------------------------
+      # docker_logs may include `.level`; otherwise try to infer from message.
+      lvl = downcase(to_string(.level) ?? "")
+      if lvl == "" {
+        msg = downcase(.message)
+        if contains(msg, " error") || starts_with(msg, "error") { lvl = "error" }
+        else if contains(msg, " warn") || starts_with(msg, "warn") { lvl = "warn" }
+        else if contains(msg, " debug") || starts_with(msg, "debug") { lvl = "debug" }
+        else { lvl = "info" }
+      }
+      .level = lvl
+
+      # -------------------------
+      # Optional: trim noisy fields (keeps payload smaller)
+      # -------------------------
+      # Keep raw docker metadata if you want, but consider dropping high-cardinality blobs.
+      # del(.docker)
 
 sinks:
   vlogs:
     type: http
-    inputs: [normalize]
+    inputs: ["normalize"]
     uri: "http://victorialogs:9428/insert/jsonline?_stream_fields=host,stack,service,namespace,container_name&_msg_field=message&_time_field=timestamp"
     compression: gzip
     encoding:
@@ -52,8 +116,7 @@ sinks:
     healthcheck:
       enabled: false
     # Backpressure guardrail:
-    # Use disk buffering with explicit max size to avoid unbounded RAM growth.
+    # Use bounded in-memory buffering to avoid unbounded RAM growth.
     buffer:
-      # hard cap: prevents unbounded RAM growth
       max_events: 20000
       when_full: drop_newest
