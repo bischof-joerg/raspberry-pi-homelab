@@ -381,6 +381,9 @@ services:
   vector:
     image: timberio/vector:0.51.1-distroless-libc
     command: ["--config", "/etc/vector/vector.yaml"]
+    environment:
+      - HOST_NODE_NAME=${HOSTNAME:-rpi-hub}
+      - VECTOR_CONFIG=/etc/vector/vector.yaml
     depends_on:
       victorialogs:
         condition: service_started

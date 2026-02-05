@@ -13,53 +13,64 @@ transforms:
     type: remap
     inputs: ["docker"]
     source: |
-      # 1) Message
-      .message = to_string(.message) ?? to_string(.log) ?? ""
+      # Message
+      .message = ""
+      if exists(.message) { .message = to_string!(.message) }
+      else if exists(.log) { .message = to_string!(.log) }
 
-      # 2) Timestamp (best-effort)
-      .timestamp = parse_timestamp(.timestamp, "%+") ?? now()
+      # Timestamp (best-effort)
+      .timestamp = now()
+      if exists(.timestamp) {
+        .timestamp = parse_timestamp(.timestamp, "%+") ?? now()
+      }
 
-      # 3) Low-cardinality stream fields
-      .host = get_env_var("HOSTNAME") ?? "unknown-pi"
+      # Stable host name:
+      # Prefer HOST_NODE_NAME (set via compose), fall back to HOSTNAME, else constant.
+      .host = get_env_var("HOST_NODE_NAME") ?? get_env_var("HOSTNAME") ?? "unknown-pi"
 
+      # container_name (best-effort)
       .container_name = to_string(.container_name) ?? ""
       if .container_name == "" { .container_name = to_string(.container) ?? "" }
       if .container_name == "" { .container_name = to_string(.docker.container_name) ?? "" }
+      if .container_name == "" { .container_name = to_string(.docker.container.name) ?? "" }
       if .container_name == "" { .container_name = "unknown" }
 
-      # IMPORTANT: in deinem Setup kommen Compose-Labels als flache Felder mit Punkten im Key:
-      #   label.com.docker.compose.project
-      #   label.com.docker.compose.service
-      .stack = to_string(."label.com.docker.compose.project") ?? "homelab-home-prod-mon"
-      .service = to_string(."label.com.docker.compose.service") ?? .container_name
+      # stack/service: try common label locations, stepwise (VRL 0.51 safe)
+      .stack = to_string(.label."com.docker.compose.project") ?? ""
+      if .stack == "" { .stack = to_string(.labels."com.docker.compose.project") ?? "" }
+      if .stack == "" { .stack = to_string(.docker.container.labels."com.docker.compose.project") ?? "" }
+      if .stack == "" { .stack = "homelab-home-prod-mon" }
+
+      .service = to_string(.label."com.docker.compose.service") ?? ""
+      if .service == "" { .service = to_string(.labels."com.docker.compose.service") ?? "" }
+      if .service == "" { .service = to_string(.docker.container.labels."com.docker.compose.service") ?? "" }
+      if .service == "" { .service = .container_name }
+
+      # namespace: fixed
       .namespace = to_string(.namespace) ?? "prod"
 
-      # 4) Level normalization (VRL 0.51: kein else-if; robust verschachteln)
-      lvl = downcase(to_string(.level) ?? "")
-      if lvl == "" {
-        msg = downcase(.message)
-        if contains(msg, "error") { lvl = "error" }
+      # Level normalization (avoid else-if chains)
+      tmp = downcase(to_string(.level) ?? "")
+      if tmp != "" {
+        .level = tmp
+      } else {
+        m = downcase(.message)
+        if contains(m, "error") { .level = "error" }
         else {
-          if contains(msg, "warn") { lvl = "warn" }
+          if contains(m, "warn") { .level = "warn" }
           else {
-            if contains(msg, "debug") { lvl = "debug" }
-            else { lvl = "info" }
+            if contains(m, "debug") { .level = "debug" }
+            else { .level = "info" }
           }
         }
       }
-      .level = lvl
 
-      # 5) Ballast abwerfen: exakt das Ziel-Event bauen (verhindert Label-/Metadata-Flut)
-      . = {
-        "timestamp": .timestamp,
-        "message": .message,
-        "level": .level,
-        "host": .host,
-        "stack": .stack,
-        "service": .service,
-        "namespace": .namespace,
-        "container_name": .container_name
-      }
+      # Drop ballast to keep payload small
+      del(.label)
+      del(.labels)
+      del(.docker)
+      del(.container)
+      del(.image)
 
 sinks:
   vlogs:
@@ -79,6 +90,8 @@ sinks:
       enabled: true
     buffer:
       type: memory
+      # REQUIRED in many Vector buffer configs; otherwise BufferConfig won't match.
+      # 64 MiB:
+      max_size: 67108864
       max_events: 10000
-      max_size: 67108864 # 64 MiB hard cap (Pi-safe)
       when_full: drop_newest
