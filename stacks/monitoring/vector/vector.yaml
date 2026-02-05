@@ -13,64 +13,36 @@ transforms:
     type: remap
     inputs: ["docker"]
     source: |
-      # Message
-      .message = ""
-      if exists(.message) { .message = to_string!(.message) }
-      else if exists(.log) { .message = to_string!(.log) }
+      # 1. Message & Timestamp
+      .message = to_string(.message) ?? to_string(.log) ?? ""
+      .timestamp = parse_timestamp(.timestamp, "%+") ?? now()
 
-      # Timestamp (best-effort)
-      .timestamp = now()
-      if exists(.timestamp) {
-        .timestamp = parse_timestamp(.timestamp, "%+") ?? now()
-      }
-
-      # Stable host name:
-      # Prefer HOST_NODE_NAME (set via compose), fall back to HOSTNAME, else constant.
+      # 2. Host & Container
       .host = get_env_var("HOST_NODE_NAME") ?? get_env_var("HOSTNAME") ?? "unknown-pi"
+      .container_name = to_string(.container_name) ?? to_string(.docker.container_name) ?? "unknown"
 
-      # container_name (best-effort)
-      .container_name = to_string(.container_name) ?? ""
-      if .container_name == "" { .container_name = to_string(.container) ?? "" }
-      if .container_name == "" { .container_name = to_string(.docker.container_name) ?? "" }
-      if .container_name == "" { .container_name = to_string(.docker.container.name) ?? "" }
-      if .container_name == "" { .container_name = "unknown" }
+      # 3. Stack & Service Labels
+      .stack = to_string(.label."com.docker.compose.project") ?? to_string(.labels."com.docker.compose.project") ?? "homelab-prod"
+      .service = to_string(.label."com.docker.compose.service") ?? to_string(.labels."com.docker.compose.service") ?? .container_name
+      .namespace = .namespace ?? "prod"
 
-      # stack/service: try common label locations, stepwise (VRL 0.51 safe)
-      .stack = to_string(.label."com.docker.compose.project") ?? ""
-      if .stack == "" { .stack = to_string(.labels."com.docker.compose.project") ?? "" }
-      if .stack == "" { .stack = to_string(.docker.container.labels."com.docker.compose.project") ?? "" }
-      if .stack == "" { .stack = "homelab-home-prod-mon" }
-
-      .service = to_string(.label."com.docker.compose.service") ?? ""
-      if .service == "" { .service = to_string(.labels."com.docker.compose.service") ?? "" }
-      if .service == "" { .service = to_string(.docker.container.labels."com.docker.compose.service") ?? "" }
-      if .service == "" { .service = .container_name }
-
-      # namespace: fixed
-      .namespace = to_string(.namespace) ?? "prod"
-
-      # Level normalization (avoid else-if chains)
+      # 4. Level Normalisierung (Flat)
       tmp = downcase(to_string(.level) ?? "")
       if tmp != "" {
         .level = tmp
       } else {
+        .level = "info"
         m = downcase(.message)
+        if contains(m, "debug") { .level = "debug" }
+        if contains(m, "warn")  { .level = "warn" }
         if contains(m, "error") { .level = "error" }
-        else {
-          if contains(m, "warn") { .level = "warn" }
-          else {
-            if contains(m, "debug") { .level = "debug" }
-            else { .level = "info" }
-          }
-        }
       }
 
-      # Drop ballast to keep payload small
+      # 5. Cleanup
       del(.label)
       del(.labels)
       del(.docker)
       del(.container)
-      del(.image)
 
 sinks:
   vlogs:
