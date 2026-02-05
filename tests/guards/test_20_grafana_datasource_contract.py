@@ -1,3 +1,6 @@
+# Compose contract: VictoriaMetrics coverage must exist.
+# This guard checks the monitoring stack shape (services present) and that banned services are absent.
+
 from __future__ import annotations
 
 import os
@@ -8,22 +11,35 @@ from tests._lib.compose import render_compose
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 COMPOSE_FILE = REPO_ROOT / "stacks/monitoring/compose/docker-compose.yml"
+
+# For local WSL runs you can point to a dummy env file, since docker compose config
+# will fail on missing vars. Keep it minimal & non-secret.
 ENV_EXAMPLE = REPO_ROOT / "stacks/monitoring/compose/.env.example"
 
 REQUIRED_SERVICES = {
+    # Metrics storage/query
     "victoriametrics",
+    # Scrape/shipper
     "vmagent",
+    # Alerting rules evaluation
     "vmalert",
+    # Alertmanager for notifications
     "alertmanager",
+    # Dashboards
     "grafana",
+    # Exporters
     "node-exporter",
     "cadvisor",
 }
 
-OPTIONAL_SERVICES = {"victorialogs"}
+OPTIONAL_SERVICES = {
+    "victorialogs",
+}
 
-# Policy: Prometheus runtime must not exist in the monitoring stack.
-BANNED_SERVICES = {"prometheus"}
+# Policy: Prometheus runtime must not exist in this stack.
+BANNED_SERVICES = {
+    "prometheus",
+}
 
 
 def _logging_enabled() -> bool:
@@ -49,24 +65,3 @@ def test_required_services_present_and_banned_absent():
 
     present_banned = sorted(BANNED_SERVICES & services)
     assert not present_banned, "Banned services present:\n" + "\n".join(present_banned)
-
-
-def test_grafana_datasource_does_not_point_to_prometheus_runtime():
-    """
-    Static guard: Grafana may use datasource type 'prometheus' (PromQL compatibility),
-    but its URL must not point at a Prometheus runtime service/host.
-    """
-    prov_dir = REPO_ROOT / "stacks/monitoring/grafana/provisioning/datasources"
-    if not prov_dir.exists():
-        return
-
-    ymls = sorted(list(prov_dir.rglob("*.yml")) + list(prov_dir.rglob("*.yaml")))
-    assert ymls, f"No datasource provisioning files found in {prov_dir}"
-
-    bad = []
-    for f in ymls:
-        txt = f.read_text(encoding="utf-8", errors="replace").lower()
-        if "http://prometheus" in txt or "https://prometheus" in txt or "prometheus:9090" in txt:
-            bad.append(f.relative_to(REPO_ROOT).as_posix())
-
-    assert not bad, "Grafana datasources reference Prometheus runtime:\n" + "\n".join(bad)

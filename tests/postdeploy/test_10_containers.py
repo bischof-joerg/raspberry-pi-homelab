@@ -27,10 +27,6 @@ POSTDEPLOY_HEALTH_INTERVAL_S = float(os.environ.get("POSTDEPLOY_HEALTH_INTERVAL_
 POSTDEPLOY_LOG_TAIL = int(os.environ.get("POSTDEPLOY_LOG_TAIL", "200"))
 
 
-def _prometheus_removed() -> bool:
-    return os.getenv("PROMETHEUS_REMOVED", "1") == "1"
-
-
 def _docker_logs_tail(container: str, tail: int = POSTDEPLOY_LOG_TAIL) -> str:
     if not which_ok("docker"):
         return "(docker not available to collect logs)"
@@ -58,14 +54,8 @@ def test_compose_services_state_json(retry):
         "alertmanager-config-render": "exited",
     }
 
-    banned: set[str] = set()
-
-    # Migration gate: once Prometheus is removed, it must not be expected anymore
-    if not _prometheus_removed():
-        expected["prometheus"] = "running"
-
-    if _prometheus_removed():
-        banned.add("prometheus")
+    # Prometheus is removed: treat it as permanently banned.
+    banned: set[str] = {"prometheus"}
 
     rows: dict[str, dict] = {}
 
@@ -73,6 +63,13 @@ def test_compose_services_state_json(retry):
         nonlocal rows
         ps_rows = compose_ps_json(compose_file=COMPOSE_FILE)
         rows = compose_services_by_name(ps_rows)
+
+        present_banned = sorted(banned & set(rows.keys()))
+        assert not present_banned, (
+            "Banned services present in compose ps.\n"
+            f"Present banned: {present_banned}\n"
+            f"Got: {sorted(rows.keys())}\n"
+        )
 
         missing = sorted(set(expected.keys()) - set(rows.keys()))
         assert not missing, (
@@ -82,12 +79,18 @@ def test_compose_services_state_json(retry):
             f"Hint: one-shot jobs require `docker compose ps --all` (enabled) and may race right after `up -d`."
         )
 
-    retry(_wait_for_expected_services, timeout_s=POSTDEPLOY_PS_TIMEOUT_S, interval_s=POSTDEPLOY_PS_INTERVAL_S)
+    retry(
+        _wait_for_expected_services,
+        timeout_s=POSTDEPLOY_PS_TIMEOUT_S,
+        interval_s=POSTDEPLOY_PS_INTERVAL_S,
+    )
 
     for svc, want in expected.items():
         row = rows[svc]
         state = (row.get("State") or row.get("state") or "").lower()
-        assert want in state, f"{svc}: expected state contains '{want}', got '{state}'. Full row: {row}"
+        assert want in state, (
+            f"{svc}: expected state contains '{want}', got '{state}'. Full row: {row}"
+        )
 
         if svc == "alertmanager-config-render":
             # Prefer ExitCode from ps json; fallback to docker inspect if missing.
@@ -104,7 +107,9 @@ def test_compose_services_state_json(retry):
                 assert insp.returncode == 0, f"docker inspect failed:\n{insp.stdout}\n{insp.stderr}"
                 exit_code = (insp.stdout or "").strip()
 
-            assert str(exit_code) == "0", f"{svc}: expected ExitCode 0, got {exit_code}. Full row: {row}"
+            assert str(exit_code) == "0", (
+                f"{svc}: expected ExitCode 0, got {exit_code}. Full row: {row}"
+            )
 
 
 @pytest.mark.postdeploy
@@ -119,12 +124,7 @@ def test_compose_services_not_restarting_or_unhealthy(retry):
         "vmalert",
     ]
 
-    banned: set[str] = set()
-
-    if _prometheus_removed():
-        banned.add("prometheus")
-    else:
-        services.insert(0, "prometheus")
+    banned: set[str] = {"prometheus"}
 
     def _assert_services_ok():
         ps_rows = compose_ps_json(compose_file=COMPOSE_FILE)
@@ -136,9 +136,11 @@ def test_compose_services_not_restarting_or_unhealthy(retry):
         missing = sorted(set(services) - set(rows.keys()))
         assert not missing, "Missing services in compose ps:\n" + "\n".join(missing)
 
-        # hier dann eure bestehenden Checks:
+        # Keep your existing checks here:
         # - not restarting
         # - not unhealthy
-        # (abhängig davon, wie rows strukturiert ist)
+        # (depends on how rows is structured)
 
-    retry(_assert_services_ok, timeout_s=POSTDEPLOY_PS_TIMEOUT_S, interval_s=POSTDEPLOY_PS_INTERVAL_S)
+    retry(
+        _assert_services_ok, timeout_s=POSTDEPLOY_PS_TIMEOUT_S, interval_s=POSTDEPLOY_PS_INTERVAL_S
+    )

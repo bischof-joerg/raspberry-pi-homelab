@@ -1,6 +1,5 @@
 # docker-compose.yml
 # Monitoring stack for Raspberry Pi (ARM64) with IaC + basic hardening
-# Commit A: Add VictoriaMetrics components alongside Prometheus (safe cutover).
 # - Exposes ONLY Grafana by default
 # - Alertmanager/VictoriaMetrics UIs are kept localhost-bound (enable LAN only if you really need it)
 
@@ -261,7 +260,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
-      # Optional: enable Grafana's Prometheus metrics endpoint
+      # Optional: enable Grafana's VictoriaMetrics metrics endpoint
       GF_METRICS_ENABLED: "true"
       # Disabling sending usage statistics to Grafana Labs
       GF_ANALYTICS_REPORTING_ENABLED: "false"
@@ -291,7 +290,7 @@ services:
     image: quay.io/prometheus/node-exporter:v1.8.2
     restart: unless-stopped
     networks: [monitoring]
-    # Do NOT expose to LAN; Prometheus scrapes it via Docker network
+    # Do NOT expose to LAN; vmagent scrapes it via Docker network
     # ports:
     #   - "9100:9100"
     pid: host
@@ -321,7 +320,7 @@ services:
     # This is non-negotiable on the Pi 5. cAdvisor must be able to move across namespaces to inspect other containers' resource usage.
     privileged: true
     networks: [monitoring]
-    # Do NOT expose to LAN; Prometheus scrapes it via Docker network
+    # Do NOT expose to LAN; vmagent scrapes it via Docker network
     # ports:
     #   - "8080:8080"
     pid: host
@@ -335,7 +334,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
-    command: # recommended flags for Prometheus integration + performance on Pi
+    command: # recommended flags for VictoriaMetrics integration + performance on Pi
       # Reduce CPU usage by checking containers less frequently essential for Pi resource management
       - --housekeeping_interval=30s
       - --max_housekeeping_interval=60s

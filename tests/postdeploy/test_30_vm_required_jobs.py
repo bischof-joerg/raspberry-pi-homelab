@@ -1,4 +1,3 @@
-# tests/postdeploy/test_30_prometheus_targets.py
 from __future__ import annotations
 
 import json
@@ -8,8 +7,6 @@ import pytest
 
 VM_BASE = "http://127.0.0.1:8428"
 
-# These are the jobs you confirmed exist in VM:
-# curl ... 'query=count by (job) (up)'
 REQUIRED_JOBS = {
     "alertmanager",
     "cadvisor",
@@ -41,13 +38,12 @@ def _vector_result(payload: dict) -> list[dict]:
 @pytest.mark.postdeploy
 def test_vm_required_jobs_present_and_up(retry, http_get):
     """
-    Migration note:
-    - This replaces the Prometheus /api/v1/targets check.
-    - If this fails, ingestion/scraping into VictoriaMetrics is not healthy.
+    Ensures scraping + ingestion into VictoriaMetrics is healthy:
+    - all required jobs must exist in `count by(job) (up)`
+    - each required job must have at least one UP target (up==1)
     """
 
     def _check():
-        # Ensure all required jobs exist at all
         payload = _vm_query(http_get, "count by (job) (up)")
         result = _vector_result(payload)
 
@@ -64,23 +60,20 @@ def test_vm_required_jobs_present_and_up(retry, http_get):
             ),
         }
 
-        # Ensure up==1 exists for each required job (at least one target)
         for job in sorted(REQUIRED_JOBS):
             p = _vm_query(http_get, f'up{{job="{job}"}}')
             r = _vector_result(p)
             assert r, {
                 "job": job,
-                "action": (
-                    f'No series for up{{job="{job}"}}. Action: check vmagent scrape job "{job}" and connectivity.'
-                ),
+                "action": f'No series for up{{job="{job}"}}. Action: check vmagent scrape job "{job}" and connectivity.',
             }
 
-            # at least one sample must be "1"
             values = []
             for it in r:
                 v = it.get("value") or []
                 if isinstance(v, list) and len(v) == 2:
                     values.append(v[1])
+
             assert any(x == "1" for x in values), {
                 "job": job,
                 "values": values[:10],

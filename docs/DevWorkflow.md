@@ -64,15 +64,17 @@ developer machines and automated checks. The test phases on WSL automatically lu
 - Status/analysis of issues on deploy.sh failing:
   - Container status:
     - ```cd ~/iac/raspberry-pi-homelab```
-    - ```docker compose -f monitoring/compose/docker-compose.yml ps -all```
+    - ```docker compose -f stacks/monitoring/compose/docker-compose.yml ps -all```
   - Logs:
-    - ```docker compose -f monitoring/compose/docker-compose.yml logs --tail=200```
+    - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs --tail=200```
       and if too many, on individual services:
-      - ```docker compose -f monitoring/compose/docker-compose.yml logs -n 200 --no-color grafana```
-      - ```docker compose -f monitoring/compose/docker-compose.yml logs -n 200 --no-color prometheus```
-      - ```docker compose -f monitoring/compose/docker-compose.yml logs -n 200 --no-color alertmanager```
+      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color grafana```
+      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color victoriametrics```
+      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color vmagent```
+      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color vmalert```
+      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color alertmanager```
   - Clean start of entire stack:
-    - ```docker compose -f monitoring/compose/docker-compose.yml up -d --force-recreate```
+    - ```docker compose -f stacks/monitoring/compose/docker-compose.yml up -d --force-recreate```
 - Rollback (git revert) on deploy failure:
 
   - Note: Reverting commits that include data migrations may require manual validation of volumes.

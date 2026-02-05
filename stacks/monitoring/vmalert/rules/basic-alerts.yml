@@ -9,7 +9,7 @@ groups:
           severity: critical
         annotations:
           summary: "Target down (job={{ $labels.job }}, instance={{ $labels.instance }})"
-          description: "Prometheus cannot scrape this target for > 1 minute."
+          description: "vmagent cannot scrape this target for > 1 minute."
 
   - name: node
     rules:
@@ -101,11 +101,21 @@ groups:
 
   - name: monitoring
     rules:
-      - alert: PrometheusRuleEvaluationFailures
-        expr: increase(prometheus_rule_evaluation_failures_total[10m]) > 0
+      # vmalert exposes vmalert_alerting_rules_error as a gauge for per-rule evaluation errors.
+      - alert: VMAlertRuleEvaluationErrors
+        expr: max_over_time(vmalert_alerting_rules_error[10m]) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Prometheus rule evaluation failures"
-          description: "Prometheus failed to evaluate one or more rules in the last 10 minutes."
+          summary: "vmalert rule evaluation errors"
+          description: "vmalert reported one or more rule evaluation errors in the last 10 minutes."
+
+      - alert: VMAlertConfigReloadErrors
+        expr: increase(vmalert_config_last_reload_errors_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vmalert config reload errors"
+          description: "vmalert failed to reload its rules/config at least once in the last 10 minutes."

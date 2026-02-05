@@ -9,13 +9,13 @@ It is based directly on the provided `docker-compose.yml` and is designed to run
 
 ### Components
 
-- **Prometheus** scrapes:
+- **vmagent** scrapes:
   - `node-exporter` (host node metrics)
   - `cAdvisor` (container metrics)
   - `docker engine` metrics via `http://<monitoring-gateway>:9323/metrics`
   - optional Grafana `/metrics`
-- **Grafana** reads from Prometheus and provides dashboards.
-- **Alertmanager** handles alerts fired by Prometheus.
+- **Grafana** reads from VictoriaMetrics and provides dashboards.
+- **Alertmanager** handles alerts fired by vmalert.
 
 ### Docker networking (sustainable hardened setup)
 
@@ -46,7 +46,7 @@ A dedicated Docker bridge network is used with desired state:
 - No unused networks like `compose_default` (if not attached)
 - No UFW rules on non-existent docker-bridge-interfaces
 
-Prometheus scrapes Docker Engine metrics on the gateway IP:
+vmagent scrapes Docker Engine metrics on the gateway IP:
 
 - `http://172.20.0.1:9323/metrics`
 
@@ -84,7 +84,7 @@ make cleanup-check --apply
 ### Alertmanager
 
 **Role:**
-Alertmanager handles alerts sent by Prometheus. It groups, deduplicates, and routes them to configured notification channels (e.g. email, messenger services).
+Alertmanager handles alerts sent by vmalert. It groups, deduplicates, and routes them to configured notification channels (e.g. email, messenger services).
 
 **Persistence:**
 
@@ -103,7 +103,7 @@ Without persistence, silences and alert state are lost after restarts.
 ### Grafana
 
 **Role:**
-Grafana is the visualization layer. It provides dashboards, panels, and a web UI for metrics and logs from Prometheus and Loki.
+Grafana is the visualization layer. It provides dashboards, panels, and a web UI for metrics and logs from VictoriaMetrics.
 
 **Persistence:**
 
@@ -204,9 +204,8 @@ Due to the required host mounts, cAdvisor is intentionally isolated and run with
 
 The following volumes must be included in host-level backups.
 
-- Prometheus TSDB
+- VictoriaMetrics TSDB
 - Grafana data
-- Loki storage
 - Alertmanager state
 
 Backup should be performed at filesystem level (outside Docker).
@@ -220,7 +219,7 @@ See the following backup and restore runbook
 
 ### Git-friendly / Infrastructure as Code
 
-- Prometheus configuration & rules
+- VictoriaMetrics configuration & rules
 - Alertmanager routing
 - Loki & Promtail configuration
 - Grafana provisioning & dashboard JSONs

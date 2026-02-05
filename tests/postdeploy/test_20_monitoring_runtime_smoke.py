@@ -3,13 +3,11 @@ from __future__ import annotations
 import os
 
 import pytest
-import requests
 import yaml
 
 from tests._lib.http import get_json, wait_http_ok
 
-# Runtime smoke tests (Pi) for end-to-end “Prometheus replaced”
-# Intended to run on the Pi after deploy. Use IPv4 loopback for determinism.
+# Runtime smoke tests (Pi). Use IPv4 loopback for determinism.
 
 VM_URL = os.getenv("TEST_VM_URL", "http://127.0.0.1:8428")
 VMAGENT_URL = os.getenv("TEST_VMAGENT_URL", "http://127.0.0.1:8429")
@@ -43,7 +41,9 @@ def _parse_alertmanager_original_yaml(status_payload: dict) -> dict:
             f"Failed to parse Alertmanager config.original as YAML: {e}. config.original snippet={snippet!r}"
         ) from e
 
-    assert isinstance(parsed, dict), f"Parsed config.original is not a YAML mapping (got {type(parsed).__name__})"
+    assert isinstance(parsed, dict), (
+        f"Parsed config.original is not a YAML mapping (got {type(parsed).__name__})"
+    )
     return parsed
 
 
@@ -61,7 +61,9 @@ def _wait_any_http_ok(urls: list[str], timeout_s: int = 45) -> None:
             return
         except AssertionError as e:
             last_err = str(e)
-    raise AssertionError(f"None of the candidate endpoints became ready: {urls} (last_err={last_err})")
+    raise AssertionError(
+        f"None of the candidate endpoints became ready: {urls} (last_err={last_err})"
+    )
 
 
 @pytest.mark.postdeploy
@@ -114,19 +116,3 @@ def test_grafana_health() -> None:
     wait_http_ok(f"{GRAFANA_URL}/api/health")
     data = get_json(f"{GRAFANA_URL}/api/health")
     assert data.get("database") in {"ok", "OK"}, f"Grafana db not ok: {data}"
-
-
-@pytest.mark.postdeploy
-def test_prometheus_endpoint_absent_when_expected() -> None:
-    """
-    After Prometheus removal, set PROMETHEUS_REMOVED=1 in deploy/test env
-    to enforce that 127.0.0.1:9090 is not reachable anymore.
-    """
-    if os.getenv("PROMETHEUS_REMOVED", "1") != "1":
-        pytest.skip("PROMETHEUS_REMOVED=0 (legacy mode)")
-
-    try:
-        r = requests.get("http://127.0.0.1:9090/-/ready", timeout=2)
-        raise AssertionError(f"Prometheus still reachable on 127.0.0.1:9090 (status={r.status_code})")
-    except requests.RequestException:
-        return

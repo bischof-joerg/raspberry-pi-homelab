@@ -1,5 +1,7 @@
 # Backup & Restore Runbook
 
+**NEEDS LOVE**
+
 This runbook defines **what is backed up, how backups are created, how restores are performed, and how restores are validated** for the Raspberry Pi GitOps homelab. It is designed for **repeatable, low-risk recovery** aligned with the existing Infrastructure-as-Code and GitOps model.
 
 ---
