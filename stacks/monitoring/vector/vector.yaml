@@ -40,11 +40,16 @@ transforms:
         if contains(m, "error") { .level = "error" }
       }
 
-      # 5. Cleanup
+      # 5. Cleanup (erweitert)
       del(.label)
       del(.labels)
       del(.docker)
       del(.container)
+      del(.image)
+      del(.container_id)
+      del(.container_created_at)
+      del(.source_type)
+      del(.stream) # stderr/stdout ist oft redundant, wenn level gesetzt ist
 
 sinks:
   vlogs:
