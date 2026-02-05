@@ -24,9 +24,11 @@ transforms:
       # 3. Stack & Service Labels
       .stack = to_string(.label."com.docker.compose.project") ?? to_string(.labels."com.docker.compose.project") ?? "homelab-prod"
       .service = to_string(.label."com.docker.compose.service") ?? to_string(.labels."com.docker.compose.service") ?? .container_name
-      .namespace = .namespace ?? "prod"
 
-      # 4. Level Normalisierung (Flat)
+      # Fix für E651: Einfache Zuweisung, da .namespace vorher nicht existiert
+      .namespace = "prod"
+
+      # 4. Level Normalisierung (Flat & Safe)
       tmp = downcase(to_string(.level) ?? "")
       if tmp != "" {
         .level = tmp
