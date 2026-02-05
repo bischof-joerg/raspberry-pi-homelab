@@ -364,6 +364,8 @@ services:
       - --httpListenAddr=:9428
       # Guardrail: cap disk usage for logs (bytes)
       - --retention.maxDiskSpaceUsageBytes=200000000000
+    ports:
+      - "127.0.0.1:9428:9428"
     mem_limit: 2g
     read_only: true
     tmpfs:
