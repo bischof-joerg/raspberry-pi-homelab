@@ -49,9 +49,10 @@ sinks:
       method: newline_delimited
     healthcheck:
       enabled: false
-
     # Backpressure guardrail:
     # Use disk buffering with explicit max size to avoid unbounded RAM growth.
     buffer:
-      type: disk
-      max_size: 512mb
+      type: memory
+      # hard cap: prevents unbounded RAM growth
+      max_events: 20000
+      when_full: drop_newest
