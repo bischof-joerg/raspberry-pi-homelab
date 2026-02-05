@@ -12,18 +12,12 @@ transforms:
     type: remap
     inputs: ["docker"]
     source: |
-      # -------------------------
-      # Timestamp normalization
-      # -------------------------
-      # docker_logs usually provides `timestamp` already, but be defensive.
+      # Timestamp (best effort)
       if exists(.timestamp) && is_string(.timestamp) {
         .timestamp = parse_timestamp!(.timestamp, "%+")
       }
 
-      # -------------------------
-      # Message normalization
-      # -------------------------
-      # docker_logs often uses `.message` (string). Ensure string.
+      # Message (docker_logs: usually .message, sometimes .log)
       if exists(.message) {
         .message = to_string!(.message)
       } else if exists(.log) {
@@ -32,76 +26,51 @@ transforms:
         .message = ""
       }
 
-      # -------------------------
-      # Host
-      # -------------------------
+      # Host (stream field)
       .host = get_env_var!("HOSTNAME")
 
-      # -------------------------
-      # Docker metadata extraction (defensive)
-      # -------------------------
-      # Vector's docker_logs enriches events with docker-related fields,
-      # but shapes can differ by version. Use best-effort paths.
-      .container_name = (
-        to_string(.container_name) ??
-        to_string(.container) ??
-        to_string(.docker.container_name) ??
-        to_string(.docker.container.name) ??
-        "unknown"
-      )
+      # container_name (stream field) - stepwise fallbacks (VRL 0.51.1 + yamllint-safe)
+      .container_name = to_string(.container_name) ?? ""
+      if .container_name == "" { .container_name = to_string(.container) ?? "" }
+      if .container_name == "" { .container_name = to_string(.docker.container_name) ?? "" }
+      if .container_name == "" { .container_name = to_string(.docker.container.name) ?? "" }
+      if .container_name == "" { .container_name = "unknown" }
 
-      # Pull labels if present (Compose labels are the best source for low-cardinality fields)
-      # Common labels:
-      # - com.docker.compose.project
-      # - com.docker.compose.service
-      # - com.docker.compose.container-number
-      # The labels map may appear at different paths depending on Vector version.
-      labels = (
-        .docker.container.labels ??
-        .docker.labels ??
-        .labels ??
-        {}
-      )
+      # Compose labels may exist under different paths; resolve directly without temp vars.
+      # stack = compose project label (fallback to constant)
+      .stack = to_string(.docker.container.labels."com.docker.compose.project") ??
+               to_string(.docker.labels."com.docker.compose.project") ??
+               to_string(.labels."com.docker.compose.project") ??
+               "homelab-home-prod-mon"
 
-      project = to_string(get(labels, ["com.docker.compose.project"])) ?? ""
-      service = to_string(get(labels, ["com.docker.compose.service"])) ?? ""
+      # service = compose service label (fallback to container_name)
+      .service = to_string(.docker.container.labels."com.docker.compose.service") ??
+                 to_string(.docker.labels."com.docker.compose.service") ??
+                 to_string(.labels."com.docker.compose.service") ??
+                 .container_name
 
-      # Derive service/stack with safe fallbacks
-      if service != "" {
-        .service = service
-      } else {
-        .service = .container_name
-      }
-
-      # If project label exists, use it as stack. Otherwise use your default.
-      if project != "" {
-        .stack = project
-      } else {
-        .stack = "homelab-home-prod-mon"
-      }
-
-      # Keep your convention: namespace defaults to prod unless provided upstream.
+      # namespace = fixed env marker (stream field)
       .namespace = to_string(.namespace) ?? "prod"
 
-      # -------------------------
-      # Level normalization (best-effort)
-      # -------------------------
-      # docker_logs may include `.level`; otherwise try to infer from message.
-      lvl = downcase(to_string(.level) ?? "")
-      if lvl == "" {
+      # Level normalization (best-effort, VRL 0.51-friendly without else-if chain)
+      .level = downcase(to_string(.level) ?? "")
+      if .level == "" {
         msg = downcase(.message)
-        if contains(msg, " error") || starts_with(msg, "error") { lvl = "error" }
-        else if contains(msg, " warn") || starts_with(msg, "warn") { lvl = "warn" }
-        else if contains(msg, " debug") || starts_with(msg, "debug") { lvl = "debug" }
-        else { lvl = "info" }
-      }
-      .level = lvl
 
-      # -------------------------
-      # Optional: trim noisy fields (keeps payload smaller)
-      # -------------------------
-      # Keep raw docker metadata if you want, but consider dropping high-cardinality blobs.
-      # del(.docker)
+        if contains(msg, " error") || starts_with(msg, "error") {
+          .level = "error"
+        } else {
+          if contains(msg, " warn") || starts_with(msg, "warn") {
+            .level = "warn"
+          } else {
+            if contains(msg, " debug") || starts_with(msg, "debug") {
+              .level = "debug"
+            } else {
+              .level = "info"
+            }
+          }
+        }
+      }
 
 sinks:
   vlogs:
@@ -115,8 +84,7 @@ sinks:
       method: newline_delimited
     healthcheck:
       enabled: false
-    # Backpressure guardrail:
-    # Use bounded in-memory buffering to avoid unbounded RAM growth.
+    # Backpressure guardrail: bounded in-memory buffering (Pi-safe)
     buffer:
       max_events: 20000
       when_full: drop_newest
