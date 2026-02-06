@@ -1,0 +1,31 @@
+{
+  "uid": "alerts-overview",
+  "title": "Alerts – Overview",
+  "tags": ["alerts", "monitoring"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "alertlist",
+      "title": "Active Alerts (Critical / Warning)",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 },
+      "options": {
+        "show": "current",
+        "sortOrder": 1,
+        "stateFilter": {
+          "firing": true,
+          "pending": false,
+          "resolved": false
+        },
+        "groupMode": "default",
+        "dashboardAlerts": false,
+        "labels": {
+          "severity": ["critical", "warning"]
+        }
+      }
+    }
+  ]
+}
