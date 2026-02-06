@@ -68,6 +68,7 @@ def _validate_metrics(body: str, name: str, url: str) -> None:
         EndpointCheck("victorialogs-insert-ready", f"{VLOGS_BASE}/insert/ready"),
         EndpointCheck("victorialogs-metrics", f"{VLOGS_BASE}/metrics"),
     ],
+    ids=lambda c: c.name,
 )
 def test_ready_health_endpoints_strict_200(retry, http_get, check: EndpointCheck):
     """These endpoints must exist and return 200 when the service is healthy."""
