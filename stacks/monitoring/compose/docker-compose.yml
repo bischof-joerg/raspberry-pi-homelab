@@ -383,6 +383,9 @@ services:
     networks:
       - monitoring
       - apps
+    environment:
+      - HOST_NODE_NAME=${HOSTNAME:-rpi-hub}
+      - VECTOR_CONFIG=/etc/vector/vector.yaml
     depends_on:
       victorialogs:
         condition: service_started
