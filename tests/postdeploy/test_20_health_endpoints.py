@@ -1,4 +1,5 @@
 import json
+import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -11,12 +12,33 @@ VMALERT_BASE = "http://127.0.0.1:8880"
 GRAFANA_BASE = "http://127.0.0.1:3000"
 VLOGS_BASE = "http://127.0.0.1:9428"
 
+# Container-internal endpoints (not exposed on host)
+NODE_EXPORTER_INNER = "http://127.0.0.1:9100"
+CADVISOR_INNER = "http://127.0.0.1:8080"
+VECTOR_INNER = "http://127.0.0.1:8686"
+
+# Default container names (as seen on your target). If your naming changes, update here.
+NODE_EXPORTER_CONTAINER = "homelab-home-prod-mon-node-exporter-1"
+CADVISOR_CONTAINER = "homelab-home-prod-mon-cadvisor-1"
+VECTOR_CONTAINER = "homelab-home-prod-mon-vector-1"
+
+# Curl helper image (pinned)
+CURL_IMAGE = "curlimages/curl:8.11.1"
+
 
 @dataclass(frozen=True)
 class EndpointCheck:
     name: str
     url: str
     # Optional additional assertions on body content.
+    must_contain_any: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ContainerEndpointCheck:
+    name: str
+    container: str
+    url: str
     must_contain_any: tuple[str, ...] = ()
 
 
@@ -40,12 +62,68 @@ def _assert_contains_any(body: str, needles: Iterable[str], name: str, url: str)
 
 # Stronger checks for endpoints where "200" alone is too weak.
 def _validate_metrics(body: str, name: str, url: str) -> None:
-    # Prometheus exposition usually contains HELP/TYPE lines; VictoriaLogs exposes many metrics.
-    # Accept either HELP/TYPE markers or a few common metric prefixes.
+    # Prometheus exposition usually contains HELP/TYPE lines.
     markers = ("# HELP", "# TYPE", "vl_", "vm_", "process_", "go_")
     _assert_contains_any(body, markers, name, url)
 
 
+def _run(cmd: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+
+def _container_http_get(container: str, url: str, timeout: int = 6) -> tuple[int, str]:
+    """
+    Perform an HTTP GET *inside* the network namespace of `container` via a short-lived curl helper container.
+    Returns: (status_code, body)
+    """
+    # We don't use -f, because we want body+status even on non-200.
+    # Output format: <body>\n<status>
+    cp = _run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            f"container:{container}",
+            CURL_IMAGE,
+            "-sS",
+            "--max-time",
+            str(timeout),
+            "-w",
+            "\n%{http_code}",
+            url,
+        ]
+    )
+
+    out = (cp.stdout or "").rstrip("\n")
+    if not out:
+        # Distinguish "no output" from "status != 200"
+        return 0, f"(empty response; docker/curl output: {cp.stdout!r})"
+
+    # Split last line as status code
+    if "\n" in out:
+        body, status_s = out.rsplit("\n", 1)
+    else:
+        body, status_s = "", out
+
+    try:
+        status = int(status_s.strip())
+    except ValueError:
+        # If docker run itself failed (e.g., container not found), surface that clearly.
+        return 0, f"(could not parse status; last_line={status_s!r}; output[:400]={out[:400]!r})"
+
+    return status, body
+
+
+# -------------------------
+# Host-reachable endpoints
+# -------------------------
 @pytest.mark.postdeploy
 @pytest.mark.parametrize(
     "check",
@@ -63,8 +141,6 @@ def _validate_metrics(body: str, name: str, url: str) -> None:
         EndpointCheck("vmalert-ready", f"{VMALERT_BASE}/-/ready"),
         EndpointCheck("vmalert-health", f"{VMALERT_BASE}/health"),
         # VictoriaLogs:
-        # - /insert/ready is the documented ingest-readiness probe for Loki-compatible shippers (Vector, etc.)
-        # - /metrics must exist for scraping
         EndpointCheck("victorialogs-insert-ready", f"{VLOGS_BASE}/insert/ready"),
         EndpointCheck("victorialogs-metrics", f"{VLOGS_BASE}/metrics"),
     ],
@@ -75,6 +151,48 @@ def test_ready_health_endpoints_strict_200(retry, http_get, check: EndpointCheck
 
     def _check():
         status, body = http_get(check.url, timeout=6)
+        _assert_200(status, body, check.name, check.url)
+
+        if check.name.endswith("-metrics"):
+            _validate_metrics(body, check.name, check.url)
+        else:
+            _assert_contains_any(body, check.must_contain_any, check.name, check.url)
+
+    retry(_check, timeout_s=90, interval_s=3.0)
+
+
+# -----------------------------------
+# Container-internal endpoints (no host ports)
+# -----------------------------------
+@pytest.mark.postdeploy
+@pytest.mark.parametrize(
+    "check",
+    [
+        ContainerEndpointCheck(
+            "node-exporter-metrics",
+            NODE_EXPORTER_CONTAINER,
+            f"{NODE_EXPORTER_INNER}/metrics",
+        ),
+        ContainerEndpointCheck(
+            "cadvisor-metrics",
+            CADVISOR_CONTAINER,
+            f"{CADVISOR_INNER}/metrics",
+        ),
+        # Your /metrics on Vector returned 404; that’s fine if Vector API is enabled but metrics endpoint is disabled.
+        # We therefore check /health for liveness here, and keep the real “pipeline works” guarantee in the dedicated Vector E2E test.
+        ContainerEndpointCheck(
+            "vector-health",
+            VECTOR_CONTAINER,
+            f"{VECTOR_INNER}/health",
+        ),
+    ],
+    ids=lambda c: c.name,
+)
+def test_container_internal_health_and_metrics_strict_200(retry, check: ContainerEndpointCheck):
+    """Check monitoring sidecars/exporters without exposing ports on the host."""
+
+    def _check():
+        status, body = _container_http_get(check.container, check.url, timeout=6)
         _assert_200(status, body, check.name, check.url)
 
         if check.name.endswith("-metrics"):
