@@ -59,13 +59,71 @@ def test_victorialogs_stats_query_has_nonzero_service_bucket() -> None:
 
     # VictoriaLogs may return either a list of rows or an object containing rows;
     # handle both defensively.
-    rows = payload
-    if isinstance(payload, dict):
-        # common patterns: {"data":[...]} or {"rows":[...]} – tolerate both
-        rows = payload.get("data") or payload.get("rows") or payload.get("result")
+    # Normalize result rows across possible response shapes.
+    rows: list[dict[str, Any]] = []
 
-    if not isinstance(rows, list):
+    # Shape A (your output): {"status":"success","data":{"result":[{"metric":{...},"value":[ts,"7"]}, ...]}}
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, dict) and isinstance(data.get("result"), list):
+            rows = data["result"]
+
+    # Shape B: plain list of dict rows (future-proof)
+    if not rows and isinstance(payload, list):
+        rows = payload
+
+    # Shape C: {"data":[...]} or {"rows":[...]} or {"result":[...]}
+    if not rows and isinstance(payload, dict):
+        for k in ("data", "rows", "result"):
+            v = payload.get(k)
+            if isinstance(v, list):
+                rows = v
+                break
+
+    if not isinstance(rows, list) or not rows:
         pytest.fail(f"Unexpected stats_query JSON shape: {type(payload)} -> {payload}")
+
+    def _row_service(row: dict[str, Any]) -> str:
+        # Prometheus-like: row["metric"]["service"]
+        metric = row.get("metric")
+        if isinstance(metric, dict):
+            return str(metric.get("service", "")).strip()
+        # Flat row: row["service"]
+        return str(row.get("service", "")).strip()
+
+    def _row_count(row: dict[str, Any]) -> int:
+        # Prometheus-like: row["value"] == [ts, "7"]
+        v = row.get("value")
+        if isinstance(v, list) and len(v) >= 2:
+            try:
+                return int(float(v[1]))
+            except Exception:
+                return 0
+
+        # Flat row variants
+        for k in ("count()", "count", "hits", "value"):
+            if k in row:
+                try:
+                    return int(float(row[k]))
+                except Exception:
+                    return 0
+        return 0
+
+    nonzero_services: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        svc = _row_service(row)
+        if not svc:
+            continue
+        if _row_count(row) > 0:
+            nonzero_services.append(svc)
+
+    assert nonzero_services, (
+        "No service bucket with count>0 returned by VictoriaLogs stats_query.\n"
+        f"base={base}\nquery={query}\n"
+        f"sample_json={str(payload)[:800]}"
+    )
 
     # Accept any service bucket with count > 0
     # Common field names across stats outputs: "service", "count()", "count", "hits"
