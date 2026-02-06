@@ -8,4 +8,4 @@ providers:
     disableDeletion: true
     updateIntervalSeconds: 30
     options:
-      path: /etc/grafana/dashboards/alerts
+      path: /var/lib/grafana/dashboards/alerts
