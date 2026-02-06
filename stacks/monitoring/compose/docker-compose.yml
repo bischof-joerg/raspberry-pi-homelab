@@ -408,7 +408,7 @@ services:
 
 networks:
   monitoring:
-    name: homelab-home-prod-mon-monitoring
+    name: monitoring
     driver: bridge
     driver_opts:
       com.docker.network.bridge.name: br-monitoring
