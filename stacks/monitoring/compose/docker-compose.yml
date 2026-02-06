@@ -364,6 +364,7 @@ services:
       - --httpListenAddr=:9428
       # Guardrail: cap disk usage for logs (bytes)
       - --retention.maxDiskSpaceUsageBytes=200000000000
+    networks: [monitoring]
     ports:
       - "127.0.0.1:9428:9428"
     mem_limit: 2g
@@ -375,12 +376,13 @@ services:
       - no-new-privileges:true
     volumes:
       - victorialogs-data:/vlogs
-    networks:
-      - apps
 
   vector:
     image: timberio/vector:0.51.1-distroless-libc
     command: ["--config", "/etc/vector/vector.yaml"]
+    networks:
+      - monitoring
+      - apps
     environment:
       - HOST_NODE_NAME=${HOSTNAME:-rpi-hub}
       - VECTOR_CONFIG=/etc/vector/vector.yaml
@@ -403,12 +405,10 @@ services:
       - /var/log/journal:/var/log/journal:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/machine-id:/etc/machine-id:ro
-    networks:
-      - apps
 
 networks:
   monitoring:
-    name: monitoring
+    name: homelab-home-prod-mon-monitoring
     driver: bridge
     driver_opts:
       com.docker.network.bridge.name: br-monitoring
