@@ -1,4 +1,18 @@
 # tests/postdeploy/test_23_grafana_dashboard_alerts_metrics.py
+
+"""
+Manual execution (single test, on target):
+
+sudo -E bash -lc '
+  set -euo pipefail
+  set -a
+  source /etc/raspberry-pi-homelab/monitoring.env
+  set +a
+  POSTDEPLOY_ON_TARGET=1 pytest -q -m postdeploy \
+    tests/postdeploy/test_23_grafana_dashboard_alerts_metrics.py
+'
+"""
+
 from __future__ import annotations
 
 import base64
