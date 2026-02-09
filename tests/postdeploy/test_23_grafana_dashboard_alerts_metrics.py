@@ -4,73 +4,133 @@ from __future__ import annotations
 import base64
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import pytest
-
-
-def _basic_auth_header(user: str, password: str) -> dict[str, str]:
-    token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
-    return {"Authorization": f"Basic {token}"}
 
 
 def _grafana_base_url() -> str:
     return os.environ.get("GRAFANA_BASE_URL", "http://127.0.0.1:3000").strip().rstrip("/")
 
 
-def _grafana_creds() -> tuple[str, str]:
-    # conftest.py auto-loads /etc/raspberry-pi-homelab/monitoring.env if readable
+def _read_env_file(path: Path) -> dict[str, str]:
+    """
+    Minimal .env parser:
+      - ignores empty lines and comments
+      - parses KEY=VALUE (no shell expansion)
+    """
+    out: dict[str, str] = {}
+    text = path.read_text(encoding="utf-8")
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        out[k.strip()] = v.strip()
+    return out
+
+
+def _load_monitoring_env_if_needed() -> None:
+    """
+    Ensure Grafana creds exist in os.environ.
+    On target, we try to read /etc/raspberry-pi-homelab/monitoring.env directly.
+    This avoids relying on import-time side effects in conftest.py.
+    """
+    if os.environ.get("GRAFANA_ADMIN_USER") and os.environ.get("GRAFANA_ADMIN_PASSWORD"):
+        return
+
+    env_path = Path("/etc/raspberry-pi-homelab/monitoring.env")
+    if not env_path.exists():
+        return
+
+    try:
+        vals = _read_env_file(env_path)
+    except PermissionError:
+        # If you want to run as non-root, you must grant read access (ACL) OR run pytest via sudo.
+        return
+
+    # Only set missing keys; do not override explicit environment.
+    for k, v in vals.items():
+        os.environ.setdefault(k, v)
+
+
+def _grafana_headers() -> dict[str, str]:
+    """
+    Prefer token if present, else Basic Auth from admin creds.
+    """
+    token = os.environ.get("GRAFANA_API_TOKEN", "").strip()
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+
+    _load_monitoring_env_if_needed()
     user = os.environ.get("GRAFANA_ADMIN_USER", "").strip()
     pw = os.environ.get("GRAFANA_ADMIN_PASSWORD", "").strip()
     if not user or not pw:
         pytest.fail(
-            "Missing Grafana credentials. Expected GRAFANA_ADMIN_USER and "
-            "GRAFANA_ADMIN_PASSWORD (on target these should be loaded by tests/postdeploy/conftest.py "
-            "from /etc/raspberry-pi-homelab/monitoring.env if readable)."
+            "Missing Grafana credentials.\n"
+            "Provide either:\n"
+            "- GRAFANA_API_TOKEN, or\n"
+            "- GRAFANA_ADMIN_USER + GRAFANA_ADMIN_PASSWORD\n"
+            "On target these usually live in /etc/raspberry-pi-homelab/monitoring.env.\n"
+            "If you run pytest as non-root, ensure that file is readable (ACL) or run via sudo."
         )
-    return user, pw
+
+    basic = base64.b64encode(f"{user}:{pw}".encode()).decode("ascii")
+    return {"Authorization": f"Basic {basic}"}
 
 
 @pytest.mark.postdeploy
 def test_grafana_dashboard_alerts_metrics_is_provisioned(http_get, retry) -> None:
     """
     Postdeploy smoke:
-    - validates provisioning + mounts by asserting Grafana can load dashboard by UID via API
-    - uses shared postdeploy helpers: http_get + retry
+      - validates provisioning + mounts by asserting Grafana can load dashboard by UID via API
 
-    Requirements:
-    - Grafana reachable at GRAFANA_BASE_URL (default http://127.0.0.1:3000)
-    - Grafana admin creds available in env (loaded on target by conftest.py if possible)
+    Checks:
+      - GET /api/dashboards/uid/<uid> returns 200
+      - dashboard.uid matches expected
+      - optional title sanity check (if configured)
+
+    Env:
+      - GRAFANA_BASE_URL (default http://127.0.0.1:3000)
+      - GRAFANA_EXPECT_DASHBOARD_UID (default alerts-metrics)
+      - GRAFANA_EXPECT_DASHBOARD_TITLE (default "Alerts (Metrics)")
+      - GRAFANA_TIMEOUT_SECONDS (default 8)
+      - Auth:
+        - GRAFANA_API_TOKEN (preferred), OR
+        - GRAFANA_ADMIN_USER/GRAFANA_ADMIN_PASSWORD (loaded from monitoring.env on target if readable)
     """
     base = _grafana_base_url()
     uid = os.environ.get("GRAFANA_EXPECT_DASHBOARD_UID", "alerts-metrics").strip()
     expected_title = os.environ.get("GRAFANA_EXPECT_DASHBOARD_TITLE", "Alerts (Metrics)").strip()
     timeout_s = int(float(os.environ.get("GRAFANA_TIMEOUT_SECONDS", "8")))
 
-    user, pw = _grafana_creds()
-    headers = _basic_auth_header(user, pw)
-
     url = f"{base}/api/dashboards/uid/{uid}"
+    headers = _grafana_headers()
 
     def _assert_dashboard_present() -> None:
         status, body = http_get(url, headers=headers, timeout=timeout_s)
 
+        # Grafana might be up (health=OK) but not fully ready/auth backends not stable yet.
+        # We still fail hard after retry timeout if this persists.
         if status == 401:
             raise AssertionError(
                 "Grafana API returned 401 Unauthorized.\n"
                 f"url={url}\n"
-                "Check GRAFANA_ADMIN_USER/GRAFANA_ADMIN_PASSWORD (and that monitoring.env is readable)."
+                "This usually means wrong/missing creds.\n"
+                "If running as non-root, ensure /etc/raspberry-pi-homelab/monitoring.env is readable "
+                "(ACL) or run pytest via sudo; or set GRAFANA_API_TOKEN."
             )
 
         if status == 404:
             raise AssertionError(
                 "Grafana API returned 404 Not Found for expected dashboard UID.\n"
                 f"url={url}\nuid={uid}\n"
-                "This typically means provisioning/mounts did not load the dashboard JSON.\n"
-                "Check:\n"
+                "This usually means provisioning/mounts did not load the dashboard JSON.\n"
+                "Check inside grafana container:\n"
                 "- dashboard JSON exists under /var/lib/grafana/dashboards/alerts\n"
                 "- dashboards provider points to that path\n"
-                "- the dashboard JSON sets uid=alerts-metrics"
+                f"- the dashboard JSON sets uid={uid}"
             )
 
         if status != 200:
@@ -101,5 +161,5 @@ def test_grafana_dashboard_alerts_metrics_is_provisioned(http_get, retry) -> Non
                 f"Dashboard title mismatch: expected={expected_title!r} got={got_title!r}"
             )
 
-    # Grafana provisioning is periodic; allow brief eventual consistency after deploy/start
+    # provisioning is periodic; allow eventual consistency
     retry(_assert_dashboard_present, timeout_s=60, interval_s=2.5)
