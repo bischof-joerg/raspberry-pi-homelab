@@ -103,8 +103,8 @@ services:
           )"
           ALERT_EMAIL_WARNING_YAML="$$ALERT_EMAIL_CRITICAL_YAML"
         else
-          ALERT_EMAIL_CRITICAL_YAML=""
-          ALERT_EMAIL_WARNING_YAML=""
+          ALERT_EMAIL_CRITICAL_YAML="    webhook_configs: [] # Disabled by IAC"
+          ALERT_EMAIL_WARNING_YAML="    webhook_configs: [] # Disabled by IAC"
         fi
 
         export ALERT_EMAIL_CRITICAL_YAML ALERT_EMAIL_WARNING_YAML
@@ -267,7 +267,8 @@ services:
       GF_SERVER_ENABLE_GZIP: "true" # Better performance on Pi
       # Grafana plugin preinstall (pinned)
       # Prefer the newer env var over GF_INSTALL_PLUGINS
-      GF_PLUGINS_PREINSTALL: victoriametrics-logs-datasource@0.24.0
+      GF_PLUGINS_PREINSTALL: >
+        victoriametrics-logs-datasource@0.24.0
     volumes:
       - /srv/data/stacks/monitoring/grafana:/var/lib/grafana
       - ../grafana/provisioning:/etc/grafana/provisioning:ro

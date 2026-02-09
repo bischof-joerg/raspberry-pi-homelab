@@ -8,4 +8,4 @@ datasources:
     url: http://alertmanager:9093
     jsonData:
       implementation: prometheus
-      handleGrafanaManagedAlerts: false
+      handleGrafanaManagedAlerts: true
