@@ -144,7 +144,18 @@ ensure_journald_read_access() {
   if [[ "$out" =~ SYSTEMD_JOURNAL_GID=([0-9]+) ]]; then
     export SYSTEMD_JOURNAL_GID="${BASH_REMATCH[1]}"
     log "journald: exported SYSTEMD_JOURNAL_GID=$SYSTEMD_JOURNAL_GID"
+  else
+    die "journald: failed to determine SYSTEMD_JOURNAL_GID"
   fi
+
+  if [[ -S /var/run/docker.sock ]]; then
+    export DOCKER_GID
+    DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
+    log "docker-sock: exported DOCKER_GID=$DOCKER_GID"
+  else
+    die "docker-sock: /var/run/docker.sock not found"
+  fi
+
 }
 
 

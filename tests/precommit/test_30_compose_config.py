@@ -27,6 +27,8 @@ ENV_DEFAULTS: dict[str, str] = {
     "ALERT_SMTP_FROM": "alerts@example.invalid",
     "ALERT_SMTP_SMARTHOST": "smtp.example.invalid:587",
     "ALERT_SMTP_REQUIRE_TLS": "true",
+    "SYSTEMD_JOURNAL_GID": "999",
+    "DOCKER_GID": "998",
 }
 
 
