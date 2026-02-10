@@ -364,7 +364,7 @@ services:
       - --storageDataPath=/vlogs
       - --httpListenAddr=:9428
       # Guardrail: cap disk usage for logs (bytes)
-      - --retention.maxDiskSpaceUsageBytes=200000000000
+      - --retention.maxDiskSpaceUsageBytes=50000000000 # ~50GB
     networks: [monitoring]
     ports:
       - "127.0.0.1:9428:9428"
