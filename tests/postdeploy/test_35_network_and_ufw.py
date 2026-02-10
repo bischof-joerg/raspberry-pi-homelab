@@ -18,13 +18,6 @@ def _run(cmd: list[str], *, check: bool = False) -> subprocess.CompletedProcess[
     )
 
 
-def _require_postdeploy_on_target() -> None:
-    if os.environ.get("POSTDEPLOY_ON_TARGET") != "1":
-        pytest.skip(
-            "POSTDEPLOY_ON_TARGET!=1 (set POSTDEPLOY_ON_TARGET=1 on the Pi to run postdeploy tests)"
-        )
-
-
 @dataclass(frozen=True)
 class DockerNet:
     name: str
@@ -70,6 +63,15 @@ def _ufw_is_active() -> bool:
     if res.returncode != 0:
         raise AssertionError(f"ufw status failed:\nstdout:\n{res.stdout}\n\nstderr:\n{res.stderr}")
     return "Status: active" in res.stdout
+
+
+def _ufw_status_verbose() -> str:
+    res = _run(["ufw", "status", "verbose"])
+    if res.returncode != 0:
+        raise AssertionError(
+            f"ufw status verbose failed:\nstdout:\n{res.stdout}\n\nstderr:\n{res.stderr}"
+        )
+    return res.stdout
 
 
 def _ufw_status_numbered() -> str:
@@ -125,8 +127,6 @@ def test_networks_exist_monitoring_strict_apps_loose():
     - monitoring: must have a stable bridge interface (used for UFW interface-bound rules) and IPAM config.
     - apps: must exist (external network), but we do NOT require a fixed bridge interface name.
     """
-    _require_postdeploy_on_target()
-
     monitoring = _get_docker_network("monitoring")
     apps = _get_docker_network("apps")
 
@@ -153,8 +153,6 @@ def test_networks_exist_monitoring_strict_apps_loose():
 
 @pytest.mark.postdeploy
 def test_ufw_active_and_metrics_rule_present():
-    _require_postdeploy_on_target()
-
     monitoring = _get_docker_network("monitoring")
 
     if not _ufw_is_active():
@@ -181,8 +179,6 @@ def test_docker_engine_metrics_reachable_from_monitoring_gateway():
     """
     Positive smoke test: metrics endpoint should be reachable on the monitoring network gateway.
     """
-    _require_postdeploy_on_target()
-
     monitoring = _get_docker_network("monitoring")
     assert monitoring.gateway, "monitoring gateway missing; cannot build metrics URL"
     url = f"http://{monitoring.gateway}:9323/metrics"
@@ -208,8 +204,6 @@ def test_negative_apps_cannot_reach_docker_engine_metrics_on_monitoring_gateway(
     If there is no route from `apps` to the monitoring gateway at all, we skip to avoid false positives
     (failure could be due to routing, not firewall).
     """
-    _require_postdeploy_on_target()
-
     if not _ufw_is_active():
         pytest.skip("UFW inactive; negative firewall test not applicable")
 
@@ -238,4 +232,128 @@ def test_negative_apps_cannot_reach_docker_engine_metrics_on_monitoring_gateway(
         "This suggests the firewall is too permissive or traffic is not constrained to monitoring interface/subnet.\n"
         f"monitoring_gateway={monitoring.gateway}\n"
         f"stdout:\n{fetch.stdout}\n\nstderr:\n{fetch.stderr}"
+    )
+
+
+@pytest.mark.postdeploy
+def test_ufw_inbound_exposure_allowlisted_v4_and_closed_v6():
+    """
+    Exposure contract (enforced by scripts/cleanup-network-ufw.sh):
+
+    Required inbound (IPv4):
+      - SSH 22/tcp: ALLOW IN from ADMIN_IPV4 and LAN_CIDR
+      - Grafana 3000/tcp: ALLOW IN from LAN_CIDR
+      - VictoriaLogs UI 9428/tcp: ALLOW IN from LAN_CIDR
+
+    Required deny (v4 + v6):
+      - 3000/tcp DENY IN Anywhere
+      - 3000/tcp (v6) DENY IN Anywhere (v6)
+      - 9428/tcp DENY IN Anywhere
+      - 9428/tcp (v6) DENY IN Anywhere (v6)
+
+    Forbidden:
+      - Any "ALLOW IN Anywhere" for managed ports (v4)
+      - Any IPv6 global allows (e.g. 2000::/3, Anywhere (v6), fe80::/10) for managed ports
+      - Any inbound exposure for Prometheus/Alertmanager (9090/9093)
+    """
+    lan_cidr = os.environ.get("LAN_CIDR")
+    admin_ipv4 = os.environ.get("ADMIN_IPV4")
+    if not lan_cidr or not admin_ipv4:
+        pytest.skip(
+            "Set LAN_CIDR and ADMIN_IPV4 (loaded from monitoring.env on the Pi) to enable this test."
+        )
+
+    grafana_port = os.environ.get("GRAFANA_PORT", "3000")
+    vlogs_port = os.environ.get("VLOGS_UI_PORT", "9428")
+    ssh_port = os.environ.get("SSH_PORT", "22")
+    prom_port = os.environ.get("PROMETHEUS_PORT", "9090")
+    am_port = os.environ.get("ALERTMANAGER_PORT", "9093")
+
+    verbose = _ufw_status_verbose()
+    assert "Status: active" in verbose, "UFW is not active"
+    assert "Default: deny (incoming)" in verbose, "UFW incoming default policy is not deny"
+
+    numbered = _ufw_status_numbered()
+
+    def must(pattern: str, msg: str) -> None:
+        if not re.search(pattern, numbered, flags=re.MULTILINE):
+            raise AssertionError(
+                f"{msg}\nPattern: {pattern}\n--- ufw status numbered ---\n{numbered}"
+            )
+
+    def must_not(pattern: str, msg: str) -> None:
+        if re.search(pattern, numbered, flags=re.MULTILINE):
+            raise AssertionError(
+                f"{msg}\nPattern: {pattern}\n--- ufw status numbered ---\n{numbered}"
+            )
+
+    def p_tcp(p: str) -> str:
+        # UFW prints IPv6 rules sometimes as "3000/tcp (v6)" (note the extra token).
+        return rf"{re.escape(p)}/tcp(?:\s+\(v6\))?"
+
+    # ---- Required IPv4 allows ----
+    must(
+        rf"{re.escape(grafana_port)}/tcp\s+ALLOW IN\s+{re.escape(lan_cidr)}\b",
+        "Missing Grafana LAN allow (v4)",
+    )
+    must(
+        rf"{re.escape(vlogs_port)}/tcp\s+ALLOW IN\s+{re.escape(lan_cidr)}\b",
+        "Missing VictoriaLogs UI LAN allow (v4)",
+    )
+    must(
+        rf"{re.escape(ssh_port)}/tcp\s+ALLOW IN\s+{re.escape(admin_ipv4)}\b",
+        "Missing SSH admin allow (v4)",
+    )
+    must(
+        rf"{re.escape(ssh_port)}/tcp\s+ALLOW IN\s+{re.escape(lan_cidr)}\b",
+        "Missing SSH LAN allow (v4)",
+    )
+
+    # ---- Required denies (v4 + v6) for Grafana and VictoriaLogs UI ----
+    must(
+        rf"{re.escape(grafana_port)}/tcp\s+DENY IN\s+Anywhere\b",
+        "Missing Grafana deny-anywhere (v4)",
+    )
+    must(
+        rf"{p_tcp(grafana_port)}\s+DENY IN\s+Anywhere\s+\(v6\)\b",
+        "Missing Grafana deny-anywhere (v6)",
+    )
+    must(
+        rf"{re.escape(vlogs_port)}/tcp\s+DENY IN\s+Anywhere\b",
+        "Missing VictoriaLogs deny-anywhere (v4)",
+    )
+    must(
+        rf"{p_tcp(vlogs_port)}\s+DENY IN\s+Anywhere\s+\(v6\)\b",
+        "Missing VictoriaLogs deny-anywhere (v6)",
+    )
+
+    # ---- Must not be globally allowed (IPv4) ----
+    for p in (grafana_port, vlogs_port, ssh_port):
+        must_not(
+            rf"{re.escape(p)}/tcp\s+ALLOW IN\s+Anywhere\b", f"Port {p} is globally allowed (v4)"
+        )
+
+    # ---- Must not be globally allowed (IPv6) ----
+    for p in (grafana_port, vlogs_port, ssh_port, prom_port, am_port):
+        must_not(
+            rf"{p_tcp(p)}\s+ALLOW IN\s+2000::/3\b",
+            f"Port {p} is globally allowed over IPv6 (2000::/3)",
+        )
+        must_not(
+            rf"{p_tcp(p)}\s+ALLOW IN\s+Anywhere\s+\(v6\)\b",
+            f"Port {p} is globally allowed over IPv6 (Anywhere v6)",
+        )
+        must_not(
+            rf"{p_tcp(p)}\s+ALLOW IN\s+fe80::/10\b",
+            f"Port {p} is allowed from IPv6 link-local (fe80::/10)",
+        )
+
+    # ---- Prometheus / Alertmanager must not be exposed inbound (any allow) ----
+    must_not(
+        rf"{re.escape(prom_port)}/tcp\s+ALLOW IN\s+",
+        "Prometheus port is still allowed inbound (should be removed)",
+    )
+    must_not(
+        rf"{re.escape(am_port)}/tcp\s+ALLOW IN\s+",
+        "Alertmanager port is still allowed inbound (should be removed)",
     )

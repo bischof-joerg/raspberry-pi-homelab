@@ -367,7 +367,7 @@ services:
       - --retention.maxDiskSpaceUsageBytes=50000000000 # ~50GB
     networks: [monitoring]
     ports:
-      - "127.0.0.1:9428:9428"
+      - "9428:9428" # LAN access; restricted by UFW rules
     mem_limit: 2g
     read_only: true
     tmpfs:
