@@ -20,6 +20,7 @@ transforms:
         "docker.service",
         "containerd.service",
         "ufw.service",
+        "ssh.service",
         "sshd.service",
         "systemd-udevd.service",
       ]
