@@ -392,7 +392,9 @@ services:
       victorialogs:
         condition: service_started
     # Needs journald access; see runbook notes below.
-    user: "0:0"
+    user: "65532:65532"
+    group_add:
+      - "${SYSTEMD_JOURNAL_GID}"
     read_only: true
     tmpfs:
       - /tmp
