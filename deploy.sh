@@ -53,6 +53,12 @@ REPO_OWNER_GROUP="${REPO_OWNER_GROUP:-admin}"
 # Prometheus removal preparation
 PROMETHEUS_REMOVAL_ENFORCE="${PROMETHEUS_REMOVAL_ENFORCE:-0}"
 
+# toggles/variables to verify journald read access (for Vector host logs ingestion)
+ENSURE_JOURNALD_READ="${ENSURE_JOURNALD_READ:-1}"   # 1|0
+JOURNALD_SCRIPT="${JOURNALD_SCRIPT:-$REPO_ROOT/scripts/ensure-journald-read.sh}"
+JOURNALD_TARGET_USER="${JOURNALD_TARGET_USER:-vector}"
+
+
 log(){ echo "[$(date -Is)] $*"; }
 die(){ echo "ERROR: $*" >&2; exit 2; }
 
@@ -121,6 +127,27 @@ bootstrap_networks() {
   "$script"
   log "networks: bootstrap done"
 }
+
+ensure_journald_read_access() {
+  [[ "$ENSURE_JOURNALD_READ" == "1" ]] || {
+    log "journald: ensure read access skipped (ENSURE_JOURNALD_READ=0)"
+    return 0
+  }
+
+  [[ -x "$JOURNALD_SCRIPT" ]] || die "journald script not executable: $JOURNALD_SCRIPT"
+
+  log "journald: ensuring read access for TARGET_USER=$JOURNALD_TARGET_USER"
+  local out
+  out="$(TARGET_USER="$JOURNALD_TARGET_USER" "$JOURNALD_SCRIPT" apply)"
+  log "journald: $out"
+
+  # Export for optional use in compose (e.g., group_add numeric gid)
+  if [[ "$out" =~ SYSTEMD_JOURNAL_GID=([0-9]+) ]]; then
+    export SYSTEMD_JOURNAL_GID="${BASH_REMATCH[1]}"
+    log "journald: exported SYSTEMD_JOURNAL_GID=$SYSTEMD_JOURNAL_GID"
+  fi
+}
+
 
 compute_monitoring_config_hash() {
   local files=(
@@ -250,7 +277,8 @@ main() {
   fix_repo_ownership_if_needed
   refuse_repo_root_env
   check_prereqs
-  validate_secrets_file
+
+  ensure_journald_read_access
 
   bootstrap_networks
   maybe_init_permissions
