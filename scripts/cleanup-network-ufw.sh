@@ -357,10 +357,12 @@ ensure_deny_anywhere_for_port() {
   local port="$1"
   local comment="$2"
 
-  # v4 deny
-  local want_v4="^${port}/tcp[[:space:]]+DENY IN[[:space:]]+Anywhere([[:space:]]|$)"
-  # v6 deny (ufw shows "(v6)")
-  local want_v6="^${port}/tcp[[:space:]]+DENY IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
+  local want_v4 want_v6
+  want_v4="^${port}/tcp[[:space:]]+DENY IN[[:space:]]+Anywhere([[:space:]]|$)"
+  # Accept both formats:
+  # - "9428/tcp DENY IN Anywhere (v6)"
+  # - "9428/tcp (v6) DENY IN Anywhere (v6)"
+  want_v6="^${port}/tcp([[:space:]]+\\(v6\\))?[[:space:]]+DENY IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
 
   if ufw_normalized_numbered_lines | grep -Eq "$want_v4"; then
     log "UFW: OK (deny ${port}/tcp Anywhere)"
@@ -372,7 +374,6 @@ ensure_deny_anywhere_for_port() {
   if ufw_normalized_numbered_lines | grep -Eq "$want_v6"; then
     log "UFW: OK (deny ${port}/tcp Anywhere (v6))"
   else
-    # If IPV6=yes, ufw deny should normally create v6 too, but enforce by re-issuing deny.
     log "UFW: ensuring deny ${port}/tcp Anywhere (v6)"
     run_cmd ufw deny "${port}/tcp" comment "$comment"
   fi
