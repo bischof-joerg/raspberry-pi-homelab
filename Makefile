@@ -59,7 +59,6 @@ VMALERT_CFG := stacks/monitoring/vmalert/vmalert.yml
 VM_CFG      := stacks/monitoring/victoriametrics/victoriametrics.yml
 
 # VictoriaLogs configuration (required)
-VLOGS_CFG := stacks/monitoring/victorialogs/victorialogs.yml
 
 # Alertmanager is generated -> repo contains template only
 ALERTMANAGER_TMPL := stacks/monitoring/alertmanager/alertmanager.yml.tmpl
@@ -256,7 +255,6 @@ doctor: ## Check tooling/config for this repo (WSL/Pi) [VM_CONFIG_STRICT=1 makes
 	check_req "$(VMAGENT_CFG)" "vmagent" "config"; \
 	check_req "$(VMALERT_CFG)" "vmalert" "config"; \
 	check_req "$(VM_CFG)" "victoriametrics" "config"; \
-	check_req "$(VLOGS_CFG)" "victorialogs" "config"; \
 	check_req "$(ALERTMANAGER_TMPL)" "alertmanager" "template"; \
 	test -x ./deploy.sh && echo "OK: deploy.sh executable" || echo "WARN: deploy.sh not executable"; \
 	echo; \
