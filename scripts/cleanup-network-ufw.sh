@@ -305,7 +305,7 @@ cleanup_stale_ufw_iface_rules() {
 
 ensure_ufw_rule_for_docker_engine_metrics() {
   local want_re
-  want_re="^${DOCKER_ENGINE_PORT}/tcp on ${EXPECTED_BRIDGE_NAME}[[:space:]]+ALLOW IN[[:space:]]+${EXPECTED_SUBNET}\b"
+  want_re="^${DOCKER_ENGINE_PORT}/tcp on ${EXPECTED_BRIDGE_NAME}[[:space:]]+ALLOW IN[[:space:]]+${EXPECTED_SUBNET}([[:space:]]|$)"
 
   local cur
   cur="$(ufw_list_numbered | sed -n '1,260p')"
@@ -326,7 +326,7 @@ ensure_allow_from_cidr_to_port_v4() {
   local port="$2"
   local comment="$3"
 
-  local want_re="^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+${cidr}\b"
+  local want_re="^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+${cidr}([[:space:]]|$)"
   local cur
   cur="$(ufw_list_numbered | sed -n '1,340p')"
   if echo "$cur" | grep -Eq "$want_re"; then
@@ -342,9 +342,9 @@ ensure_deny_anywhere_for_port() {
   local comment="$2"
 
   # v4 deny
-  local want_v4="^${port}/tcp[[:space:]]+DENY IN[[:space:]]+Anywhere\b"
+  local want_v4="^${port}/tcp[[:space:]]+DENY IN[[:space:]]+Anywhere([[:space:]]|$)"
   # v6 deny (ufw shows "(v6)")
-  local want_v6="^${port}/tcp[[:space:]]+DENY IN[[:space:]]+Anywhere \\(v6\\)\b"
+  local want_v6="^${port}/tcp[[:space:]]+DENY IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
 
   local cur
   cur="$(ufw_list_numbered | sed -n '1,380p')"
@@ -409,7 +409,7 @@ enforce_inbound_exposure_policy() {
   delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+2000::/3([[:space:]]|$)"
   delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+fe80::/10([[:space:]]|$)"
   delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
-  delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere\b"
+  delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]|$)"
 
   # 3) Ensure desired IPv4 allows
   ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$GRAFANA_PORT" "Grafana UI from LAN"
