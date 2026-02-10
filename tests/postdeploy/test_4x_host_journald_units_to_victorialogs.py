@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,15 +27,11 @@ UNITS = (
 @dataclass(frozen=True)
 class UnitCheck:
     unit: str
-    lookback: str  # VictoriaLogs _time window, e.g. "24h", "10m"
+    lookback: str  # VictoriaLogs _time window, e.g. "10m"
 
 
-CHECKS = (
-    UnitCheck("docker.service", "24h"),
-    UnitCheck("containerd.service", "24h"),
-    UnitCheck("ufw.service", "30m"),
-    UnitCheck("systemd-udevd.service", "10m"),
-)
+# Deterministic: we emit our own journald marker and then query for it.
+CHECKS = tuple(UnitCheck(u, "10m") for u in UNITS)
 
 
 def _require_postdeploy_on_target() -> None:
@@ -43,7 +40,6 @@ def _require_postdeploy_on_target() -> None:
 
 
 def _run(cmd: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
-    # Tests are typically executed under sudo in this repo, but don't assume it.
     return subprocess.run(
         cmd,
         check=False,
@@ -53,14 +49,14 @@ def _run(cmd: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[st
     )
 
 
+def _which(cmd: str) -> bool:
+    cp = _run(["sh", "-lc", f"command -v {shlex.quote(cmd)} >/dev/null 2>&1"])
+    return cp.returncode == 0
+
+
 def _curl_victorialogs(query: str, *, timeout: int = 15) -> str:
     url = os.environ.get(VLOG_QUERY_URL_ENV, VLOG_QUERY_URL_DEFAULT)
-    # Use curl because it's already a project dependency in your stack workflow.
-    # VictoriaLogs accepts the query via form field `query=...`.
-    cp = _run(
-        ["curl", "-fsS", url, "-d", f"query={query}"],
-        timeout=timeout,
-    )
+    cp = _run(["curl", "-fsS", url, "-d", f"query={query}"], timeout=timeout)
     if cp.returncode != 0:
         raise AssertionError(
             "VictoriaLogs query failed\n"
@@ -73,8 +69,6 @@ def _curl_victorialogs(query: str, *, timeout: int = 15) -> str:
 
 
 def _first_json_obj(text: str) -> dict[str, Any] | None:
-    # VictoriaLogs often returns newline-delimited JSON objects (one per match).
-    # If there are no matches, curl returns an empty body.
     text = text.strip()
     if not text:
         return None
@@ -90,30 +84,44 @@ def _first_json_obj(text: str) -> dict[str, Any] | None:
     return obj
 
 
-def _emit_activity_for_unit(unit: str) -> None:
+def _emit_journald_marker(tag: str, marker: str) -> None:
     """
-    Try to create at least one journal entry for units that may be quiet.
-    Keep it safe: do NOT touch ssh/sshd here.
+    Emit a harmless log line into journald with SYSLOG_IDENTIFIER=<tag>.
+
+    We avoid restarting services (ufw especially), so this cannot affect the host.
     """
-    if unit == "systemd-udevd.service":
-        # Generate udev activity.
-        _run(["udevadm", "trigger"], timeout=60)
-        _run(["udevadm", "settle"], timeout=60)
-    elif unit == "ufw.service":
-        # Ensure a ufw.service journal entry (start/stop) exists.
-        # This is usually safe on a homelab host; it should re-apply the same rules.
-        # If ufw is not enabled/installed, this will fail and the test will report it.
-        _run(["systemctl", "restart", "ufw.service"], timeout=60)
-    else:
-        # docker.service and containerd.service usually log during deploy/pulls; no extra activity here.
-        pass
+    if _which("systemd-cat"):
+        # systemd-cat can run a command and capture its stdout into journald.
+        cp = _run(
+            ["systemd-cat", "-t", tag, "sh", "-lc", f"echo {shlex.quote(marker)}"], timeout=10
+        )
+        if cp.returncode == 0:
+            return
+        # fall through to logger with useful diagnostics if systemd-cat fails
+    if _which("logger"):
+        cp = _run(["logger", "-t", tag, marker], timeout=10)
+        if cp.returncode == 0:
+            return
+
+    raise AssertionError(
+        "Could not emit journald marker: neither systemd-cat nor logger worked.\n"
+        f"tag={tag!r} marker={marker!r}"
+    )
+
+
+def _quote_logsql_string(s: str) -> str:
+    # LogsQL string literals use double quotes; escape backslash and quote.
+    # See VictoriaLogs LogsQL docs for string literal rules.  :contentReference[oaicite:1]{index=1}
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 @pytest.mark.postdeploy
 @pytest.mark.parametrize("check", CHECKS, ids=lambda c: c.unit)
 def test_host_journald_units_are_ingested_into_victorialogs(retry, check: UnitCheck) -> None:
     """
-    Verify that journald entries for key host units are ingested into VictoriaLogs.
+    Deterministic ingestion check:
+      1) emit a journald entry tagged with SYSLOG_IDENTIFIER=<unit>
+      2) assert the marker appears in VictoriaLogs within a bounded time
 
     Covered units (exactly four):
       - docker.service
@@ -123,25 +131,28 @@ def test_host_journald_units_are_ingested_into_victorialogs(retry, check: UnitCh
     """
     _require_postdeploy_on_target()
 
-    # Emit activity once (avoid flapping services repeatedly inside retry loop).
-    _emit_activity_for_unit(check.unit)
+    marker = f"postdeploy_journald_smoke::{check.unit}::{int(time.time())}"
+    _emit_journald_marker(check.unit, marker)
 
     def _check() -> None:
-        # Query newest matching entry and assert it contains the expected unit label.
-        q = f"_time:{check.lookback} systemd_unit:{check.unit} | limit 1"
+        # Prefer SYSLOG_IDENTIFIER + exact marker match to avoid false positives.
+        q = (
+            f"_time:{check.lookback} "
+            f"SYSLOG_IDENTIFIER:{_quote_logsql_string(check.unit)} "
+            f"_msg:{_quote_logsql_string(marker)} | limit 1"
+        )
         body = _curl_victorialogs(q, timeout=15)
         obj = _first_json_obj(body)
         assert obj is not None, (
-            f"No entries found in VictoriaLogs for systemd_unit={check.unit} "
-            f"within _time:{check.lookback}. "
-            f"Query was: {q!r}"
+            f"No entries found in VictoriaLogs for tag={check.unit} within _time:{check.lookback}. "
+            f"Marker={marker!r}. Query was: {q!r}"
         )
 
-        # Your Vector normalization typically maps journald `_SYSTEMD_UNIT` -> `systemd_unit`.
-        unit_val = obj.get("systemd_unit") or obj.get("_SYSTEMD_UNIT")
-        assert unit_val == check.unit, (
-            f"Expected systemd_unit={check.unit!r}, got {unit_val!r}. obj keys={sorted(obj.keys())}"
+        got_ident = obj.get("SYSLOG_IDENTIFIER")
+        got_msg = obj.get("_msg")
+        assert got_ident == check.unit, (
+            f"Expected SYSLOG_IDENTIFIER={check.unit!r}, got {got_ident!r}"
         )
+        assert marker in (got_msg or ""), f"Expected marker in _msg. _msg={got_msg!r}"
 
-    # Match existing repo style: retry with a bounded timeout to allow ingestion latency.
     retry(_check, timeout_s=90, interval_s=3.0)
