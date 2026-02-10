@@ -46,7 +46,23 @@ transforms:
       # Timestamp field for VictoriaLogs (_time_field=timestamp)
       # - docker_logs usually provides .timestamp
       # - journald provides _SOURCE_REALTIME_TIMESTAMP (microseconds since epoch) and/or __REALTIME_TIMESTAMP
-      .timestamp = to_timestamp(.timestamp) ?? to_timestamp(._SOURCE_REALTIME_TIMESTAMP) ?? parse_timestamp(to_string(.timestamp) ?? "", "%+") ?? now()
+      # Timestamp field for VictoriaLogs (_time_field=timestamp)
+      # docker_logs: .timestamp is typically RFC3339 string
+      # journald: _SOURCE_REALTIME_TIMESTAMP is decimal string microseconds since epoch (UTC)
+      .ts = null
+      if exists(.timestamp) {
+        # docker_logs usually provides an RFC3339-like timestamp string; "%+" is the common "any" parser
+        .ts = parse_timestamp(to_string(.timestamp) ?? "", "%+") ?? null
+      }
+      if is_null(.ts) && exists(._SOURCE_REALTIME_TIMESTAMP) {
+        # journald: microseconds since epoch as decimal string
+        us = to_int(to_string(._SOURCE_REALTIME_TIMESTAMP) ?? "") ?? null
+        if !is_null(us) {
+          .ts = from_unix_timestamp(us, unit: "microseconds") ?? null
+        }
+      }
+      .timestamp = .ts ?? now()
+      del(.ts)
 
       # 2. Host & Container
       # Host (prefer env injection; fallback to container hostname)
