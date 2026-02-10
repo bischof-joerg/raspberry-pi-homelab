@@ -197,12 +197,44 @@ delete_ufw_rule_by_number() {
 delete_ufw_rules_matching_line_regex() {
   local line_re="$1"
 
-  # Renumbering-safe delete:
-  # - Recompute "highest matching rule number" each iteration
-  # - Delete it
-  # - Repeat until no matches remain
+  # DRY-RUN: do NOT loop, because nothing gets deleted.
+  # Just compute the matching rule numbers once and print them.
+  if [ "${APPLY:-0}" -eq 0 ]; then
+    local nums
+    nums="$(
+      ufw_list_numbered | awk -v re="$line_re" '
+        $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
+          raw=$0
+          num=raw
+          sub(/^\[[[:space:]]*/, "", num)
+          sub(/\].*$/, "", num)
+          gsub(/[[:space:]]+/, "", num)
+
+          line=raw
+          sub(/^\[[[:space:]]*[0-9]+\][[:space:]]+/, "", line)
+
+          if (line ~ re) {
+            print num
+          }
+        }' | sort -nr
+    )"
+
+    if [ -z "${nums:-}" ]; then
+      vlog "UFW: no rules matched regex: $line_re"
+      return 0
+    fi
+
+    local n
+    for n in $nums; do
+      log "UFW: deleting matched rule [$n] (regex=$line_re)"
+      log "DRY-RUN: ufw delete $n"
+    done
+    return 0
+  fi
+
+  # APPLY: Renumbering-safe delete loop (recompute highest match each time).
   local iter=0
-  local max_iter=200  # hard guardrail against infinite loops
+  local max_iter=200
 
   while true; do
     iter=$((iter + 1))
@@ -210,10 +242,6 @@ delete_ufw_rules_matching_line_regex() {
       die "UFW: aborting delete loop (max_iter=${max_iter}) for regex: $line_re"
     fi
 
-    # Find highest numbered rule whose "line content" (after [ N]) matches line_re.
-    # Example ufw output:
-    #   [ 11] 9090/tcp  ALLOW IN 192.168.178.0/24
-    # We strip the leading "[ 11] " and match the remainder.
     local n
     n="$(
       ufw_list_numbered | awk -v re="$line_re" '
@@ -239,16 +267,10 @@ delete_ufw_rules_matching_line_regex() {
     fi
 
     log "UFW: deleting matched rule [$n] (regex=$line_re)"
-    # Important: delete_ufw_rule_by_number should NOT hard-fail the whole script
-    # if deletion fails (renumbering/race). If yours still hard-fails, patch it too.
-    if [ "$APPLY" -eq 1 ]; then
-      if yes y | ufw delete "$n" >/dev/null 2>&1; then
-        log "UFW: deleted rule [$n]"
-      else
-        log "UFW: WARN could not delete rule [$n] (may have been renumbered/removed); continuing"
-      fi
+    if yes y | ufw delete "$n" >/dev/null 2>&1; then
+      log "UFW: deleted rule [$n]"
     else
-      log "DRY-RUN: ufw delete $n"
+      log "UFW: WARN could not delete rule [$n] (may have been renumbered/removed); continuing"
     fi
   done
 }
