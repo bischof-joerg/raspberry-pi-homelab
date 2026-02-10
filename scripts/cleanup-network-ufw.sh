@@ -181,8 +181,12 @@ iface_exists() { ip link show "$1" >/dev/null 2>&1; }
 delete_ufw_rule_by_number() {
   local num="$1"
   if [ "$APPLY" -eq 1 ]; then
-    yes y | ufw delete "$num" >/dev/null
-    log "UFW: deleted rule [$num]"
+    if yes y | ufw delete "$num" >/dev/null 2>&1; then
+      log "UFW: deleted rule [$num]"
+    else
+      # Don't abort the whole reconcile because UFW renumbered or rule already vanished.
+      log "UFW: WARN could not delete rule [$num] (may have been renumbered/removed); continuing"
+    fi
   else
     log "DRY-RUN: ufw delete $num"
   fi
@@ -192,29 +196,63 @@ delete_ufw_rule_by_number() {
 # Deleting from highest index down avoids renumbering issues.
 delete_ufw_rules_matching_line_regex() {
   local line_re="$1"
-  local nums
-  nums="$(ufw_list_numbered | awk -v re="$line_re" '
-    $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
-      line=$0
-      sub(/^\[[[:space:]]*[0-9]+\][[:space:]]+/, "", line)
-      if (line ~ re) {
-        gsub(/^\[|].*$/, "", $1)
-        gsub(/[[:space:]]+/, "", $1)
-        print $1
-      }
-    }' | sort -nr || true)"
 
-  if [ -z "$nums" ]; then
-    vlog "UFW: no rules matched regex: $line_re"
-    return 0
-  fi
+  # Renumbering-safe delete:
+  # - Recompute "highest matching rule number" each iteration
+  # - Delete it
+  # - Repeat until no matches remain
+  local iter=0
+  local max_iter=200  # hard guardrail against infinite loops
 
-  local n
-  for n in $nums; do
+  while true; do
+    iter=$((iter + 1))
+    if [ "$iter" -gt "$max_iter" ]; then
+      die "UFW: aborting delete loop (max_iter=${max_iter}) for regex: $line_re"
+    fi
+
+    # Find highest numbered rule whose "line content" (after [ N]) matches line_re.
+    # Example ufw output:
+    #   [ 11] 9090/tcp  ALLOW IN 192.168.178.0/24
+    # We strip the leading "[ 11] " and match the remainder.
+    local n
+    n="$(
+      ufw_list_numbered | awk -v re="$line_re" '
+        $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
+          raw=$0
+          num=raw
+          sub(/^\[[[:space:]]*/, "", num)
+          sub(/\].*$/, "", num)
+          gsub(/[[:space:]]+/, "", num)
+
+          line=raw
+          sub(/^\[[[:space:]]*[0-9]+\][[:space:]]+/, "", line)
+
+          if (line ~ re) {
+            print num
+          }
+        }' | sort -nr | head -n1
+    )"
+
+    if [ -z "${n:-}" ]; then
+      vlog "UFW: no rules matched regex: $line_re"
+      return 0
+    fi
+
     log "UFW: deleting matched rule [$n] (regex=$line_re)"
-    delete_ufw_rule_by_number "$n"
+    # Important: delete_ufw_rule_by_number should NOT hard-fail the whole script
+    # if deletion fails (renumbering/race). If yours still hard-fails, patch it too.
+    if [ "$APPLY" -eq 1 ]; then
+      if yes y | ufw delete "$n" >/dev/null 2>&1; then
+        log "UFW: deleted rule [$n]"
+      else
+        log "UFW: WARN could not delete rule [$n] (may have been renumbered/removed); continuing"
+      fi
+    else
+      log "DRY-RUN: ufw delete $n"
+    fi
   done
 }
+
 
 cleanup_stale_ufw_iface_rules() {
   local lines
