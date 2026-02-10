@@ -6,6 +6,12 @@
 # Supports:
 #   --check  : exit 0 if permissions OK; exit 1 if changes needed
 #   (default): apply changes idempotently
+#
+# Notes:
+# - Grafana official image runs as UID/GID 472.
+# - Vector is configured to run as a non-root UID/GID (e.g. 65532:65532) and needs a writable data_dir
+#   at /var/lib/vector (we bind-mount this from $BASE_DIR/vector).
+#
 
 set -euo pipefail
 
@@ -26,6 +32,10 @@ prom_group="nogroup"
 
 graf_uid="472"
 graf_gid="472"
+
+# Vector runs as non-root (configured in compose via user: "65532:65532")
+vector_uid="65532"
+vector_gid="65532"
 
 # Some distros might not have nogroup; fall back to nobody's primary group.
 resolve_nobody_group() {
@@ -72,12 +82,14 @@ main() {
   local grafana_dir="$BASE_DIR/grafana"
   local alertmanager_dir="$BASE_DIR/alertmanager"
   local alertmanager_cfg_dir="$BASE_DIR/alertmanager-config"
+  local vector_dir="$BASE_DIR/vector"
 
   if [[ "$mode" == "check" ]]; then
     local ok=0
     check_one "$grafana_dir" "$graf_uid" "$graf_gid" "750" || ok=1
     check_one "$alertmanager_dir" "$prom_user" "$prom_group" "750" || ok=1
     check_one "$alertmanager_cfg_dir" "root" "root" "755" || ok=1
+    check_one "$vector_dir" "$vector_uid" "$vector_gid" "750" || ok=1
 
     if [[ "$ok" -eq 0 ]]; then
       log "init-permissions(check): OK"
@@ -92,6 +104,7 @@ main() {
   ensure_dir "$grafana_dir"
   ensure_dir "$alertmanager_dir"
   ensure_dir "$alertmanager_cfg_dir"
+  ensure_dir "$vector_dir"
 
   # Grafana runs as UID/GID 472 in official image.
   chown -R "${graf_uid}:${graf_gid}" "$grafana_dir"
@@ -105,6 +118,12 @@ main() {
   # Rendered Alertmanager config directory (written by config-render job as root, mounted RO into alertmanager).
   chown -R root:root "$alertmanager_cfg_dir"
   chmod 0755 "$alertmanager_cfg_dir"
+
+  # Vector data_dir (/var/lib/vector) bind-mounted from $BASE_DIR/vector.
+  # Must be writable for non-root Vector (journald checkpoints/state, etc.).
+  chown -R "${vector_uid}:${vector_gid}" "$vector_dir"
+  chmod 0750 "$vector_dir"
+  chmod -R u+rwX,go-rwx "$vector_dir"
 
   log "init-permissions(apply): done"
 }
