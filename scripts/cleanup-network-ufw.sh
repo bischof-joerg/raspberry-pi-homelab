@@ -162,6 +162,22 @@ docker_network_is_safe_to_remove() {
 ufw_is_active() { ufw status | head -n1 | grep -qi 'Status: active'; }
 ufw_list_numbered() { ufw status numbered; }
 
+
+# Normalize "ufw status numbered" lines so regex can anchor at start of rule.
+# - Strip leading "[ N] "
+# - Strip trailing " # comment"
+ufw_normalized_numbered_lines() {
+  ufw_list_numbered | awk '
+    $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
+      line=$0
+      sub(/^\[[[:space:]]*[0-9]+\][[:space:]]+/, "", line)  # drop "[ N] "
+      sub(/[[:space:]]+#.*$/, "", line)                      # drop trailing comment
+      print line
+    }
+  '
+}
+
+
 backup_ufw_status() {
   local dir="/var/backups/raspberry-pi-homelab"
   local ts
@@ -303,14 +319,12 @@ cleanup_stale_ufw_iface_rules() {
   done < <(echo "$lines" | grep -E '^\[\s*[0-9]+\]' || true)
 }
 
+
 ensure_ufw_rule_for_docker_engine_metrics() {
   local want_re
   want_re="^${DOCKER_ENGINE_PORT}/tcp on ${EXPECTED_BRIDGE_NAME}[[:space:]]+ALLOW IN[[:space:]]+${EXPECTED_SUBNET}([[:space:]]|$)"
 
-  local cur
-  cur="$(ufw_list_numbered | sed -n '1,260p')"
-
-  if echo "$cur" | grep -Eq "$want_re"; then
+  if ufw_normalized_numbered_lines | grep -Eq "$want_re"; then
     log "UFW: OK (found allow rule for ${EXPECTED_BRIDGE_NAME} ${EXPECTED_SUBNET} port ${DOCKER_ENGINE_PORT})"
     return 0
   fi
@@ -318,6 +332,7 @@ ensure_ufw_rule_for_docker_engine_metrics() {
   log "UFW: missing allow rule for ${EXPECTED_BRIDGE_NAME} ${EXPECTED_SUBNET} port ${DOCKER_ENGINE_PORT}"
   run_cmd ufw allow in on "$EXPECTED_BRIDGE_NAME" from "$EXPECTED_SUBNET" to any port "$DOCKER_ENGINE_PORT" proto tcp comment "Docker engine metrics from monitoring net"
 }
+
 
 # ---- Enforce deterministic exposure rules ----
 
@@ -327,15 +342,16 @@ ensure_allow_from_cidr_to_port_v4() {
   local comment="$3"
 
   local want_re="^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+${cidr}([[:space:]]|$)"
-  local cur
-  cur="$(ufw_list_numbered | sed -n '1,340p')"
-  if echo "$cur" | grep -Eq "$want_re"; then
+
+  if ufw_normalized_numbered_lines | grep -Eq "$want_re"; then
     log "UFW: OK (allow ${port}/tcp from ${cidr})"
-  else
-    log "UFW: missing allow ${port}/tcp from ${cidr}"
-    run_cmd ufw allow from "$cidr" to any port "$port" proto tcp comment "$comment"
+    return 0
   fi
+
+  log "UFW: missing allow ${port}/tcp from ${cidr}"
+  run_cmd ufw allow from "$cidr" to any port "$port" proto tcp comment "$comment"
 }
+
 
 ensure_deny_anywhere_for_port() {
   local port="$1"
@@ -346,18 +362,14 @@ ensure_deny_anywhere_for_port() {
   # v6 deny (ufw shows "(v6)")
   local want_v6="^${port}/tcp[[:space:]]+DENY IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
 
-  local cur
-  cur="$(ufw_list_numbered | sed -n '1,380p')"
-
-  if echo "$cur" | grep -Eq "$want_v4"; then
+  if ufw_normalized_numbered_lines | grep -Eq "$want_v4"; then
     log "UFW: OK (deny ${port}/tcp Anywhere)"
   else
     log "UFW: adding deny ${port}/tcp Anywhere"
     run_cmd ufw deny "${port}/tcp" comment "$comment"
   fi
 
-  cur="$(ufw_list_numbered | sed -n '1,380p')"
-  if echo "$cur" | grep -Eq "$want_v6"; then
+  if ufw_normalized_numbered_lines | grep -Eq "$want_v6"; then
     log "UFW: OK (deny ${port}/tcp Anywhere (v6))"
   else
     # If IPV6=yes, ufw deny should normally create v6 too, but enforce by re-issuing deny.
@@ -365,6 +377,7 @@ ensure_deny_anywhere_for_port() {
     run_cmd ufw deny "${port}/tcp" comment "$comment"
   fi
 }
+
 
 remove_unwanted_rules_for_port() {
   local port="$1"
