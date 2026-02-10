@@ -375,9 +375,9 @@ remove_unwanted_rules_for_port() {
   # - ALLOW IN 2000::/3 (the previous dangerous pattern)
   # - ALLOW IN fe80::/10 (link-local allows; not desired)
   delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere(\\s|$)"
-  delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere \\(v6\\)\b"
-  delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+2000::/3\b"
-  delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+fe80::/10\b"
+  delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
+  delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+2000::/3([[:space:]]|$)"
+  delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+fe80::/10([[:space:]]|$)"
 }
 
 remove_prometheus_alertmanager_exposure() {
@@ -392,7 +392,7 @@ maybe_remove_docker0_anywhere_rule() {
     return 0
   fi
   log "UFW: removing broad docker0 allow rules (not part of desired exposure set)"
-  delete_ufw_rules_matching_line_regex "^Anywhere on docker0[[:space:]]+ALLOW IN[[:space:]]+Anywhere\b"
+  delete_ufw_rules_matching_line_regex "^Anywhere on docker0[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]|$)"
 }
 
 enforce_inbound_exposure_policy() {
@@ -406,9 +406,9 @@ enforce_inbound_exposure_policy() {
   remove_unwanted_rules_for_port "$SSH_PORT"
 
   # Also remove IPv6 global/unknown SSH allows (e.g. 2000::/3 or fe80::/10)
-  delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+2000::/3\b"
-  delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+fe80::/10\b"
-  delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere \\(v6\\)\b"
+  delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+2000::/3([[:space:]]|$)"
+  delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+fe80::/10([[:space:]]|$)"
+  delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
   delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere\b"
 
   # 3) Ensure desired IPv4 allows
