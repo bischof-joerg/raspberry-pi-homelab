@@ -58,9 +58,8 @@ VMAGENT_CFG := stacks/monitoring/vmagent/vmagent.yml
 VMALERT_CFG := stacks/monitoring/vmalert/vmalert.yml
 VM_CFG      := stacks/monitoring/victoriametrics/victoriametrics.yml
 
-# Victorialogs is not implemented yet -> optional
+# VictoriaLogs configuration (required)
 VLOGS_CFG := stacks/monitoring/victorialogs/victorialogs.yml
-VICTORIALOGS_ENABLED ?= 0
 
 # Alertmanager is generated -> repo contains template only
 ALERTMANAGER_TMPL := stacks/monitoring/alertmanager/alertmanager.yml.tmpl
@@ -99,7 +98,6 @@ help: ## Show this help (auto-generated from target docstrings)
 	@echo
 	@echo "Options (env vars):"
 	@echo "  VM_CONFIG_STRICT=1        doctor fails if required configs/templates are missing (default: 0 = WARN)"
-	@echo "  VICTORIALOGS_ENABLED=1    enable victorialogs config checks (default: 0)"
 	@echo "  PYTEST_ARGS=\"...\"        append arbitrary pytest args (e.g. -k expr, -vv, -x, --lf)"
 	@echo "  PYTEST_QUIET=1            add -q to pytest (default: 0)"
 	@echo "  PYTEST_STRICT=\"...\"      override strict flags (default: --strict-markers --maxfail=1)"
@@ -258,11 +256,7 @@ doctor: ## Check tooling/config for this repo (WSL/Pi) [VM_CONFIG_STRICT=1 makes
 	check_req "$(VMAGENT_CFG)" "vmagent" "config"; \
 	check_req "$(VMALERT_CFG)" "vmalert" "config"; \
 	check_req "$(VM_CFG)" "victoriametrics" "config"; \
-	if [ "$(VICTORIALOGS_ENABLED)" = "1" ]; then \
-	  check_req "$(VLOGS_CFG)" "victorialogs" "config"; \
-	else \
-	  echo "SKIP: victorialogs not enabled (set VICTORIALOGS_ENABLED=1 to enforce)"; \
-	fi; \
+	check_req "$(VLOGS_CFG)" "victorialogs" "config"; \
 	check_req "$(ALERTMANAGER_TMPL)" "alertmanager" "template"; \
 	test -x ./deploy.sh && echo "OK: deploy.sh executable" || echo "WARN: deploy.sh not executable"; \
 	echo; \
