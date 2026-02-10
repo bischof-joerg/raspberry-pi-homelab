@@ -403,6 +403,7 @@ services:
     security_opt:
       - no-new-privileges:true
     volumes:
+      - /srv/data/stacks/monitoring/vector:/var/lib/vector
       - ../vector/vector.yaml:/etc/vector/vector.yaml:ro
       # journald access (runtime + persistent)
       - /run/log/journal:/run/log/journal:ro
