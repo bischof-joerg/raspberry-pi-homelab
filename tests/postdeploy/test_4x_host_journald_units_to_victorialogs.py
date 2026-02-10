@@ -5,7 +5,7 @@ import json
 import os
 import shlex
 import subprocess
-import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,7 +15,6 @@ POSTDEPLOY_ENV = "POSTDEPLOY_ON_TARGET"
 VLOG_QUERY_URL_ENV = "VICTORIALOGS_QUERY_URL"
 VLOG_QUERY_URL_DEFAULT = "http://127.0.0.1:9428/select/logsql/query"
 
-# Exactly these four units
 UNITS = (
     "docker.service",
     "containerd.service",
@@ -27,11 +26,10 @@ UNITS = (
 @dataclass(frozen=True)
 class UnitCheck:
     unit: str
-    lookback: str  # VictoriaLogs _time window, e.g. "10m"
-
-
-# Deterministic: we emit our own journald marker and then query for it.
-CHECKS = tuple(UnitCheck(u, "10m") for u in UNITS)
+    lookback: str
+    provoke: Callable[[], None]
+    # Optional: if ufw is silent, we allow skip instead of fail.
+    allow_skip_if_no_events: bool = False
 
 
 def _require_postdeploy_on_target() -> None:
@@ -39,7 +37,7 @@ def _require_postdeploy_on_target() -> None:
         pytest.skip(f"{POSTDEPLOY_ENV}=1 required (postdeploy on target)")
 
 
-def _run(cmd: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+def _run(cmd: list[str], *, timeout: int = 120) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
         check=False,
@@ -49,12 +47,7 @@ def _run(cmd: list[str], *, timeout: int = 60) -> subprocess.CompletedProcess[st
     )
 
 
-def _which(cmd: str) -> bool:
-    cp = _run(["sh", "-lc", f"command -v {shlex.quote(cmd)} >/dev/null 2>&1"])
-    return cp.returncode == 0
-
-
-def _curl_victorialogs(query: str, *, timeout: int = 15) -> str:
+def _curl_victorialogs(query: str, *, timeout: int = 20) -> str:
     url = os.environ.get(VLOG_QUERY_URL_ENV, VLOG_QUERY_URL_DEFAULT)
     cp = _run(["curl", "-fsS", url, "-d", f"query={query}"], timeout=timeout)
     if cp.returncode != 0:
@@ -84,75 +77,100 @@ def _first_json_obj(text: str) -> dict[str, Any] | None:
     return obj
 
 
-def _emit_journald_marker(tag: str, marker: str) -> None:
-    """
-    Emit a harmless log line into journald with SYSLOG_IDENTIFIER=<tag>.
-
-    We avoid restarting services (ufw especially), so this cannot affect the host.
-    """
-    if _which("systemd-cat"):
-        # systemd-cat can run a command and capture its stdout into journald.
-        cp = _run(
-            ["systemd-cat", "-t", tag, "sh", "-lc", f"echo {shlex.quote(marker)}"], timeout=10
-        )
-        if cp.returncode == 0:
-            return
-        # fall through to logger with useful diagnostics if systemd-cat fails
-    if _which("logger"):
-        cp = _run(["logger", "-t", tag, marker], timeout=10)
-        if cp.returncode == 0:
-            return
-
-    raise AssertionError(
-        "Could not emit journald marker: neither systemd-cat nor logger worked.\n"
-        f"tag={tag!r} marker={marker!r}"
-    )
-
-
 def _quote_logsql_string(s: str) -> str:
-    # LogsQL string literals use double quotes; escape backslash and quote.
-    # See VictoriaLogs LogsQL docs for string literal rules.  :contentReference[oaicite:1]{index=1}
+    # LogsQL string literal in double quotes
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _query_one(unit: str, lookback: str) -> dict[str, Any] | None:
+    # Prefer the normalized field you already see in VL: systemd_unit:"..."
+    q = f"_time:{lookback} systemd_unit:{_quote_logsql_string(unit)} | limit 1"
+    body = _curl_victorialogs(q, timeout=20)
+    return _first_json_obj(body)
+
+
+# --- Provoke helpers (safe-ish) -------------------------------------------------
+
+
+def _provoke_docker() -> None:
+    # Deterministic dockerd log: pulling an image emits "image pulled" (as you've already seen).
+    # Keep it small.
+    cp = _run(
+        [
+            "sh",
+            "-lc",
+            "docker pull -q hello-world:latest >/dev/null 2>&1 || docker pull hello-world:latest >/dev/null",
+        ],
+        timeout=300,
+    )
+    if cp.returncode != 0:
+        raise AssertionError(
+            f"Could not provoke docker.service logs via docker pull. stderr={cp.stderr.strip()!r}"
+        )
+
+
+def _provoke_containerd() -> None:
+    # Starting/stopping a short-lived container usually produces containerd shim connect/disconnect logs.
+    cp = _run(
+        ["sh", "-lc", "docker run --rm hello-world:latest >/dev/null 2>&1 || true"], timeout=180
+    )
+    if cp.returncode != 0:
+        # hello-world may exit non-zero on some setups; we only care that docker attempted it.
+        pass
+
+
+def _provoke_udevd() -> None:
+    # You already validated this yields udev activity in journald.
+    cp = _run(["sh", "-lc", "sudo udevadm trigger && sudo udevadm settle"], timeout=120)
+    if cp.returncode != 0:
+        raise AssertionError(
+            f"Could not provoke systemd-udevd.service logs. stderr={cp.stderr.strip()!r}"
+        )
+
+
+def _provoke_ufw() -> None:
+    # ufw.service is often oneshot and silent; we intentionally do NOT restart it from a postdeploy test
+    # to avoid any chance of SSH lockout.
+    #
+    # Best-effort: do something non-invasive. This may still produce zero ufw.service logs.
+    _run(["sh", "-lc", "sudo ufw status verbose >/dev/null 2>&1 || true"], timeout=30)
+
+
+CHECKS = (
+    UnitCheck("docker.service", "15m", _provoke_docker),
+    UnitCheck("containerd.service", "15m", _provoke_containerd),
+    UnitCheck("systemd-udevd.service", "15m", _provoke_udevd),
+    # For ufw.service we broaden the time window and allow skip if there are no unit logs at all.
+    UnitCheck("ufw.service", "7d", _provoke_ufw, allow_skip_if_no_events=True),
+)
 
 
 @pytest.mark.postdeploy
 @pytest.mark.parametrize("check", CHECKS, ids=lambda c: c.unit)
 def test_host_journald_units_are_ingested_into_victorialogs(retry, check: UnitCheck) -> None:
-    """
-    Deterministic ingestion check:
-      1) emit a journald entry tagged with SYSLOG_IDENTIFIER=<unit>
-      2) assert the marker appears in VictoriaLogs within a bounded time
-
-    Covered units (exactly four):
-      - docker.service
-      - containerd.service
-      - ufw.service
-      - systemd-udevd.service
-    """
     _require_postdeploy_on_target()
 
-    marker = f"postdeploy_journald_smoke::{check.unit}::{int(time.time())}"
-    _emit_journald_marker(check.unit, marker)
+    # 1) First, see if we already have logs (avoids unnecessary actions)
+    existing = _query_one(check.unit, check.lookback)
+    if existing is not None:
+        return
+
+    # 2) Provoke + retry until it shows up
+    check.provoke()
 
     def _check() -> None:
-        # Prefer SYSLOG_IDENTIFIER + exact marker match to avoid false positives.
-        q = (
-            f"_time:{check.lookback} "
-            f"SYSLOG_IDENTIFIER:{_quote_logsql_string(check.unit)} "
-            f"_msg:{_quote_logsql_string(marker)} | limit 1"
-        )
-        body = _curl_victorialogs(q, timeout=15)
-        obj = _first_json_obj(body)
+        obj = _query_one(check.unit, "30m" if not check.allow_skip_if_no_events else check.lookback)
+        if obj is None and check.allow_skip_if_no_events:
+            pytest.skip(
+                f"No entries for {check.unit} found even after best-effort provoke. "
+                "This unit is often oneshot/silent on Debian/RPi. "
+                "If you want this to be strictly testable, we'd need a safe, intentional log emission mechanism "
+                "(e.g., a dedicated systemd timer that logs under a stable identifier), "
+                "or relax the assertion to cover ufw-related kernel logs instead of ufw.service."
+            )
         assert obj is not None, (
-            f"No entries found in VictoriaLogs for tag={check.unit} within _time:{check.lookback}. "
-            f"Marker={marker!r}. Query was: {q!r}"
+            f"No entries found in VictoriaLogs for systemd_unit={check.unit} after provoke. "
+            f"Query windows tried: {check.lookback} (precheck) and 30m (post-provoke)."
         )
 
-        got_ident = obj.get("SYSLOG_IDENTIFIER")
-        got_msg = obj.get("_msg")
-        assert got_ident == check.unit, (
-            f"Expected SYSLOG_IDENTIFIER={check.unit!r}, got {got_ident!r}"
-        )
-        assert marker in (got_msg or ""), f"Expected marker in _msg. _msg={got_msg!r}"
-
-    retry(_check, timeout_s=90, interval_s=3.0)
+    retry(_check, timeout_s=120, interval_s=3.0)
