@@ -50,7 +50,6 @@ def _get_docker_network(name: str) -> DockerNet:
         subnet = str(ipam_cfg[0].get("Subnet") or "")
         gateway = str(ipam_cfg[0].get("Gateway") or "")
 
-    # Note: for some networks, Docker might omit bridge option. We treat this as required only for monitoring.
     return DockerNet(name=name, bridge=bridge, subnet=subnet, gateway=gateway)
 
 
@@ -83,28 +82,46 @@ def _ufw_status_numbered() -> str:
     return res.stdout
 
 
+def _ufw_numbered_lines(numbered: str) -> list[str]:
+    """Return only the rule lines (those starting with '[')."""
+    return [ln.rstrip("\n") for ln in numbered.splitlines() if ln.strip().startswith("[")]
+
+
+def _ufw_normalized_rule_text(ln: str) -> str:
+    """
+    Normalize a single numbered rule line so regex can anchor at the actual rule:
+      - drop leading "[ N] "
+      - drop trailing " # comment"
+    """
+    ln2 = re.sub(r"^\[\s*\d+\]\s+", "", ln)
+    ln2 = re.sub(r"\s+#.*$", "", ln2)
+    return ln2
+
+
+def _ufw_normalized_numbered(numbered: str) -> list[str]:
+    return [_ufw_normalized_rule_text(ln) for ln in _ufw_numbered_lines(numbered)]
+
+
 def _has_allow_rule_for_metrics(
     ufw_numbered: str, *, iface: str, subnet: str, port: int = 9323
 ) -> tuple[bool, str | None]:
     """
     Match typical ufw output lines like:
-      [ 1] 9323/tcp on br-monitoring             ALLOW IN    172.20.0.0/16
+      [ 1] 9323/tcp on br-monitoring  ALLOW IN  172.20.0.0/16  # comment
+    We normalize and match the rule content.
     """
-    lines = [ln.rstrip() for ln in ufw_numbered.splitlines() if ln.strip().startswith("[")]
     want = re.compile(
-        rf"^\[\s*\d+\]\s+{port}/tcp\s+on\s+{re.escape(iface)}\s+ALLOW\s+IN\s+{re.escape(subnet)}\b",
+        rf"^{port}/tcp\s+on\s+{re.escape(iface)}\s+ALLOW\s+IN\s+{re.escape(subnet)}(?:\s|$)",
         re.IGNORECASE,
     )
-    for ln in lines:
+    for ln in _ufw_normalized_numbered(ufw_numbered):
         if want.search(ln):
             return True, ln
     return False, None
 
 
 def _docker_run_in_network(network: str, cmd: str) -> subprocess.CompletedProcess[str]:
-    """
-    Run an ephemeral alpine container attached to a given Docker network.
-    """
+    """Run an ephemeral alpine container attached to a given Docker network."""
     return _run(
         [
             "docker",
@@ -144,7 +161,6 @@ def test_networks_exist_monitoring_strict_apps_loose():
     # apps: existence + basic sanity only (no fixed bridge contract)
     assert apps.subnet, "apps network has no IPAM subnet"
     assert apps.gateway, "apps network has no IPAM gateway"
-    # If Docker provides a bridge name, ensure the interface exists; but do not require it.
     if apps.bridge:
         assert _iface_exists(apps.bridge), (
             f"apps bridge interface reported but missing: {apps.bridge}"
@@ -176,9 +192,7 @@ def test_ufw_active_and_metrics_rule_present():
 
 @pytest.mark.postdeploy
 def test_docker_engine_metrics_reachable_from_monitoring_gateway():
-    """
-    Positive smoke test: metrics endpoint should be reachable on the monitoring network gateway.
-    """
+    """Positive smoke test: metrics endpoint should be reachable on the monitoring network gateway."""
     monitoring = _get_docker_network("monitoring")
     assert monitoring.gateway, "monitoring gateway missing; cannot build metrics URL"
     url = f"http://{monitoring.gateway}:9323/metrics"
@@ -188,8 +202,8 @@ def test_docker_engine_metrics_reachable_from_monitoring_gateway():
         f"Docker Engine metrics endpoint not reachable at {url}.\n"
         f"stdout:\n{res.stdout}\n\nstderr:\n{res.stderr}"
     )
-    assert "HELP" in res.stdout or "TYPE" in res.stdout, (
-        "metrics output did not look like Prometheus exposition format"
+    assert ("HELP" in res.stdout) or ("TYPE" in res.stdout), (
+        "metrics output did not look like Prometheus format"
     )
 
 
@@ -201,8 +215,7 @@ def test_negative_apps_cannot_reach_docker_engine_metrics_on_monitoring_gateway(
     because the allow rule is interface-bound (monitoring bridge) and subnet-scoped (monitoring subnet).
 
     Guardrail:
-    If there is no route from `apps` to the monitoring gateway at all, we skip to avoid false positives
-    (failure could be due to routing, not firewall).
+    If there is no route from `apps` to the monitoring gateway at all, we skip to avoid false positives.
     """
     if not _ufw_is_active():
         pytest.skip("UFW inactive; negative firewall test not applicable")
@@ -210,10 +223,8 @@ def test_negative_apps_cannot_reach_docker_engine_metrics_on_monitoring_gateway(
     monitoring = _get_docker_network("monitoring")
     assert monitoring.gateway, "monitoring gateway missing; cannot run negative test"
 
-    # First, verify that the apps container has a route to the monitoring gateway IP.
     route_check = _docker_run_in_network(
-        "apps",
-        f"ip route get {monitoring.gateway} >/dev/null 2>&1",
+        "apps", f"ip route get {monitoring.gateway} >/dev/null 2>&1"
     )
     if route_check.returncode != 0:
         pytest.skip(
@@ -221,12 +232,10 @@ def test_negative_apps_cannot_reach_docker_engine_metrics_on_monitoring_gateway(
             f"stderr:\n{route_check.stderr}"
         )
 
-    # Now attempt to fetch metrics from apps network. This should fail if UFW scoping is correct.
     fetch = _docker_run_in_network(
         "apps",
         f"wget -qO- -T 2 http://{monitoring.gateway}:9323/metrics >/dev/null 2>&1",
     )
-
     assert fetch.returncode != 0, (
         "Unexpectedly reached Docker Engine metrics from apps network.\n"
         "This suggests the firewall is too permissive or traffic is not constrained to monitoring interface/subnet.\n"
@@ -255,6 +264,7 @@ def test_ufw_inbound_exposure_allowlisted_v4_and_closed_v6():
       - Any "ALLOW IN Anywhere" for managed ports (v4)
       - Any IPv6 global allows (e.g. 2000::/3, Anywhere (v6), fe80::/10) for managed ports
       - Any inbound exposure for Prometheus/Alertmanager (9090/9093)
+      - Any inbound "Anywhere on docker0" allow rule (broad docker0 exposure)
     """
     lan_cidr = os.environ.get("LAN_CIDR")
     admin_ipv4 = os.environ.get("ADMIN_IPV4")
@@ -273,18 +283,22 @@ def test_ufw_inbound_exposure_allowlisted_v4_and_closed_v6():
     assert "Status: active" in verbose, "UFW is not active"
     assert "Default: deny (incoming)" in verbose, "UFW incoming default policy is not deny"
 
-    numbered = _ufw_status_numbered()
+    numbered_raw = _ufw_status_numbered()
+    numbered_lines = _ufw_normalized_numbered(numbered_raw)
+    numbered = "\n".join(numbered_lines)  # normalized, no "[ N]" prefixes, no trailing comments
 
     def must(pattern: str, msg: str) -> None:
         if not re.search(pattern, numbered, flags=re.MULTILINE):
             raise AssertionError(
-                f"{msg}\nPattern: {pattern}\n--- ufw status numbered ---\n{numbered}"
+                f"{msg}\nPattern: {pattern}\n--- ufw status numbered (normalized) ---\n{numbered}\n\n"
+                f"--- ufw status numbered (raw) ---\n{numbered_raw}"
             )
 
     def must_not(pattern: str, msg: str) -> None:
         if re.search(pattern, numbered, flags=re.MULTILINE):
             raise AssertionError(
-                f"{msg}\nPattern: {pattern}\n--- ufw status numbered ---\n{numbered}"
+                f"{msg}\nPattern: {pattern}\n--- ufw status numbered (normalized) ---\n{numbered}\n\n"
+                f"--- ufw status numbered (raw) ---\n{numbered_raw}"
             )
 
     def p_tcp(p: str) -> str:
@@ -293,67 +307,103 @@ def test_ufw_inbound_exposure_allowlisted_v4_and_closed_v6():
 
     # ---- Required IPv4 allows ----
     must(
-        rf"{re.escape(grafana_port)}/tcp\s+ALLOW IN\s+{re.escape(lan_cidr)}\b",
+        rf"^{re.escape(grafana_port)}/tcp\s+ALLOW IN\s+{re.escape(lan_cidr)}(?:\s|$)",
         "Missing Grafana LAN allow (v4)",
     )
     must(
-        rf"{re.escape(vlogs_port)}/tcp\s+ALLOW IN\s+{re.escape(lan_cidr)}\b",
+        rf"^{re.escape(vlogs_port)}/tcp\s+ALLOW IN\s+{re.escape(lan_cidr)}(?:\s|$)",
         "Missing VictoriaLogs UI LAN allow (v4)",
     )
     must(
-        rf"{re.escape(ssh_port)}/tcp\s+ALLOW IN\s+{re.escape(admin_ipv4)}\b",
+        rf"^{re.escape(ssh_port)}/tcp\s+ALLOW IN\s+{re.escape(admin_ipv4)}(?:\s|$)",
         "Missing SSH admin allow (v4)",
     )
     must(
-        rf"{re.escape(ssh_port)}/tcp\s+ALLOW IN\s+{re.escape(lan_cidr)}\b",
+        rf"^{re.escape(ssh_port)}/tcp\s+ALLOW IN\s+{re.escape(lan_cidr)}(?:\s|$)",
         "Missing SSH LAN allow (v4)",
     )
 
     # ---- Required denies (v4 + v6) for Grafana and VictoriaLogs UI ----
     must(
-        rf"{re.escape(grafana_port)}/tcp\s+DENY IN\s+Anywhere\b",
+        rf"^{re.escape(grafana_port)}/tcp\s+DENY IN\s+Anywhere(?:\s|$)",
         "Missing Grafana deny-anywhere (v4)",
     )
     must(
-        rf"{p_tcp(grafana_port)}\s+DENY IN\s+Anywhere\s+\(v6\)\b",
+        rf"^{p_tcp(grafana_port)}\s+DENY IN\s+Anywhere\s+\(v6\)(?:\s|$)",
         "Missing Grafana deny-anywhere (v6)",
     )
     must(
-        rf"{re.escape(vlogs_port)}/tcp\s+DENY IN\s+Anywhere\b",
+        rf"^{re.escape(vlogs_port)}/tcp\s+DENY IN\s+Anywhere(?:\s|$)",
         "Missing VictoriaLogs deny-anywhere (v4)",
     )
     must(
-        rf"{p_tcp(vlogs_port)}\s+DENY IN\s+Anywhere\s+\(v6\)\b",
+        rf"^{p_tcp(vlogs_port)}\s+DENY IN\s+Anywhere\s+\(v6\)(?:\s|$)",
         "Missing VictoriaLogs deny-anywhere (v6)",
     )
 
     # ---- Must not be globally allowed (IPv4) ----
     for p in (grafana_port, vlogs_port, ssh_port):
         must_not(
-            rf"{re.escape(p)}/tcp\s+ALLOW IN\s+Anywhere\b", f"Port {p} is globally allowed (v4)"
+            rf"^{re.escape(p)}/tcp\s+ALLOW IN\s+Anywhere(?:\s|$)",
+            f"Port {p} is globally allowed (v4)",
         )
 
     # ---- Must not be globally allowed (IPv6) ----
     for p in (grafana_port, vlogs_port, ssh_port, prom_port, am_port):
         must_not(
-            rf"{p_tcp(p)}\s+ALLOW IN\s+2000::/3\b",
+            rf"^{p_tcp(p)}\s+ALLOW IN\s+2000::/3(?:\s|$)",
             f"Port {p} is globally allowed over IPv6 (2000::/3)",
         )
         must_not(
-            rf"{p_tcp(p)}\s+ALLOW IN\s+Anywhere\s+\(v6\)\b",
+            rf"^{p_tcp(p)}\s+ALLOW IN\s+Anywhere\s+\(v6\)(?:\s|$)",
             f"Port {p} is globally allowed over IPv6 (Anywhere v6)",
         )
         must_not(
-            rf"{p_tcp(p)}\s+ALLOW IN\s+fe80::/10\b",
+            rf"^{p_tcp(p)}\s+ALLOW IN\s+fe80::/10(?:\s|$)",
             f"Port {p} is allowed from IPv6 link-local (fe80::/10)",
         )
 
     # ---- Prometheus / Alertmanager must not be exposed inbound (any allow) ----
     must_not(
-        rf"{re.escape(prom_port)}/tcp\s+ALLOW IN\s+",
+        rf"^{re.escape(prom_port)}/tcp\s+ALLOW IN\s+",
         "Prometheus port is still allowed inbound (should be removed)",
     )
     must_not(
-        rf"{re.escape(am_port)}/tcp\s+ALLOW IN\s+",
+        rf"^{re.escape(am_port)}/tcp\s+ALLOW IN\s+",
         "Alertmanager port is still allowed inbound (should be removed)",
+    )
+
+    # ---- docker0 broad allow must be absent ----
+    must_not(
+        r"^Anywhere on docker0\s+ALLOW IN\s+Anywhere(?:\s|$)",
+        "Broad inbound allow on docker0 must not exist",
+    )
+
+
+@pytest.mark.postdeploy
+def test_victorialogs_ui_reachable_via_configured_url():
+    """
+    Smoke test that the VictoriaLogs UI is reachable using the configured URL.
+
+    Expected env var (from /etc/raspberry-pi-homelab/monitoring.env):
+      VLOGS_UI_URL=http://rpi-hub.lan:9428/select/vmui
+
+    Notes:
+    - This runs on the Pi. DNS must resolve (e.g. rpi-hub.lan via local resolver).
+    - We verify HTTP success and basic HTML content.
+    """
+    url = os.environ.get("VLOGS_UI_URL")
+    if not url:
+        pytest.skip("VLOGS_UI_URL not set (load monitoring.env on the target).")
+
+    res = _run(["curl", "-fsS", "--max-time", "5", url])
+    assert res.returncode == 0, (
+        f"VictoriaLogs UI not reachable at {url}\nstdout:\n{res.stdout}\n\nstderr:\n{res.stderr}"
+    )
+
+    body = res.stdout or ""
+    # Keep heuristics loose: UI pages might change slightly between versions.
+    assert ("<html" in body.lower()) or ("vmui" in body.lower()) or ("victoria" in body.lower()), (
+        "VictoriaLogs UI response did not look like HTML/UI content.\n"
+        f"First 200 bytes:\n{body[:200]!r}"
     )
