@@ -11,11 +11,16 @@ POSTDEPLOY_ON_TARGET = os.getenv("POSTDEPLOY_ON_TARGET") == "1"
 VLOGS_BASE_URL = os.getenv("VLOGS_BASE_URL", "http://127.0.0.1:9428")
 VLOGS_QUERY_URL = f"{VLOGS_BASE_URL}/select/logsql/query"
 
-# Tuning knobs (keep defaults conservative)
-VECTORE2E_TIMEOUT_S = int(os.getenv("VECTOR_E2E_TIMEOUT_S", "120"))
-VECTORE2E_QUERY_WINDOW = os.getenv("VECTOR_E2E_QUERY_WINDOW", "15m")  # LogSQL window
-VECTORE2E_EMIT_SECONDS = int(os.getenv("VECTOR_E2E_EMIT_SECONDS", "15"))  # how long emitter runs
-VECTORE2E_EMIT_INTERVAL = float(os.getenv("VECTOR_E2E_EMIT_INTERVAL", "1.0"))
+# Tuning knobs (defaults optimized for speed while keeping reliability)
+VECTORE2E_TIMEOUT_S = int(os.getenv("VECTOR_E2E_TIMEOUT_S", "60"))
+VECTORE2E_QUERY_WINDOW = os.getenv("VECTOR_E2E_QUERY_WINDOW", "10m")  # LogsQL time filter
+VECTORE2E_POLL_INTERVAL_S = float(os.getenv("VECTOR_E2E_POLL_INTERVAL_S", "1.0"))
+VECTORE2E_POLL_MAX_INTERVAL_S = float(os.getenv("VECTOR_E2E_POLL_MAX_INTERVAL_S", "5.0"))
+
+# Emitter behavior (fast + avoids docker_logs attach race)
+VECTORE2E_START_DELAY_S = float(os.getenv("VECTOR_E2E_START_DELAY_S", "1.0"))
+VECTORE2E_BURST_LINES = int(os.getenv("VECTOR_E2E_BURST_LINES", "200"))
+VECTORE2E_TAIL_HOLD_S = float(os.getenv("VECTOR_E2E_TAIL_HOLD_S", "2.0"))
 
 
 def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
@@ -58,39 +63,46 @@ def _vlogs_query(query: str) -> str:
     return cp.stdout or ""
 
 
-def _emit_reliable_docker_logs(token: str) -> str:
+def _emit_burst_docker_logs(token: str) -> None:
     """
-    Emit logs in a container that stays alive long enough for Vector's docker_logs source to attach.
-    Returns the emitter container name.
+    Emit many log lines quickly, but keep the container alive briefly.
+    This avoids the attach race with docker_logs and reduces test runtime.
     """
     cname = f"vector-test-{token[:12]}"
-    # Busybox prints the token multiple times with sleeps.
-    # We intentionally keep it running for a bit.
+
+    # Notes:
+    # - initial sleep ensures Vector is already watching docker events
+    # - burst prints many lines so even if a few are missed, we still ingest the token
+    # - tail hold gives docker logs + vector enough time to read + flush
     script = (
-        "i=0; "
-        f"while [ $i -lt {VECTORE2E_EMIT_SECONDS} ]; do "
+        f"sleep {VECTORE2E_START_DELAY_S}; "
+        f"i=1; while [ $i -le {VECTORE2E_BURST_LINES} ]; do "
         f"echo '{token} i='\"$i\"; "
-        f"i=$((i+1)); "
-        f"sleep {VECTORE2E_EMIT_INTERVAL}; "
-        "done"
+        "i=$((i+1)); "
+        "done; "
+        f"sleep {VECTORE2E_TAIL_HOLD_S}"
     )
+
     _run(
-        ["docker", "run", "--rm", "--name", cname, "busybox:1.36", "sh", "-lc", script], check=True
+        ["docker", "run", "--rm", "--name", cname, "busybox:1.36", "sh", "-lc", script],
+        check=True,
     )
-    return cname
 
 
 def _wait_for_token_in_vlogs(token: str, timeout_s: int) -> None:
     """
     Wait until the token appears in VictoriaLogs.
-    Uses a robust LogSQL query anchored on _msg.
+
+    LogsQL idiom: `_time:<window> <filters> | limit N`
+    We search in _msg using an exact phrase match to reduce false positives.
     """
     deadline = time.time() + timeout_s
     last = ""
 
-    # Prefer exact match on _msg to avoid surprises in LogSQL parsing.
-    q = f'_msg:"{token}" AND _time:{VECTORE2E_QUERY_WINDOW} | limit 20'
+    # Keep LogsQL simple (avoid AND). Token has no spaces, so quoting is safe.
+    q = f'_time:{VECTORE2E_QUERY_WINDOW} _msg:"{token}" | limit 5'
 
+    interval = VECTORE2E_POLL_INTERVAL_S
     while time.time() < deadline:
         try:
             last = _vlogs_query(q)
@@ -99,14 +111,14 @@ def _wait_for_token_in_vlogs(token: str, timeout_s: int) -> None:
         except subprocess.CalledProcessError as e:
             last = (e.stdout or "").strip() or str(e)
 
-        time.sleep(2)
+        time.sleep(interval)
+        interval = min(interval * 1.5, VECTORE2E_POLL_MAX_INTERVAL_S)
 
-    # Failure diagnostics (keep short but actionable)
+    # Failure diagnostics (short but actionable)
     diag = []
     diag.append(f"VictoriaLogs query used: {q!r}")
-    diag.append(f"Last response (first 800 chars): {(last or '')[:800]!r}")
+    diag.append(f"Last response (first 1200 chars): {(last or '')[:1200]!r}")
 
-    # Try to show whether VictoriaLogs has any recent logs at all (helps distinguish ingest break vs token miss)
     try:
         any_recent = _vlogs_query(f"_time:{VECTORE2E_QUERY_WINDOW} | limit 1")
         diag.append(f"Recent logs sample (first 800 chars): {any_recent[:800]!r}")
@@ -123,15 +135,14 @@ def _wait_for_token_in_vlogs(token: str, timeout_s: int) -> None:
 def test_vector_end_to_end_dockerlogs_to_victorialogs():
     vector_name = _pick_vector_container()
 
-    # 1) Validate config inside Vector container (fast sanity check)
-    # If your image ever becomes distroless without the CLI, this will fail clearly.
+    # 1) Validate Vector config inside container (fast sanity check)
     _run(
         ["docker", "exec", vector_name, "vector", "validate", "/etc/vector/vector.yaml"], check=True
     )
 
-    # 2) Emit a token multiple times in a long-enough container (avoids docker_logs attach race)
+    # 2) Emit a burst of logs (fast, avoids attach race)
     token = f"vector-e2e-{uuid.uuid4()}"
-    _emit_reliable_docker_logs(token)
+    _emit_burst_docker_logs(token)
 
-    # 3) Verify it arrives in VictoriaLogs (more generous timeout, robust query)
+    # 3) Verify it arrives in VictoriaLogs
     _wait_for_token_in_vlogs(token, timeout_s=VECTORE2E_TIMEOUT_S)
