@@ -1,6 +1,6 @@
 api:
   enabled: true
-  address: 127.0.0.1:8686
+  address: 0.0.0.0:8686
   playground: false
 
 sources:
@@ -50,7 +50,7 @@ transforms:
 
       # 2. Host & Container
       # Host (prefer env injection; fallback to container hostname)
-      .host = get_env_var("HOST_NODE_NAME") ?? get_env_var("HOSTNAME") ?? "unknown-pi" ?? "unknown"
+      .host = get_env_var("HOST_NODE_NAME") ?? get_env_var("HOSTNAME") ?? "unknown"
       # Container / identity
       # - docker_logs: .container_name, labels
       # - journald: _SYSTEMD_UNIT / SYSLOG_IDENTIFIER
