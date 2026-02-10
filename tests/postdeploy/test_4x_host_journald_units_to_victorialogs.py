@@ -1,4 +1,3 @@
-# tests/postdeploy/test_4x_host_journald_units_to_victorialogs.py
 from __future__ import annotations
 
 import json
@@ -15,20 +14,14 @@ POSTDEPLOY_ENV = "POSTDEPLOY_ON_TARGET"
 VLOG_QUERY_URL_ENV = "VICTORIALOGS_QUERY_URL"
 VLOG_QUERY_URL_DEFAULT = "http://127.0.0.1:9428/select/logsql/query"
 
-UNITS = (
-    "docker.service",
-    "containerd.service",
-    "ufw.service",
-    "systemd-udevd.service",
-)
-
 
 @dataclass(frozen=True)
 class UnitCheck:
     unit: str
-    lookback: str
+    precheck_lookback: str
+    postcheck_lookback: str
     provoke: Callable[[], None]
-    # Optional: if ufw is silent, we allow skip instead of fail.
+    query_expr: str  # LogsQL expression WITHOUT _time
     allow_skip_if_no_events: bool = False
 
 
@@ -77,24 +70,22 @@ def _first_json_obj(text: str) -> dict[str, Any] | None:
     return obj
 
 
-def _quote_logsql_string(s: str) -> str:
-    # LogsQL string literal in double quotes
+def _quote(s: str) -> str:
+    # LogsQL double-quoted string
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def _query_one(unit: str, lookback: str) -> dict[str, Any] | None:
-    # Prefer the normalized field you already see in VL: systemd_unit:"..."
-    q = f"_time:{lookback} systemd_unit:{_quote_logsql_string(unit)} | limit 1"
+def _query_one(expr: str, lookback: str) -> dict[str, Any] | None:
+    q = f"_time:{lookback} ({expr}) | limit 1"
     body = _curl_victorialogs(q, timeout=20)
     return _first_json_obj(body)
 
 
-# --- Provoke helpers (safe-ish) -------------------------------------------------
+# --- Provoke helpers -----------------------------------------------------------
 
 
 def _provoke_docker() -> None:
-    # Deterministic dockerd log: pulling an image emits "image pulled" (as you've already seen).
-    # Keep it small.
+    # Pull emits dockerd log lines reliably (and is harmless).
     cp = _run(
         [
             "sh",
@@ -110,67 +101,92 @@ def _provoke_docker() -> None:
 
 
 def _provoke_containerd() -> None:
-    # Starting/stopping a short-lived container usually produces containerd shim connect/disconnect logs.
-    cp = _run(
-        ["sh", "-lc", "docker run --rm hello-world:latest >/dev/null 2>&1 || true"], timeout=180
-    )
-    if cp.returncode != 0:
-        # hello-world may exit non-zero on some setups; we only care that docker attempted it.
-        pass
+    # Starting a short-lived container usually yields containerd shim logs.
+    _run(["sh", "-lc", "docker run --rm hello-world:latest >/dev/null 2>&1 || true"], timeout=180)
 
 
 def _provoke_udevd() -> None:
-    # You already validated this yields udev activity in journald.
-    cp = _run(["sh", "-lc", "sudo udevadm trigger && sudo udevadm settle"], timeout=120)
+    # Increase udevd verbosity for the test run, then trigger events.
+    # This does not alter device state, it only causes logging.
+    cp = _run(
+        [
+            "sh",
+            "-lc",
+            "sudo udevadm control --log-level=info && sudo udevadm trigger && sudo udevadm settle",
+        ],
+        timeout=180,
+    )
     if cp.returncode != 0:
-        raise AssertionError(
-            f"Could not provoke systemd-udevd.service logs. stderr={cp.stderr.strip()!r}"
-        )
+        raise AssertionError(f"Could not provoke udevd logs. stderr={cp.stderr.strip()!r}")
 
 
 def _provoke_ufw() -> None:
-    # ufw.service is often oneshot and silent; we intentionally do NOT restart it from a postdeploy test
-    # to avoid any chance of SSH lockout.
-    #
-    # Best-effort: do something non-invasive. This may still produce zero ufw.service logs.
+    # Do NOT restart ufw.service (risk of firewall disruption). Best-effort only.
     _run(["sh", "-lc", "sudo ufw status verbose >/dev/null 2>&1 || true"], timeout=30)
 
 
 CHECKS = (
-    UnitCheck("docker.service", "15m", _provoke_docker),
-    UnitCheck("containerd.service", "15m", _provoke_containerd),
-    UnitCheck("systemd-udevd.service", "15m", _provoke_udevd),
-    # For ufw.service we broaden the time window and allow skip if there are no unit logs at all.
-    UnitCheck("ufw.service", "7d", _provoke_ufw, allow_skip_if_no_events=True),
+    UnitCheck(
+        unit="docker.service",
+        precheck_lookback="24h",
+        postcheck_lookback="30m",
+        provoke=_provoke_docker,
+        query_expr=f"systemd_unit:{_quote('docker.service')}",
+    ),
+    UnitCheck(
+        unit="containerd.service",
+        precheck_lookback="24h",
+        postcheck_lookback="30m",
+        provoke=_provoke_containerd,
+        query_expr=f"systemd_unit:{_quote('containerd.service')}",
+    ),
+    UnitCheck(
+        unit="systemd-udevd.service",
+        precheck_lookback="24h",
+        postcheck_lookback="30m",
+        provoke=_provoke_udevd,
+        # udev messages can appear as systemd-udevd *or* udev-worker; not always normalized to systemd_unit.
+        query_expr=(
+            f"systemd_unit:{_quote('systemd-udevd.service')} "
+            f"OR SYSLOG_IDENTIFIER:{_quote('systemd-udevd')} "
+            f"OR SYSLOG_IDENTIFIER:{_quote('udev-worker')}"
+        ),
+    ),
+    UnitCheck(
+        unit="ufw.service",
+        precheck_lookback="7d",
+        postcheck_lookback="7d",
+        provoke=_provoke_ufw,
+        query_expr=f"systemd_unit:{_quote('ufw.service')}",
+        allow_skip_if_no_events=True,
+    ),
 )
 
 
 @pytest.mark.postdeploy
 @pytest.mark.parametrize("check", CHECKS, ids=lambda c: c.unit)
-def test_host_journald_units_are_ingested_into_victorialogs(retry, check: UnitCheck) -> None:
+def test_host_journald_units_are_ingested_into_victorialogs(
+    retry: Callable[..., None], check: UnitCheck
+) -> None:
     _require_postdeploy_on_target()
 
-    # 1) First, see if we already have logs (avoids unnecessary actions)
-    existing = _query_one(check.unit, check.lookback)
-    if existing is not None:
+    # 1) precheck (avoid actions if data already exists)
+    if _query_one(check.query_expr, check.precheck_lookback) is not None:
         return
 
-    # 2) Provoke + retry until it shows up
+    # 2) provoke + retry
     check.provoke()
 
     def _check() -> None:
-        obj = _query_one(check.unit, "30m" if not check.allow_skip_if_no_events else check.lookback)
+        obj = _query_one(check.query_expr, check.postcheck_lookback)
         if obj is None and check.allow_skip_if_no_events:
             pytest.skip(
-                f"No entries for {check.unit} found even after best-effort provoke. "
-                "This unit is often oneshot/silent on Debian/RPi. "
-                "If you want this to be strictly testable, we'd need a safe, intentional log emission mechanism "
-                "(e.g., a dedicated systemd timer that logs under a stable identifier), "
-                "or relax the assertion to cover ufw-related kernel logs instead of ufw.service."
+                f"No entries for {check.unit} found. "
+                "ufw.service is commonly oneshot/silent; this is treated as non-fatal."
             )
         assert obj is not None, (
-            f"No entries found in VictoriaLogs for systemd_unit={check.unit} after provoke. "
-            f"Query windows tried: {check.lookback} (precheck) and 30m (post-provoke)."
+            f"No entries found in VictoriaLogs after provoke for unit={check.unit}. "
+            f"Expr={check.query_expr!r}, precheck=_time:{check.precheck_lookback}, postcheck=_time:{check.postcheck_lookback}"
         )
 
     retry(_check, timeout_s=120, interval_s=3.0)
