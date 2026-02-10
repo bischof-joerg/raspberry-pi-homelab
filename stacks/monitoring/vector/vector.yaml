@@ -61,7 +61,11 @@ transforms:
           .ts = from_unix_timestamp(us, unit: "microseconds") ?? null
         }
       }
-      .timestamp = .ts ?? now()
+      if is_null(.ts) {
+        .timestamp = now()
+      } else {
+        .timestamp = .ts
+      }
       del(.ts)
 
       # 2. Host & Container
