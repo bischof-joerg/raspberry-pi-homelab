@@ -7,28 +7,63 @@ sources:
   docker:
     type: docker_logs
     docker_host: unix:///var/run/docker.sock
+  host_journald:
+    type: journald
 
 transforms:
+  # Filter journald down to just the desired systemd units.
+  filter_journald_units:
+    type: remap
+    inputs: ["host_journald"]
+    source: |
+      allowed = [
+        "docker.service",
+        "containerd.service",
+        "ufw.service",
+        "sshd.service",
+        "systemd-udevd.service",
+      ]
+
+      # Keep only entries that have a systemd unit and are in the allowed list.
+      # (Most unit-scoped messages have _SYSTEMD_UNIT set.)
+      if !exists(._SYSTEMD_UNIT) {
+        abort
+      }
+
+      unit = to_string(._SYSTEMD_UNIT) ?? ""
+      if unit == "" || !includes(allowed, unit) {
+        abort
+      }
+
   normalize:
     type: remap
-    inputs: ["docker"]
+    inputs: ["docker", "filter_journald_units"]
+    # yamllint disable rule:line-length
     source: |
       # 1. Message & Timestamp
-      .message = to_string(.message) ?? to_string(.log) ?? ""
-      .timestamp = parse_timestamp(.timestamp, "%+") ?? now()
+      # Message field for VictoriaLogs (_msg_field=message)
+      .message = to_string(.message) ?? to_string(.log) ?? to_string(.MESSAGE) ?? ""
+      # Timestamp field for VictoriaLogs (_time_field=timestamp)
+      # - docker_logs usually provides .timestamp
+      # - journald provides _SOURCE_REALTIME_TIMESTAMP (microseconds since epoch) and/or __REALTIME_TIMESTAMP
+      .timestamp = to_timestamp(.timestamp) ?? to_timestamp(._SOURCE_REALTIME_TIMESTAMP) ?? parse_timestamp(to_string(.timestamp) ?? "", "%+") ?? now()
 
       # 2. Host & Container
-      .host = get_env_var("HOST_NODE_NAME") ?? get_env_var("HOSTNAME") ?? "unknown-pi"
-      .container_name = to_string(.container_name) ?? to_string(.docker.container_name) ?? "unknown"
+      # Host (prefer env injection; fallback to container hostname)
+      .host = get_env_var("HOST_NODE_NAME") ?? get_env_var("HOSTNAME") ?? "unknown-pi" ?? "unknown"
+      # Container / identity
+      # - docker_logs: .container_name, labels
+      # - journald: _SYSTEMD_UNIT / SYSLOG_IDENTIFIER
+      .container_name = to_string(.container_name) ?? to_string(.docker.container_name) ?? to_string(._SYSTEMD_UNIT) ?? to_string(.SYSLOG_IDENTIFIER) ?? "unknown"
 
-      # 3. Stack & Service Labels
-      .stack = to_string(.label."com.docker.compose.project") ?? to_string(.labels."com.docker.compose.project") ?? "homelab-prod"
+      # 3. Stack & Service Labels: Compose metadata if present (docker); otherwise derive from unit
+      .stack = to_string(.label."com.docker.compose.project") ?? to_string(.labels."com.docker.compose.project") ?? "homelab-home-prod"
       .service = to_string(.label."com.docker.compose.service") ?? to_string(.labels."com.docker.compose.service") ?? .container_name
 
-      # Fix für E651: Einfache Zuweisung, da .namespace vorher nicht existiert
+      # Fix for E651: Einfache Zuweisung, da .namespace vorher nicht existiert
       .namespace = "prod"
 
-      # 4. Level Normalisierung (Flat & Safe)
+      # 4. Basic level normalization (flat & safe)
       tmp = downcase(to_string(.level) ?? "")
       if tmp != "" {
         .level = tmp
@@ -40,7 +75,12 @@ transforms:
         if contains(m, "error") { .level = "error" }
       }
 
-      # 5. Cleanup (erweitert)
+      # 5. Keep original unit (useful for queries), if present
+      if exists(._SYSTEMD_UNIT) {
+        .systemd_unit = to_string(._SYSTEMD_UNIT) ?? null
+      }
+
+      # 6. Cleanup: Reduce noise / remove bulky nested structures commonly present on docker events
       del(.label)
       del(.labels)
       del(.docker)
