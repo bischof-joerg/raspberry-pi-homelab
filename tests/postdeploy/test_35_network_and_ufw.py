@@ -386,10 +386,10 @@ def test_victorialogs_ui_reachable_via_configured_url():
     Smoke test that the VictoriaLogs UI is reachable using the configured URL.
 
     Expected env var (from /etc/raspberry-pi-homelab/monitoring.env):
-      VLOGS_UI_URL=http://rpi-hub.lan:9428/select/vmui
+      VLOGS_UI_URL=http://rpi-hub.fritz.box:9428/select/vmui
 
     Notes:
-    - This runs on the Pi. DNS must resolve (e.g. rpi-hub.lan via local resolver).
+    - This runs on the Pi. DNS must resolve (e.g. rpi-hub.fritz.box via local resolver).
     - We verify HTTP success and basic HTML content.
     """
     url = os.environ.get("VLOGS_UI_URL")
