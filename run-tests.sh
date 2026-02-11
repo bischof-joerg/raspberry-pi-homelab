@@ -71,21 +71,30 @@ needs_root_for_postdeploy() {
     return 1
   fi
 
-  # Prefer running as current user if docker works without sudo.
-  if docker_usable_without_sudo; then
-    return 1
+  # If monitoring.env exists but isn't readable, we must escalate to load creds/secrets.
+  if [[ -f "$STACK_ENV_FILE" && ! -r "$STACK_ENV_FILE" ]]; then
+    return 0
   fi
 
   return 0
 }
 
 run_pytest_plain() {
+  # Best-effort: load STACK_ENV_FILE if readable (important on Pi when running without sudo).
+  if [[ -f "$STACK_ENV_FILE" && -r "$STACK_ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$STACK_ENV_FILE"
+    set +a
+  fi
+
   "$PYTHON_BIN" -m pytest \
     "${DEFAULT_PYTEST_OPTS[@]}" \
     "${PYTEST_CACHE_OPTS[@]}" \
     "${USER_PYTEST_OPTS[@]}" \
     "$@"
 }
+
 
 run_pytest_as_root() {
   command -v sudo >/dev/null 2>&1 || {
