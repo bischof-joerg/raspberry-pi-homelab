@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 import json
 import os
 import shlex
 import subprocess
-import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -15,13 +14,29 @@ VLOG_QUERY_URL_ENV = "VICTORIALOGS_QUERY_URL"
 VLOG_QUERY_URL_DEFAULT = "http://127.0.0.1:9428/select/logsql/query"
 
 
+@dataclass(frozen=True)
+class UnitCheck:
+    unit: str
+    precheck_lookback: str
+    postcheck_lookback: str
+    provoke: Callable[[], None]
+    query_expr: str  # LogsQL expression WITHOUT _time
+    allow_skip_if_no_events: bool = False
+
+
 def _require_postdeploy_on_target() -> None:
     if os.environ.get(POSTDEPLOY_ENV) != "1":
         pytest.skip(f"{POSTDEPLOY_ENV}=1 required (postdeploy on target)")
 
 
 def _run(cmd: list[str], *, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=timeout)
+    return subprocess.run(
+        cmd,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
 
 
 def _curl_victorialogs(query: str, *, timeout: int = 20) -> str:
@@ -55,6 +70,7 @@ def _first_json_obj(text: str) -> dict[str, Any] | None:
 
 
 def _quote(s: str) -> str:
+    # LogsQL double-quoted string
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
@@ -64,90 +80,11 @@ def _query_one(expr: str, lookback: str) -> dict[str, Any] | None:
     return _first_json_obj(body)
 
 
-# --- Deterministic journald sentinel (hard) ------------------------------------
+# --- Provoke helpers -----------------------------------------------------------
 
 
-def _provoke_journald_marker() -> str:
-    marker = f"postdeploy_journald_smoke::{int(time.time())}::{os.getpid()}"
-    tag = "postdeploy-journald-smoke"
-    cp = _run(["sh", "-lc", f"logger -t {shlex.quote(tag)} {shlex.quote(marker)}"], timeout=15)
-    if cp.returncode != 0:
-        raise AssertionError(
-            f"Could not write journald marker via logger. stderr={cp.stderr.strip()!r}"
-        )
-    return marker
-
-
-def _expr_for_journald_marker(marker: str) -> str:
-    # Match on payload: VictoriaLogs stores the message reliably in _msg.
-    return f"_msg:{_quote(marker)} OR {_quote(marker)}"
-
-
-def _debug_victorialogs_for_marker(marker: str) -> str:
-    """
-    Self-diagnosing debug output for journald ingestion failures.
-    Produces a few short queries to show whether the marker exists and how it is mapped.
-    Keep output small to avoid noisy CI logs.
-    """
-    probes: list[tuple[str, str]] = [
-        ("probe:_msg exact", f"_time:15m _msg:{_quote(marker)} | limit 3"),
-        ("probe:free-text", f"_time:15m {_quote(marker)} | limit 3"),
-        ("probe:recent logs (sample)", "_time:5m | limit 3"),
-        (
-            "probe:identifier (if mapped)",
-            f"_time:30m SYSLOG_IDENTIFIER:{_quote('postdeploy-journald-smoke')} | limit 3",
-        ),
-    ]
-
-    out_lines: list[str] = []
-    for title, q in probes:
-        try:
-            body = _curl_victorialogs(q, timeout=20)
-            first = body.splitlines()[:3]
-            snippet = "\n".join(first).strip()
-            if not snippet:
-                snippet = "<no output>"
-            out_lines.append(f"{title}\n  query={q}\n  head=\n{snippet}\n")
-        except Exception as e:  # noqa: BLE001
-            out_lines.append(f"{title}\n  query={q}\n  ERROR: {e}\n")
-
-    return "\n".join(out_lines)
-
-
-@pytest.mark.postdeploy
-def test_host_journald_marker_is_ingested_into_victorialogs(retry) -> None:
-    _require_postdeploy_on_target()
-
-    marker = _provoke_journald_marker()
-
-    def _assert_ingested() -> None:
-        expr = _expr_for_journald_marker(marker)
-        obj = _query_one(expr, "10m")
-        if obj is None:
-            debug = _debug_victorialogs_for_marker(marker)
-            pytest.fail(
-                "No entries found in VictoriaLogs for journald sentinel marker.\n"
-                f"marker={marker!r}\n"
-                f"expr={expr!r}\n\n"
-                "=== VictoriaLogs debug probes ===\n"
-                f"{debug}"
-            )
-
-    retry(_assert_ingested, timeout_s=90, interval_s=5.0)
-
-
-# --- Real-world signals (best-effort) ------------------------------------------
-
-
-def _expr_for_docker_service() -> str:
-    return f"systemd_unit:{_quote('docker.service')}"
-
-
-def _expr_for_containerd_service() -> str:
-    return f"systemd_unit:{_quote('containerd.service')}"
-
-
-def _provoke_docker_pull() -> None:
+def _provoke_docker() -> None:
+    # Pull emits dockerd log lines reliably (and is harmless).
     cp = _run(
         [
             "sh",
@@ -157,52 +94,98 @@ def _provoke_docker_pull() -> None:
         timeout=300,
     )
     if cp.returncode != 0:
-        # Best-effort: if provoke itself fails, report but do not fail the whole suite.
-        pytest.skip(
-            f"Could not provoke docker.service logs (docker pull failed). stderr={cp.stderr.strip()!r}"
+        raise AssertionError(
+            f"Could not provoke docker.service logs via docker pull. stderr={cp.stderr.strip()!r}"
         )
 
 
-def _provoke_containerd_run() -> None:
+def _provoke_containerd() -> None:
+    # Starting a short-lived container usually yields containerd shim logs.
     _run(["sh", "-lc", "docker run --rm hello-world:latest >/dev/null 2>&1 || true"], timeout=180)
 
 
+def _provoke_udevd() -> None:
+    # Best-effort: udevd can be quiet; even trigger+settle may produce no log entries.
+    _run(
+        [
+            "sh",
+            "-lc",
+            "sudo udevadm control --log-level=info && sudo udevadm trigger && sudo udevadm settle",
+        ],
+        timeout=180,
+    )
+
+
+def _provoke_ufw() -> None:
+    # Do NOT restart ufw.service (risk of firewall disruption). Best-effort only.
+    _run(["sh", "-lc", "sudo ufw status verbose >/dev/null 2>&1 || true"], timeout=30)
+
+
+CHECKS = (
+    UnitCheck(
+        unit="docker.service",
+        precheck_lookback="24h",
+        postcheck_lookback="30m",
+        provoke=_provoke_docker,
+        query_expr=f"systemd_unit:{_quote('docker.service')}",
+    ),
+    UnitCheck(
+        unit="containerd.service",
+        precheck_lookback="24h",
+        postcheck_lookback="30m",
+        provoke=_provoke_containerd,
+        query_expr=f"systemd_unit:{_quote('containerd.service')}",
+    ),
+    UnitCheck(
+        unit="systemd-udevd.service",
+        precheck_lookback="24h",
+        postcheck_lookback="30m",
+        provoke=_provoke_udevd,
+        # udev messages can appear as systemd-udevd *or* udev-worker; not always normalized to systemd_unit.
+        query_expr=(
+            f"systemd_unit:{_quote('systemd-udevd.service')} "
+            f"OR SYSLOG_IDENTIFIER:{_quote('systemd-udevd')} "
+            f"OR SYSLOG_IDENTIFIER:{_quote('udev-worker')}"
+        ),
+        # IMPORTANT: udev can legitimately emit no logs -> don't fail the whole postdeploy suite.
+        allow_skip_if_no_events=True,
+    ),
+    UnitCheck(
+        unit="ufw.service",
+        precheck_lookback="7d",
+        postcheck_lookback="7d",
+        provoke=_provoke_ufw,
+        query_expr=f"systemd_unit:{_quote('ufw.service')}",
+        allow_skip_if_no_events=True,
+    ),
+)
+
+
 @pytest.mark.postdeploy
-def test_host_docker_service_logs_are_ingested_into_victorialogs_best_effort(retry) -> None:
+@pytest.mark.parametrize("check", CHECKS, ids=lambda c: c.unit)
+def test_host_journald_units_are_ingested_into_victorialogs(
+    retry: Callable[..., None], check: UnitCheck
+) -> None:
     _require_postdeploy_on_target()
 
-    # If present already, accept (do not spam).
-    if _query_one(_expr_for_docker_service(), "24h") is not None:
+    # 1) precheck (avoid actions if data already exists)
+    if _query_one(check.query_expr, check.precheck_lookback) is not None:
         return
 
-    _provoke_docker_pull()
+    # 2) provoke + retry
+    check.provoke()
 
-    def _assert_ingested_or_skip() -> None:
-        obj = _query_one(_expr_for_docker_service(), "30m")
-        if obj is None:
+    def _check() -> None:
+        obj = _query_one(check.query_expr, check.postcheck_lookback)
+        if obj is None and check.allow_skip_if_no_events:
             pytest.skip(
-                "No docker.service entries found in VictoriaLogs after provoke. "
-                "Some setups do not emit stable systemd_unit mapping for docker logs; treated as non-fatal."
+                f"No entries for {check.unit} found. "
+                "This unit can be quiet on stable systems; treated as non-fatal."
             )
+        assert obj is not None, (
+            f"No entries found in VictoriaLogs after provoke for unit={check.unit}. "
+            f"Expr={check.query_expr!r}, precheck=_time:{check.precheck_lookback}, postcheck=_time:{check.postcheck_lookback}"
+        )
 
-    retry(_assert_ingested_or_skip, timeout_s=90, interval_s=3.0)
-
-
-@pytest.mark.postdeploy
-def test_host_containerd_service_logs_are_ingested_into_victorialogs_best_effort(retry) -> None:
-    _require_postdeploy_on_target()
-
-    if _query_one(_expr_for_containerd_service(), "24h") is not None:
-        return
-
-    _provoke_containerd_run()
-
-    def _assert_ingested_or_skip() -> None:
-        obj = _query_one(_expr_for_containerd_service(), "30m")
-        if obj is None:
-            pytest.skip(
-                "No containerd.service entries found in VictoriaLogs after provoke. "
-                "Some setups do not emit stable systemd_unit mapping for containerd logs; treated as non-fatal."
-            )
-
-    retry(_assert_ingested_or_skip, timeout_s=90, interval_s=3.0)
+    # Requested: tighten timeout
+    retry(_check, timeout_s=90, interval_s=3.0)
