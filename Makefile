@@ -208,8 +208,8 @@ test: _guard-wsl venv ## Run unit/integration tests (excludes tests/postdeploy +
 
 tests: test ## Alias for `make test` (useful for CI job naming)
 
-postdeploy: _guard-pi ## Run all post-deploy checks (Pi only) [supports POSTDEPLOY_ON_TARGET/VM_EXPECT_* + PYTEST_ARGS]
-	@POSTDEPLOY_ON_TARGET=$(POSTDEPLOY_ON_TARGET) \
+postdeploy: _guard-pi ## Run all post-deploy checks (Pi only)
+	@POSTDEPLOY_ON_TARGET=1 \
 	  VM_EXPECT_METRICS=$(VM_EXPECT_METRICS) \
 	  VM_EXPECT_JOBS=$(VM_EXPECT_JOBS) \
 	  ./run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \

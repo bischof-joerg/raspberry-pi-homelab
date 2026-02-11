@@ -70,26 +70,47 @@ run_pytest_plain() {
 }
 
 run_pytest_as_root() {
-  command -v sudo >/dev/null 2>&1 || { echo "ERROR: sudo not found (required for postdeploy)"; exit 2; }
+  command -v sudo >/dev/null 2>&1 || {
+    echo "ERROR: sudo not found (required for postdeploy)" >&2
+    exit 2
+  }
 
+  # Compose the full pytest argv in the caller shell (correct splitting).
+  local -a argv
+  argv=(
+    "$PYTHON_BIN" -m pytest
+    "${DEFAULT_PYTEST_OPTS[@]}"
+    "${PYTEST_CACHE_OPTS[@]}"
+    "${USER_PYTEST_OPTS[@]}"
+    "$@"
+  )
+
+  # Non-interactive sudo (-n) to avoid hangs in CI/automation.
   # Keep env (-E) so POSTDEPLOY_ON_TARGET / VM_EXPECT_* survive.
-  sudo -E bash -c '
+  sudo -nE env STACK_ENV_FILE="$STACK_ENV_FILE" REPO_ROOT="$REPO_ROOT" bash -lc '
     set -euo pipefail
 
-    if [[ -f "'"$STACK_ENV_FILE"'" ]]; then
+    if [[ -f "$STACK_ENV_FILE" ]]; then
       set -a
-      source "'"$STACK_ENV_FILE"'"
+      # shellcheck disable=SC1090
+      source "$STACK_ENV_FILE"
       set +a
     fi
 
-    cd "'"$REPO_ROOT"'"
-    "'"$PYTHON_BIN"'" -m pytest \
-      '"${DEFAULT_PYTEST_OPTS[*]}"' \
-      '"${PYTEST_CACHE_OPTS[*]}"' \
-      '"${USER_PYTEST_OPTS[*]}"' \
-      "$@"
-  ' -- "$@"
+    cd "$REPO_ROOT"
+    exec "$@"
+  ' bash "${argv[@]}" || {
+    rc=$?
+    if [[ $rc -eq 1 || $rc -eq 2 || $rc -eq 127 ]]; then
+      # fall through; these are normal "command failed" cases
+      :
+    fi
+    echo "ERROR: postdeploy requires sudo privileges (non-interactive sudo failed)." >&2
+    echo "HINT: run once on the Pi: sudo -v  (then retry)  OR run as a user with Docker socket access." >&2
+    exit $rc
+  }
 }
+
 
 if needs_root_for_postdeploy "$@"; then
   run_pytest_as_root "$@"
