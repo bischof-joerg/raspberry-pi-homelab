@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doctor:
+    name: doctor (strict)
+    runs-on: ubuntu-latest
+    env:
+      USE_VENV: "yes"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache .venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py312-
+
+      - run: make venv
+      - run: make ci-doctor
+
+  precommit:
+    name: precommit (hooks + tests/precommit)
+    runs-on: ubuntu-latest
+    env:
+      USE_VENV: "yes"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache .venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py312-
+
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: precommit-${{ runner.os }}-py312-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            precommit-${{ runner.os }}-py312-
+
+      - run: make venv
+      - run: make ci-precommit
+
+  tests:
+    name: tests (unit/integration, no postdeploy)
+    runs-on: ubuntu-latest
+    env:
+      USE_VENV: "yes"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache .venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements-dev.txt') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py312-
+
+      - run: make venv
+      - run: make ci-tests

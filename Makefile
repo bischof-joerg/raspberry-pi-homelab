@@ -21,12 +21,14 @@ PIP      := $(VENV_DIR)/bin/pip
 PYTEST   := $(PY) -m pytest
 YAMLLINT := $(VENV_DIR)/bin/yamllint
 RUFF     := $(VENV_DIR)/bin/ruff
+PRE_COMMIT := $(VENV_DIR)/bin/pre-commit
 else
 PY       := python3
 PIP      := python3 -m pip
 PYTEST   := python3 -m pytest
 YAMLLINT := yamllint
 RUFF     := ruff
+PRE_COMMIT := pre-commit
 endif
 
 # --- Pytest configuration ----------------------------------------------------
@@ -58,14 +60,12 @@ VMAGENT_CFG := stacks/monitoring/vmagent/vmagent.yml
 VMALERT_CFG := stacks/monitoring/vmalert/vmalert.yml
 VM_CFG      := stacks/monitoring/victoriametrics/victoriametrics.yml
 
-# VictoriaLogs configuration (required)
-
 # Alertmanager is generated -> repo contains template only
 ALERTMANAGER_TMPL := stacks/monitoring/alertmanager/alertmanager.yml.tmpl
 
-# Doctor behavior:
-# - default: warn only if configs/templates are missing
-# - strict: fail hard (exit 2)
+# --- Strictness knobs --------------------------------------------------------
+
+# If 1, doctor fails when a required config/template file is missing
 VM_CONFIG_STRICT ?= 0
 
 # Postdeploy behavior toggles used by tests
@@ -77,12 +77,12 @@ VM_EXPECT_JOBS ?= 0
 
 .PHONY: help \
         venv venv-clean \
-        precommit lint \
+        hooks precommit \
         ruff ruff-fix format \
         postdeploy postdeploy-endpoints postdeploy-vm \
-        test \
+        test tests \
         doctor doctor-strict \
-        check check-all ci \
+        check ci-doctor ci-precommit ci-tests ci \
         _guard-wsl _guard-pi
 
 # --- Help (authoritative; excludes internal _guard-* targets) ----------------
@@ -108,7 +108,7 @@ help: ## Show this help (auto-generated from target docstrings)
 	@echo "  VM_EXPECT_JOBS=1          enable job-existence expectations in VM query tests (default: 0)"
 	@echo
 	@echo "Guardrails:"
-	@echo "  - check/check-all/ci are WSL-only (fail fast on the Pi)."
+	@echo "  - check/ci and ci-* targets are WSL-only (fail fast on the Pi)."
 	@echo "  - postdeploy targets are Pi-only (fail fast on non-Pi hosts)."
 	@echo
 	@echo "Alertmanager config:"
@@ -131,17 +131,17 @@ _guard-pi: ## Internal: fail if not running on Raspberry Pi
 	  exit 2; \
 	fi
 
-# --- venv bootstrap ----------------------------------------------------------
+# --- Virtualenv --------------------------------------------------------------
 
-venv: ## Create/update local venv (WSL only)
+venv: ## Create local venv and install dev requirements (WSL only)
 ifeq ($(USE_VENV),yes)
 	@set -euo pipefail; \
-	if [ ! -d "$(VENV_DIR)" ]; then \
+	if [ ! -x "$(VENV_DIR)/bin/python" ]; then \
 	  echo "[venv] creating $(VENV_DIR)"; \
 	  python3 -m venv "$(VENV_DIR)"; \
 	fi; \
 	echo "[venv] upgrading pip"; \
-	"$(VENV_DIR)/bin/python" -m pip install -U pip >/dev/null; \
+	"$(VENV_DIR)/bin/pip" install -U pip >/dev/null; \
 	if [ -f requirements-dev.txt ]; then \
 	  echo "[venv] installing requirements-dev.txt"; \
 	  "$(VENV_DIR)/bin/pip" install -r requirements-dev.txt; \
@@ -180,16 +180,28 @@ format: _guard-wsl venv ## Run ruff formatter (WSL only)
 
 # --- Test targets ------------------------------------------------------------
 
-precommit: _guard-wsl venv ## Run pre-commit test suite (pytest precommit marker)
-	@command -v $(RUFF) >/dev/null 2>&1 && $(RUFF) check . || echo "WARN: ruff missing"
-	@command -v $(RUFF) >/dev/null 2>&1 && $(RUFF) format --check . || true
+hooks: _guard-wsl venv ## Run pre-commit hooks only (all files)
+	@command -v $(PRE_COMMIT) >/dev/null 2>&1 || { \
+	  echo "ERROR: pre-commit not found."; \
+	  echo "HINT: run: make venv && $(PIP) install -r requirements-dev.txt"; \
+	  exit 2; \
+	}
+	@$(PRE_COMMIT) run --all-files --show-diff-on-failure
+
+precommit: _guard-wsl venv ## Run pre-commit hooks + python precommit tests (WSL/CI)
+	@echo "== pre-commit hooks =="
+	@$(MAKE) hooks
+	@echo
+	@echo "== pytest (tests/precommit, marker=precommit) =="
 	$(PYTEST_BASE) tests/precommit -m precommit
 
-lint: _guard-wsl venv ## Run strict local lint gate (requires ruff)
-	@command -v $(RUFF) >/dev/null 2>&1 || (echo "FAIL: ruff missing"; exit 2)
-	$(RUFF) check .
-	$(RUFF) format --check .
-	$(PYTEST_BASE) tests/precommit -m lint
+# Unit/integration test suite (WSL/CI) explicitly excludes Pi-only postdeploy tests.
+# This keeps CI deterministic and fast, while postdeploy remains a separate on-target gate.
+test: _guard-wsl venv ## Run unit/integration tests (excludes tests/postdeploy + tests/precommit)
+	./run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
+	  tests -m "not postdeploy" --ignore=tests/postdeploy --ignore=tests/precommit
+
+tests: test ## Alias for `make test` (useful for CI job naming)
 
 postdeploy: _guard-pi ## Run all post-deploy checks (Pi only) [supports POSTDEPLOY_ON_TARGET/VM_EXPECT_* + PYTEST_ARGS]
 	@POSTDEPLOY_ON_TARGET=$(POSTDEPLOY_ON_TARGET) \
@@ -210,9 +222,6 @@ postdeploy-vm: _guard-pi ## Run only postdeploy VM query tests (Pi only) [set VM
 	  ./run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
 	    tests/postdeploy -m postdeploy -k "vm_query or vm_queries or victoriametrics or vmagent or vmalert"
 
-test: _guard-wsl venv ## Run all tests via run-tests.sh (WSL-only) [supports PYTEST_ARGS]
-	./run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS)
-
 # --- Doctor -----------------------------------------------------------------
 
 doctor: ## Check tooling/config for this repo (WSL/Pi) [VM_CONFIG_STRICT=1 makes missing configs/templates FAIL]
@@ -228,6 +237,7 @@ doctor: ## Check tooling/config for this repo (WSL/Pi) [VM_CONFIG_STRICT=1 makes
 	$(PYTEST) --version >/dev/null 2>&1 && $(PYTEST) --version || echo "WARN: pytest missing"; \
 	command -v $(YAMLLINT) >/dev/null 2>&1 && $(YAMLLINT) --version || echo "WARN: yamllint missing"; \
 	command -v $(RUFF) >/dev/null 2>&1 && $(RUFF) --version || echo "WARN: ruff missing"; \
+	command -v $(PRE_COMMIT) >/dev/null 2>&1 && $(PRE_COMMIT) --version || echo "WARN: pre-commit missing"; \
 	command -v gitleaks >/dev/null 2>&1 && gitleaks version || echo "WARN: gitleaks missing"; \
 	command -v curl >/dev/null 2>&1 && curl --version | head -n 1 || echo "WARN: curl missing"; \
 	echo; \
@@ -261,25 +271,6 @@ doctor: ## Check tooling/config for this repo (WSL/Pi) [VM_CONFIG_STRICT=1 makes
 	\
 	echo "== Python deps sanity =="; \
 	$(PY) -c "import yaml, requests; print('OK: PyYAML + requests import')" >/dev/null 2>&1 || echo "WARN: missing PyYAML/requests"; \
-	echo; \
-	\
-	echo "== Compose config validation (pytest) =="; \
-	$(PYTEST) -q --strict-markers -m precommit tests/precommit -k compose_config \
-	  && echo "OK: compose config validation passed" \
-	  || (echo "FAIL: compose config validation failed" && exit 2); \
-	echo; \
-	\
-	echo "== Secrets (Pi only) =="; \
-	if [ "$(IS_PI)" = "yes" ]; then \
-	  test -f /etc/raspberry-pi-homelab/monitoring.env \
-	    && echo "OK: monitoring.env exists" \
-	    || (echo "FAIL: monitoring.env missing" && exit 2); \
-	  sudo test -r /etc/raspberry-pi-homelab/monitoring.env \
-	    && echo "OK: monitoring.env readable by root" \
-	    || (echo "FAIL: monitoring.env not readable by root" && exit 2); \
-	else \
-	  echo "SKIP: not on Raspberry Pi"; \
-	fi; \
 	echo
 
 doctor-strict: ## Doctor in strict mode (equivalent to VM_CONFIG_STRICT=1 make doctor)
@@ -287,23 +278,26 @@ doctor-strict: ## Doctor in strict mode (equivalent to VM_CONFIG_STRICT=1 make d
 
 # --- Aggregators (WSL-only) --------------------------------------------------
 
-check: _guard-wsl venv ## Run local quality gate (WSL-only): doctor + ruff + precommit
+check: _guard-wsl venv ## Run local quality gate (WSL-only): doctor + precommit + tests
 	@set -euo pipefail; \
 	$(MAKE) doctor; \
-	$(MAKE) ruff; \
 	$(MAKE) precommit; \
+	$(MAKE) test; \
 	echo "OK: check passed"
 
-check-all: _guard-wsl venv ## Run full local gate (WSL-only): check + test
-	@set -euo pipefail; \
-	$(MAKE) check; \
-	$(MAKE) test; \
-	echo "OK: check-all passed"
+# CI job-friendly targets (separate GitHub Actions jobs can call these)
+ci-doctor: _guard-wsl venv ## CI job: doctor in strict mode (quiet)
+	@$(MAKE) PYTEST_QUIET=1 VM_CONFIG_STRICT=1 doctor
 
-ci: _guard-wsl venv ## Run CI gate (WSL-only): doctor-strict + ruff + lint + test (quiet)
+ci-precommit: _guard-wsl venv ## CI job: precommit hooks + tests/precommit (quiet)
+	@$(MAKE) PYTEST_QUIET=1 precommit
+
+ci-tests: _guard-wsl venv ## CI job: unit/integration tests (quiet)
+	@$(MAKE) PYTEST_QUIET=1 test
+
+ci: _guard-wsl venv ## Run full CI gate (WSL-only): ci-doctor + ci-precommit + ci-tests
 	@set -euo pipefail; \
-	$(MAKE) PYTEST_QUIET=1 VM_CONFIG_STRICT=1 doctor; \
-	$(MAKE) PYTEST_QUIET=1 ruff; \
-	$(MAKE) PYTEST_QUIET=1 lint; \
-	$(MAKE) PYTEST_QUIET=1 test; \
+	$(MAKE) ci-doctor; \
+	$(MAKE) ci-precommit; \
+	$(MAKE) ci-tests; \
 	echo "OK: ci passed"

@@ -1,147 +1,315 @@
 # Development Workflow
 
-## Workflow Overview
+## 1. Operating Model Overview
 
-1. Changes are prepared on WSL
-2. Tested by using ```pytest -q```
-3. Commit and push to GitHub
-4. On Rasperry Pi sources are only pulled from Git and deployed
-5. Ideally, no manual changes are performed on the Pi
-6. Secure defaults, hardening and reviewed / new tests is part of integrating new services
+This project follows a strict GitOps + IaC model:
 
-## Development & Tests
+1. All changes are developed and validated on **WSL**
+2. All quality gates must pass locally (`make ci`)
+3. Code is pushed to GitHub
+4. GitHub Actions runs the `ci` workflow
+5. The Raspberry Pi only:
+    - pulls from Git
+    - runs `sudo ./deploy.sh`
+6. No manual drift is allowed on the Pi
 
-All Python-based tooling (tests, linters) is installed via:
+The Raspberry Pi is a **deploy target only** --- never a development
+environment.
 
-- `requirements-dev.txt`
-- Python virtual environment `.venv`
+------------------------------------------------------------------------
 
-This repository has **no Python runtime dependencies** for production.
+## 2. Local Development (WSL)
 
-## on WSL
+All development happens inside WSL (Ubuntu).
 
-- git commit handling in Visual Studio or explicitely ...
-  - ```git status```
-  - ```git add ...```
-  - ```git commit -m <>```
-  - Note: GitHub commit comprises tests via a pre-commit hook
-- ```pytest -q``` executes all tests on WSL in the (.venv), i.e. it includes
-  - ```make precommit``` conscious and explicit, with pytest -m precommit -rs reasons for skipped tests are shown
-  - ```make doctor```  check on pre-requirements
-  - GitHub pre-commit checks as defined in .pre-commit-config.yaml
-- fix issues if needed and start from top
+### 2.1 Tooling Model
 
-~~~text
-Note: A virtual environment is used on WSL and automatically called by the make phases.
-The repro local Python Virtual Environment '(.venv)' is used as well for local development.
-The following commancds manually activate and deactive it:
-    - to activate '(.venv)': ```source .venv/bin/activate```
-    - to deactive in '(.venv)': ```deactivate```
-~~~
+- Python virtual environment: `.venv`
+- Dev dependencies: `requirements-dev.txt`
+- No production Python dependencies exist
+- Makefile is the **single orchestration entrypoint**
 
-## CI
+------------------------------------------------------------------------
 
-CI mirrors the local precommit workflow to ensure parity between
-developer machines and automated checks. The test phases on WSL automatically lunch the virtual environment (.venv)
+### 2.2 Bootstrap
 
-- ```make precommit```
-- ```make doctor```
-- in (.venv) on WSL optionally: ```pre-commit run --all-files``` to run GitHub pre-commit checks in virtual environment (.venv)
-- the partially to Git-Hub pre-commit hook redundant lint tests can optionally be executed with ```make lint```
+First-time setup:
 
-## on PI after deploy
-
-- ```cd ~/iac/raspberry-pi-homelab```
-- ```git pull```
-- ```make doctor```
-- ```sudo ./deploy.sh```    #Execute deploy with sudo:
-  - The deploy scribed automatically launches the post deploy tests
-  - Options for different modes
-    - First deploy / after volume migration: Set permissions in safe manner: ```sudo RUN_INIT_PERMISSIONS=always ./deploy.sh```
-    - Fast deploy without pull: ```sudo PULL_IMAGES=0 ./deploy.sh```
-    - Deploy without tests (only in case of emergency): ```sudo RUN_TESTS=0 ./deploy.sh```
-
-- Status/analysis of issues on deploy.sh failing:
-  - Container status:
-    - ```cd ~/iac/raspberry-pi-homelab```
-    - ```docker compose -f stacks/monitoring/compose/docker-compose.yml ps -all```
-  - Logs:
-    - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs --tail=200```
-      and if too many, on individual services:
-      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color grafana```
-      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color victoriametrics```
-      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color vmagent```
-      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color vmalert```
-      - ```docker compose -f stacks/monitoring/compose/docker-compose.yml logs -n 200 --no-color alertmanager```
-  - Clean start of entire stack:
-    - ```docker compose -f stacks/monitoring/compose/docker-compose.yml up -d --force-recreate```
-- Rollback (git revert) on deploy failure:
-
-  - Note: Reverting commits that include data migrations may require manual validation of volumes.
-
-  - ~~~bash
-    cd ~/iac/raspberry-pi-homelab
-    git log --oneline --max-count=10
-    ~~~
-
-    - ```git revert <commit-sha>```
-    - ```git pull --rebase```
-    - ```sudo ./deploy.sh```
-- Quick sanity check with postdeploy tests is always posible: `make postdeploy`
-
-## Deterministic config changes during deploy (config-hash labels)
-
-Some services in the monitoring stack mount configuration, rules, or provisioning data directly from the Git repository (bind mounts). Docker Compose does **not reliably recreate containers** when only the *content* of such mounted files changes.
-
-To ensure deterministic and reproducible deploys without forcing a full stack recreation, the deploy process uses a **config-hash label mechanism**.
-
-### How it works
-
-- During `deploy.sh`, a combined SHA-256 hash is computed from selected repo-managed configuration files (for example `vmagent.yml`, alert rules, Grafana provisioning).
-- The hash is exported as `MONITORING_CONFIG_HASH`.
-- Services that depend on these configs define a label:
-  ```yaml
-    labels:
-      - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
-  ```
-
-- If any of the hashed config files change, the label value changes.
-- Docker Compose detects a service definition change and recreates only the affected services.
-
-### Scope and intent
-
-- Only services with repo-mounted runtime configuration use the config-hash label.
-- Services without such configuration (e.g. exporters) are intentionally excluded to avoid unnecessary churn.
-- A global `--force-recreate` is not required for normal deploys.
-
-### Operational effect
-
-- Config changes are applied deterministically on deploy.
-- Container recreation is scoped and predictable.
-- Re-running `sudo ./deploy.sh` is safe and idempotent.
-- The mechanism aligns with the GitOps principle that Git is the single source of truth.
-
-### Verification
-
-After changing a monitored configuration file:
-```bash
-  sudo ./deploy.sh
+``` bash
+make venv
 ```
 
-Expected:
+This:
 
-- A new `MONITORING_CONFIG_HASH` is logged.
-- Only services carrying the config-hash label are recreated.
-- Post-deploy tests (`make postdeploy`) remain green.
+- creates `.venv`
+- installs `requirements-dev.txt`
+- installs pytest, ruff, yamllint, pre-commit etc.
 
-## Operational Guardrails (Do Not Violate)
+------------------------------------------------------------------------
 
-- No manual changes on the Raspberry Pi (except git pull + sudo ./deploy.sh)
-- No secrets committed to Git (use /etc/.../.env)
-- init-permissions.sh must not be run manually on the Pi
+## 3. Local Quality Gates
 
-## Failure Handling Philosophy
+There are three logical test layers.
 
-- Failing fast is preferred over partial deploys
-- Deployments are expected to be repeatable and idempotent
-- Git history is the source of truth for rollback and recovery
+------------------------------------------------------------------------
+
+### 3.1 Precommit Gate (Fast Developer Feedback)
+
+``` bash
+make precommit
+```
+
+This executes:
+
+1. `pre-commit run --all-files`
+    - ruff
+    - ruff-format
+    - yamllint
+    - shellcheck
+    - repo policy hooks
+2. `pytest tests/precommit -m precommit`
+
+Purpose:
+
+- Fast
+- Deterministic
+- No Docker runtime
+- No network dependency
+
+This should be run before every push.
+
+------------------------------------------------------------------------
+
+### 3.2 Unit / Integration Tests (No Postdeploy)
+
+``` bash
+make test
+```
+
+Runs:
+
+- All pytest tests
+- Excludes:
+  - `tests/postdeploy`
+  - `tests/precommit`
+
+These tests may validate:
+
+- Compose configuration
+- Repo policies
+- Static validation logic
+- Config structure correctness
+
+They must pass before pushing.
+
+------------------------------------------------------------------------
+
+### 3.3 Full Local Gate (Recommended Before Push)
+
+``` bash
+make ci
+```
+
+This runs in order:
+
+1. `make ci-doctor`
+2. `make ci-precommit`
+3. `make ci-tests`
+
+Equivalent to:
+
+``` bash
+make doctor
+make precommit
+make test
+```
+
+If this passes locally, GitHub CI should pass.
+
+------------------------------------------------------------------------
+
+## 4. Git Workflow on WSL
+
+Typical developer flow:
+
+``` bash
+git status
+git add .
+git commit -m "feat: ..."
+make ci
+git push
+```
+
+If `make ci` fails:
+
+- fix issues locally
+- re-run `make ci`
+- only push when green
+
+------------------------------------------------------------------------
+
+## 5. GitHub CI (Single Workflow: ci.yml)
+
+GitHub runs **one workflow only**:
+
+`.github/workflows/ci.yml`
+
+It contains three parallel jobs:
+
+| Job        | Purpose                          |
+|------------|----------------------------------|
+| doctor     | Repository & config integrity    |
+| precommit  | Lint + policy + tests/precommit  |
+| tests      | Unit/integration (no postdeploy) |
+
+
+All jobs:
+
+- use Python 3.12
+- create `.venv`
+- cache `.venv`
+- cache `~/.cache/pre-commit`
+
+The workflow runs:
+
+``` bash
+make ci-doctor
+make ci-precommit
+make ci-tests
+```
+
+This guarantees parity between:
+
+- WSL
+- GitHub CI
+
+------------------------------------------------------------------------
+
+## 6. Raspberry Pi Deployment Workflow
+
+The Pi is not a development machine.
+
+### 6.1 Standard Deploy
+
+``` bash
+cd ~/iac/raspberry-pi-homelab
+git pull
+sudo ./deploy.sh
+```
+
+The deploy script:
+
+- pulls images
+- applies config-hash mechanism
+- recreates affected services
+- runs postdeploy tests
+
+------------------------------------------------------------------------
+
+### 6.2 Postdeploy Tests (Manual Invocation)
+
+``` bash
+make postdeploy
+```
+
+Only valid on the Pi.
+
+These tests validate:
+
+- Running containers
+- Health checks
+- Endpoints reachable
+- Metrics ingestion
+- Alert pipeline functionality
+- UFW effectiveness
+
+------------------------------------------------------------------------
+
+## 7. Deterministic Config Deploy (Config Hash Mechanism)
+
+Certain services mount configuration directly from Git.
+
+Because Docker does not detect file content changes reliably, a hash
+mechanism is used.
+
+During deploy:
+
+- A SHA-256 hash over relevant config files is computed
+- Exported as `MONITORING_CONFIG_HASH`
+- Injected as container label:
+
+``` yaml
+labels:
+  - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
+```
+
+If configuration changes:
+
+- label changes
+- only affected services are recreated
+- no global `--force-recreate` needed
+
+This guarantees:
+
+- deterministic deploys
+- scoped restarts
+- idempotency
+
+------------------------------------------------------------------------
+
+## 8. Failure Handling
+
+### If CI fails
+
+- Fix locally
+- Re-run `make ci`
+- Push again
+
+### If Deploy fails
+
+On Pi:
+
+``` bash
+docker compose -f stacks/monitoring/compose/docker-compose.yml ps -a
+docker compose -f stacks/monitoring/compose/docker-compose.yml logs --tail=200
+```
+
+Rollback:
+
+``` bash
+git log --oneline
+git revert <commit>
+git pull --rebase
+sudo ./deploy.sh
+```
+
+------------------------------------------------------------------------
+
+## 9. Guardrails (Non-Negotiable)
+
+- No secrets in Git
+- No `.env` committed
+- No manual changes on Pi
+- No manual container modifications
+- No runtime drift
+- All config defined in Git
+
+------------------------------------------------------------------------
+
+## 10. Environment Summary
+
+| Environment      | Purpose                           |
+|------------------|-----------------------------------|
+| WSL              | Development + local CI equivalent |
+| GitHub Actions   | Automated CI gate                 |
+| Raspberry Pi     | Deploy target only                |
+
+------------------------------------------------------------------------
+
+## 11. Philosophy
+
+- Failing fast \> partial success
+- Deterministic deploys \> implicit behavior
+- Git is source of truth
+- CI parity with local environment
+- Idempotency is mandatory
