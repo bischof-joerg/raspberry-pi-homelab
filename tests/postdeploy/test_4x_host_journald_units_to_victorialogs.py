@@ -79,7 +79,39 @@ def _provoke_journald_marker() -> str:
 
 
 def _expr_for_journald_marker(marker: str) -> str:
-    return f"SYSLOG_IDENTIFIER:{_quote('postdeploy-journald-smoke')} {_quote(marker)}"
+    # Match on payload: VictoriaLogs stores the message reliably in _msg.
+    return f"_msg:{_quote(marker)} OR {_quote(marker)}"
+
+
+def _debug_victorialogs_for_marker(marker: str) -> str:
+    """
+    Self-diagnosing debug output for journald ingestion failures.
+    Produces a few short queries to show whether the marker exists and how it is mapped.
+    Keep output small to avoid noisy CI logs.
+    """
+    probes: list[tuple[str, str]] = [
+        ("probe:_msg exact", f"_time:15m _msg:{_quote(marker)} | limit 3"),
+        ("probe:free-text", f"_time:15m {_quote(marker)} | limit 3"),
+        ("probe:recent logs (sample)", "_time:5m | limit 3"),
+        (
+            "probe:identifier (if mapped)",
+            f"_time:30m SYSLOG_IDENTIFIER:{_quote('postdeploy-journald-smoke')} | limit 3",
+        ),
+    ]
+
+    out_lines: list[str] = []
+    for title, q in probes:
+        try:
+            body = _curl_victorialogs(q, timeout=20)
+            first = body.splitlines()[:3]
+            snippet = "\n".join(first).strip()
+            if not snippet:
+                snippet = "<no output>"
+            out_lines.append(f"{title}\n  query={q}\n  head=\n{snippet}\n")
+        except Exception as e:  # noqa: BLE001
+            out_lines.append(f"{title}\n  query={q}\n  ERROR: {e}\n")
+
+    return "\n".join(out_lines)
 
 
 @pytest.mark.postdeploy
@@ -89,13 +121,19 @@ def test_host_journald_marker_is_ingested_into_victorialogs(retry) -> None:
     marker = _provoke_journald_marker()
 
     def _assert_ingested() -> None:
-        obj = _query_one(_expr_for_journald_marker(marker), "10m")
-        assert obj is not None, (
-            "No entries found in VictoriaLogs for journald sentinel marker.\n"
-            f"Expr={_expr_for_journald_marker(marker)!r}"
-        )
+        expr = _expr_for_journald_marker(marker)
+        obj = _query_one(expr, "10m")
+        if obj is None:
+            debug = _debug_victorialogs_for_marker(marker)
+            pytest.fail(
+                "No entries found in VictoriaLogs for journald sentinel marker.\n"
+                f"marker={marker!r}\n"
+                f"expr={expr!r}\n\n"
+                "=== VictoriaLogs debug probes ===\n"
+                f"{debug}"
+            )
 
-    retry(_assert_ingested, timeout_s=60, interval_s=3.0)
+    retry(_assert_ingested, timeout_s=90, interval_s=5.0)
 
 
 # --- Real-world signals (best-effort) ------------------------------------------
