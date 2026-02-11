@@ -7,9 +7,10 @@ SHELL := /bin/bash
 
 IS_PI  := $(shell grep -qi raspberry /proc/device-tree/model 2>/dev/null && echo yes || echo no)
 IS_WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo yes || echo no)
+IS_CI := $(shell test -n "$$GITHUB_ACTIONS" && echo yes || echo no)
 
-# venv is intentionally WSL-only (Pi is deploy target)
-USE_VENV := $(IS_WSL)
+# venv is intentionally only in WSL and GitHub (Pi is deploy target)
+USE_VENV := $(if $(filter yes,$(IS_WSL) $(IS_CI)),yes,no)
 
 # --- Python tooling ----------------------------------------------------------
 
@@ -119,8 +120,12 @@ help: ## Show this help (auto-generated from target docstrings)
 
 _guard-wsl: ## Internal: fail if not running on WSL
 	@set -euo pipefail; \
-	if [ "$(IS_WSL)" != "yes" ]; then \
-	  echo "FAIL: this target is WSL-only (run from WSL/CI workspace, not on the Pi)"; \
+	if [ "$(IS_PI)" = "yes" ]; then \
+	  echo "FAIL: this target is dev/CI-only (must not run on the Raspberry Pi)"; \
+	  exit 2; \
+	fi; \
+	if [ "$(IS_WSL)" != "yes" ] && [ "$(IS_CI)" != "yes" ]; then \
+	  echo "FAIL: this target is WSL/CI-only (run from WSL or GitHub Actions)"; \
 	  exit 2; \
 	fi
 
