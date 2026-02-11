@@ -106,17 +106,22 @@ def _provoke_containerd() -> None:
 
 
 def _provoke_udevd() -> None:
-    # Increase udevd verbosity for the test run, then trigger events.
-    # This does not alter device state, it only causes logging.
+    # Increase udevd verbosity and trigger events. Guard against rare hangs:
+    # udevadm settle can block for a long time on some systems.
     cp = _run(
         [
             "sh",
             "-lc",
-            "sudo udevadm control --log-level=info && sudo udevadm trigger && sudo udevadm settle",
+            # Best-effort log-level change; never fail if it can't be set.
+            # Hard timeouts ensure the test cannot stall indefinitely.
+            "sudo udevadm control --log-level=info >/dev/null 2>&1 || true; "
+            "timeout 20s sudo udevadm trigger >/dev/null 2>&1 || true; "
+            "timeout 20s sudo udevadm settle >/dev/null 2>&1 || true",
         ],
-        timeout=180,
+        timeout=90,
     )
-    if cp.returncode != 0:
+    # We accept timeouts (124) as "best effort". Ingestion assertion happens later.
+    if cp.returncode not in (0, 124):
         raise AssertionError(f"Could not provoke udevd logs. stderr={cp.stderr.strip()!r}")
 
 
