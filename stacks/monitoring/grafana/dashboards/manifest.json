@@ -23,6 +23,18 @@
       "gnet_id": 19341,
       "filename": "prometheus-metrics-overview-19341.json",
       "uid": "gnet-system-19341"
+    },
+    {
+      "folder": "victorialogs",
+      "gnet_id": 24585,
+      "filename": "victorialogs-internal-state-24585.json",
+      "uid": "gnet-victorialogs-24585"
+    },
+    {
+      "folder": "victorialogs",
+      "gnet_id": 22759,
+      "filename": "victorialogs-explorer-22759.json",
+      "uid": "gnet-victorialogs-22759"
     }
   ],
   "id": null,

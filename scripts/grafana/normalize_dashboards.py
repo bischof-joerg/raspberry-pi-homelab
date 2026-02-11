@@ -21,6 +21,9 @@ PROM_UID = "DS_PROMETHEUS"
 PROM_NAME = "Prometheus"
 GRAFANA_INTERNAL_UID = "-- Grafana --"
 GRAFANA_INTERNAL_TYPE = "grafana"
+VLOGS_UID = "victorialogs"
+VLOGS_NAME = "VictoriaLogs"
+VLOGS_TYPE = "victoriametrics-logs-datasource"
 KEEP_INPUTS = False
 
 _UID_ALLOWED = re.compile(r"^[a-zA-Z0-9_-]{1,40}$")
@@ -55,12 +58,32 @@ def normalize_datasource_value(ds_val: Any) -> Any:
     if isinstance(ds_val, dict):
         if ds_val.get("type") == GRAFANA_INTERNAL_TYPE or ds_val.get("uid") == GRAFANA_INTERNAL_UID:
             return ds_val
+
         ds_type, ds_uid = ds_val.get("type"), ds_val.get("uid")
+
+        # Prometheus normalization (existing)
         if ds_type == "prometheus" or ds_uid in (PROM_UID, "${DS_PROMETHEUS}", f"${{{PROM_UID}}}"):
             return {"type": "prometheus", "uid": PROM_UID}
+
+        # VictoriaLogs normalization (new)
+        if ds_type == VLOGS_TYPE or ds_uid in (
+            VLOGS_UID,
+            "${DS_VICTORIALOGS}",
+            "${victorialogs}",
+            f"${{{VLOGS_UID}}}",
+        ):
+            return {"type": VLOGS_TYPE, "uid": VLOGS_UID}
+
         return ds_val
-    if isinstance(ds_val, str) and ds_val.strip() in (PROM_NAME, PROM_UID, "${DS_PROMETHEUS}"):
-        return {"type": "prometheus", "uid": PROM_UID}
+
+    # String placeholders -> normalize to dict
+    if isinstance(ds_val, str):
+        v = ds_val.strip()
+        if v in (PROM_NAME, PROM_UID, "${DS_PROMETHEUS}"):
+            return {"type": "prometheus", "uid": PROM_UID}
+        if v in (VLOGS_NAME, VLOGS_UID, "${DS_VICTORIALOGS}"):
+            return {"type": VLOGS_TYPE, "uid": VLOGS_UID}
+
     return ds_val
 
 

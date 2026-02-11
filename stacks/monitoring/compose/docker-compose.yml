@@ -268,7 +268,7 @@ services:
       # Grafana plugin preinstall (pinned)
       # Prefer the newer env var over GF_INSTALL_PLUGINS
       GF_PLUGINS_PREINSTALL: >
-        victoriametrics-logs-datasource@0.24.0
+        victoriametrics-logs-datasource@0.24.1
     volumes:
       - /srv/data/stacks/monitoring/grafana:/var/lib/grafana
       - ../grafana/provisioning:/etc/grafana/provisioning:ro

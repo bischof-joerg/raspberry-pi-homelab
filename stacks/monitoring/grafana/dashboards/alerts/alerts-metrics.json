@@ -1,20 +1,32 @@
 {
-  "uid": "alerts-metrics",
+  "uid": "alerts-alerts-metrics",
   "title": "Alerts (Metrics)",
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "10s",
-  "tags": ["alerts", "prometheus", "victoriametrics"],
-  "time": { "from": "now-6h", "to": "now" },
+  "tags": [
+    "alerts",
+    "prometheus",
+    "victoriametrics"
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
         "type": "query",
         "name": "severity",
         "label": "severity",
-        "datasource": { "type": "prometheus", "uid": "DS_PROMETHEUS" },
-        "query": { "query": "label_values(ALERTS, severity)" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "DS_PROMETHEUS"
+        },
+        "query": {
+          "query": "label_values(ALERTS, severity)"
+        },
         "includeAll": true,
         "multi": true,
         "refresh": 2,
@@ -24,8 +36,13 @@
         "type": "query",
         "name": "alertname",
         "label": "alertname",
-        "datasource": { "type": "prometheus", "uid": "DS_PROMETHEUS" },
-        "query": { "query": "label_values(ALERTS, alertname)" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "DS_PROMETHEUS"
+        },
+        "query": {
+          "query": "label_values(ALERTS, alertname)"
+        },
         "includeAll": true,
         "multi": true,
         "refresh": 2,
@@ -38,8 +55,16 @@
       "id": 1,
       "type": "stat",
       "title": "Firing alerts (count)",
-      "datasource": { "type": "prometheus", "uid": "DS_PROMETHEUS" },
-      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 6 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
       "targets": [
         {
           "refId": "A",
@@ -48,7 +73,13 @@
         }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "orientation": "auto",
         "textMode": "auto",
         "colorMode": "value"
@@ -58,8 +89,16 @@
       "id": 2,
       "type": "stat",
       "title": "Pending alerts (count)",
-      "datasource": { "type": "prometheus", "uid": "DS_PROMETHEUS" },
-      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 6 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
       "targets": [
         {
           "refId": "A",
@@ -68,7 +107,13 @@
         }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "orientation": "auto",
         "textMode": "auto",
         "colorMode": "value"
@@ -78,8 +123,16 @@
       "id": 3,
       "type": "stat",
       "title": "Alertmanager active alerts (count)",
-      "datasource": { "type": "prometheus", "uid": "DS_PROMETHEUS" },
-      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 6 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 6
+      },
       "targets": [
         {
           "refId": "A",
@@ -88,7 +141,13 @@
         }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "orientation": "auto",
         "textMode": "auto",
         "colorMode": "value"
@@ -98,8 +157,16 @@
       "id": 4,
       "type": "timeseries",
       "title": "Firing alerts over time",
-      "datasource": { "type": "prometheus", "uid": "DS_PROMETHEUS" },
-      "gridPos": { "x": 0, "y": 6, "w": 24, "h": 8 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 8
+      },
       "targets": [
         {
           "refId": "A",
@@ -111,8 +178,16 @@
       "id": 5,
       "type": "table",
       "title": "Firing alerts (label sets)",
-      "datasource": { "type": "prometheus", "uid": "DS_PROMETHEUS" },
-      "gridPos": { "x": 0, "y": 14, "w": 24, "h": 10 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "DS_PROMETHEUS"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 10
+      },
       "targets": [
         {
           "refId": "A",
@@ -121,11 +196,15 @@
         }
       ],
       "transformations": [
-        { "id": "labelsToFields", "options": {} }
+        {
+          "id": "labelsToFields",
+          "options": {}
+        }
       ],
       "options": {
         "showHeader": true
       }
     }
-  ]
+  ],
+  "id": null
 }

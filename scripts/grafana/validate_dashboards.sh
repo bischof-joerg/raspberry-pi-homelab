@@ -37,6 +37,7 @@ done < <(find "$ROOT" -type d -print0)
 [[ "$bad_titles" -eq 0 ]] || exit 1
 
 # 4) Datasource Normalization
+# 4a) Prometheus Datasource Normalization (ensure pinned DS uid)
 bad_ds=0
 while IFS= read -r -d '' f; do
   invalid="$(jq -r '
@@ -51,6 +52,23 @@ while IFS= read -r -d '' f; do
   fi
 done < <(find "$ROOT" -name '*.json' -not -name 'manifest.json' -not -name '.*' -print0)
 [[ "$bad_ds" -eq 0 ]] || exit 1
+
+# 4b) VictoriaLogs Datasource Normalization (ensure pinned DS uid)
+bad_vlogs=0
+while IFS= read -r -d '' f; do
+  invalid_vlogs="$(jq -r '
+    [ .. | objects | select(has("datasource")) | .datasource
+      | select(type=="object" and .type=="victoriametrics-logs-datasource" and .uid != "victorialogs") | .uid
+    ] | unique | .[]
+  ' "$f" 2>/dev/null || true)"
+
+  if grep -Eq '"datasource":\s*"\$\{?DS_VICTORIALOGS\}?"' "$f" >/dev/null || [[ -n "${invalid_vlogs:-}" ]]; then
+    echo "❌ ERROR: $f has un-normalized VictoriaLogs datasource: ${invalid_vlogs:-"Placeholder string found"}"
+    bad_vlogs=1
+  fi
+done < <(find "$ROOT" -name '*.json' -not -name 'manifest.json' -not -name '.*' -print0)
+[[ "$bad_vlogs" -eq 0 ]] || exit 1
+
 
 # 5) Disallow hardcoded instance hostname matchers (GitOps determinism)
 if rg -n "instance=~'rpi-hub'|instance=~\"rpi-hub\"" "$ROOT" >/dev/null 2>&1; then
