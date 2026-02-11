@@ -21,3 +21,13 @@ providers:
     updateIntervalSeconds: 30
     options:
       path: /var/lib/grafana/dashboards/docker
+
+  - name: VictoriaLogs
+    orgId: 1
+    folder: VictoriaLogs
+    type: file
+    disableDeletion: false
+    editable: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards/victorialogs
