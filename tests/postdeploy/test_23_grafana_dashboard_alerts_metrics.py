@@ -107,7 +107,7 @@ def test_grafana_dashboard_alerts_metrics_is_provisioned(http_get, retry) -> Non
 
     Env:
       - GRAFANA_BASE_URL (default http://127.0.0.1:3000)
-      - GRAFANA_EXPECT_DASHBOARD_UID (default alerts-metrics)
+      - GRAFANA_EXPECT_DASHBOARD_UID (default alerts-alerts-metrics)
       - GRAFANA_EXPECT_DASHBOARD_TITLE (default "Alerts (Metrics)")
       - GRAFANA_TIMEOUT_SECONDS (default 8)
       - Auth:
@@ -115,7 +115,7 @@ def test_grafana_dashboard_alerts_metrics_is_provisioned(http_get, retry) -> Non
         - GRAFANA_ADMIN_USER/GRAFANA_ADMIN_PASSWORD (loaded from monitoring.env on target if readable)
     """
     base = _grafana_base_url()
-    uid = os.environ.get("GRAFANA_EXPECT_DASHBOARD_UID", "alerts-metrics").strip()
+    uid = os.environ.get("GRAFANA_EXPECT_DASHBOARD_UID", "alerts-alerts-metrics").strip()
     expected_title = os.environ.get("GRAFANA_EXPECT_DASHBOARD_TITLE", "Alerts (Metrics)").strip()
     timeout_s = int(float(os.environ.get("GRAFANA_TIMEOUT_SECONDS", "8")))
 
