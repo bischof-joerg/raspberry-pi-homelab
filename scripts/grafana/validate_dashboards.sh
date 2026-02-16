@@ -11,6 +11,46 @@ echo "Starting validation... (ROOT=$ROOT)"
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq missing" >&2; exit 2; }
 command -v rg >/dev/null 2>&1 || { echo "ERROR: rg (ripgrep) missing" >&2; exit 2; }
 
+slugify_uid() {
+  # Mirrors normalize_dashboards.py::slugify_uid
+  # input: arbitrary string -> output: [a-z0-9_-]{1,40} (best-effort)
+  local s="${1:-}"
+
+  # trim + lowercase
+  s="$(printf "%s" "$s" | sed -e 's/^[[:space:]]\+//' -e 's/[[:space:]]\+$//' | tr '[:upper:]' '[:lower:]')"
+
+  # '.' -> '-'
+  s="${s//./-}"
+
+  # non [a-z0-9_-] -> '-'
+  s="$(printf "%s" "$s" | sed -E 's/[^a-z0-9_-]+/-/g')"
+
+  # collapse multiple '-'
+  s="$(printf "%s" "$s" | sed -E 's/-{2,}/-/g')"
+
+  # trim '-' at ends
+  s="$(printf "%s" "$s" | sed -E 's/^-+//' | sed -E 's/-+$//')"
+
+  # limit 40 chars
+  s="${s:0:40}"
+
+  if [[ -z "$s" ]]; then
+    s="dashboard"
+  fi
+
+  printf "%s" "$s"
+}
+
+expected_uid_for_file() {
+  # expected uid = slugify(relpath_without_suffix, "/" -> "-")
+  local f="$1"
+  local rel
+  rel="${f#"$ROOT"/}"
+  rel="${rel%.json}"
+  rel="${rel//\//-}"
+  slugify_uid "$rel"
+}
+
 # 1) JSON Syntax
 find "$ROOT" -name '*.json' -not -name 'manifest.json' -not -name '.*' -print0 \
   | xargs -0 -n1 jq -e . >/dev/null
@@ -27,6 +67,35 @@ if [[ -n "${dupes:-}" ]]; then
   printf "%s\n" "$dupes"
   exit 1
 fi
+
+# 2b) UID must match deterministic policy (folder + filename)
+bad_uid=0
+while IFS= read -r -d '' f; do
+  uid="$(jq -r '.uid // empty' "$f")"
+  if [[ -z "$uid" ]]; then
+    echo "❌ ERROR: $f has empty/missing .uid"
+    bad_uid=1
+    continue
+  fi
+
+  exp="$(expected_uid_for_file "$f")"
+
+  # enforce same allowed-regex as python ensure_uid would accept for already-good uids
+  if ! [[ "$uid" =~ ^[a-zA-Z0-9_-]{1,40}$ ]]; then
+    echo "❌ ERROR: $f has invalid uid (must match ^[a-zA-Z0-9_-]{1,40}$): uid=$uid"
+    echo "   Expected (policy): $exp"
+    bad_uid=1
+    continue
+  fi
+
+  if [[ "$uid" != "$exp" ]]; then
+    echo "❌ ERROR: UID drift detected in $f"
+    echo "   uid      = $uid"
+    echo "   expected = $exp"
+    bad_uid=1
+  fi
+done < <(find "$ROOT" -name '*.json' -not -name 'manifest.json' -not -name '.*' -print0)
+[[ "$bad_uid" -eq 0 ]] || exit 1
 
 # 3) Title Uniqueness per folder
 bad_titles=0
@@ -82,7 +151,6 @@ done < <(find "$ROOT" -name '*.json' -not -name 'manifest.json' -not -name '.*' 
 [[ "$bad_vlogs" -eq 0 ]] || exit 1
 
 # 4c) Enforce environment-normalized VictoriaLogs Explorer (gnetId 22759)
-# Upstream is Kubernetes-oriented; we normalize it to docker/journald fields and remove broken optional query clause.
 bad_22759=0
 while IFS= read -r -d '' f; do
   gnet="$(jq -r '.gnetId // empty' "$f" 2>/dev/null || true)"
