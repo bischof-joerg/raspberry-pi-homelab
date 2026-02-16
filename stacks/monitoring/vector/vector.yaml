@@ -44,6 +44,13 @@ transforms:
       # 1. Message & Timestamp
       # Message field for VictoriaLogs (_msg_field=message)
       .message = to_string(.message) ?? to_string(.log) ?? to_string(.MESSAGE) ?? ""
+
+      # Drop known benign cAdvisor noise on Raspberry Pi (no PC/BIOS DMI)
+      # Example: "gce.go:45] Error while reading product_name: open /sys/class/dmi/id/product_name: no such file or directory"
+      if contains(.message, "Error while reading product_name: open /sys/class/dmi/id/product_name") {
+        abort
+      }
+
       # Timestamp field for VictoriaLogs (_time_field=timestamp)
       # - docker_logs usually provides .timestamp
       # - journald provides _SOURCE_REALTIME_TIMESTAMP (microseconds since epoch) and/or __REALTIME_TIMESTAMP
