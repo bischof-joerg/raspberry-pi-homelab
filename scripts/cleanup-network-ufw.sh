@@ -217,12 +217,19 @@ delete_ufw_rules_matching_line_regex() {
     ufw_list_numbered | awk -v re="$line_re" '
       $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
         raw=$0
+
+        # Extract rule number from leading "[  N]"
+        num=raw
+        sub(/^\[[[:space:]]*/, "", num)
+        sub(/\].*$/, "", num)
+
+        # Normalize line (drop "[N] " and trailing comments)
         line=raw
         sub(/^\[[[:space:]]*[0-9]+\][[:space:]]+/, "", line)
         sub(/[[:space:]]+#.*$/, "", line)
+
         if (line ~ re) {
-          match(raw, /^\[[[:space:]]*([0-9]+)\]/, m)
-          if (m[1] != "") print m[1]
+          print num
         }
       }
     ' | sort -nr
@@ -246,9 +253,12 @@ delete_ufw_rules_by_tag() {
   nums="$(
     ufw_list_numbered | awk -v re="$tag_re" '
       $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
-        if ($0 ~ re) {
-          match($0, /^\[[[:space:]]*([0-9]+)\]/, m)
-          if (m[1] != "") print m[1]
+        raw=$0
+        if (raw ~ re) {
+          num=raw
+          sub(/^\[[[:space:]]*/, "", num)
+          sub(/\].*$/, "", num)
+          print num
         }
       }
     ' | sort -nr
@@ -262,6 +272,7 @@ delete_ufw_rules_by_tag() {
     delete_ufw_rule_by_number "$n"
   done <<<"$nums"
 }
+
 
 # Returns 0 if there exists a rule whose normalized line matches line_re AND whose raw line contains tag.
 ufw_rule_present_with_tag() {
@@ -280,6 +291,7 @@ ufw_rule_present_with_tag() {
     END { exit(found?0:1) }
   '
 }
+
 
 backup_ufw_status() {
   local dir="/var/backups/raspberry-pi-homelab"
