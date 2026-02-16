@@ -403,16 +403,30 @@ ensure_allow_from_cidr_to_port_v4() {
 
   local want_re="^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+${cidr}([[:space:]]|$)"
 
+  # If ufw prints a single-host rule without "/32", accept that variant too.
+  local cidr_no32=""
+  local want_re_no32=""
+  if echo "$cidr" | grep -Eq '/32$'; then
+    cidr_no32="${cidr%/32}"
+    want_re_no32="^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+${cidr_no32}([[:space:]]|$)"
+  fi
+
   # If comment/tagging isn't available, treat "shape present" as OK (idempotent)
   if [ "$UFW_HAS_COMMENT" -eq 0 ]; then
     if ufw_normalized_numbered_lines | grep -Eq "$want_re"; then
       log "UFW: OK (allow ${port}/tcp from ${cidr} present; tagging unavailable)"
       return 0
     fi
+    if [ -n "$want_re_no32" ] && ufw_normalized_numbered_lines | grep -Eq "$want_re_no32"; then
+      log "UFW: OK (allow ${port}/tcp from ${cidr_no32} present; tagging unavailable)"
+      return 0
+    fi
+
     log "UFW: ensuring allow ${port}/tcp from ${cidr} (tagging unavailable)"
     ufw_allow_with_comment "$tag" "$human" allow from "$cidr" to any port "$port" proto tcp
     return 0
   fi
+
 
   if ufw_rule_present_with_tag "$want_re" "$tag"; then
     log "UFW: OK (tagged allow ${port}/tcp from ${cidr})"
