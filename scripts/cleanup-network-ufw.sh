@@ -26,9 +26,10 @@ DOC
 # - Remove stale Docker networks (optional, conservative) if unused AND not part of current stack
 # - Remove stale UFW rules referencing non-existent docker bridges
 # - Enforce a deterministic UFW allowlist for inbound exposure (GitOps)
+# - Tag all rules managed by this script as: "iac:<tag> <human text>"
 #
 # Managed inbound exposure (IPv4-only for LAN services; IPv6 inbound closed):
-# - SSH:     22/tcp  ALLOW from ADMIN_IPV4 and LAN_CIDR (IPv4)
+# - SSH:     22/tcp  ALLOW from ADMIN_IPV4(/32) and LAN_CIDR (IPv4)
 # - Grafana: 3000/tcp ALLOW from LAN_CIDR (IPv4) + DENY Anywhere (v4/v6)
 # - VictoriaLogs UI: 9428/tcp ALLOW from LAN_CIDR (IPv4) + DENY Anywhere (v4/v6)
 # - Docker engine metrics: 9323/tcp on br-monitoring ALLOW from 172.20.0.0/16
@@ -75,6 +76,9 @@ KEEP_DOCKER0_ANYWHERE_RULE="${KEEP_DOCKER0_ANYWHERE_RULE:-0}"
 # Cleanup targets:
 STALE_DOCKER_NETWORKS_REGEX="${STALE_DOCKER_NETWORKS_REGEX:-^(compose_default)$}"
 STALE_BRIDGE_PREFIXES_REGEX="${STALE_BRIDGE_PREFIXES_REGEX:-^(br-abe|br-bd2|docker0)$}"
+
+# Tagging
+TAG_PREFIX="iac:"
 
 usage() {
   cat <<EOF
@@ -129,6 +133,16 @@ run_cmd() {
   fi
 }
 
+ufw_supports_comment() {
+  ufw --help 2>&1 | grep -qi 'comment'
+}
+
+UFW_HAS_COMMENT=0
+tag_comment() {
+  # tag_comment "<tag>" "<human>"
+  printf '%s%s %s' "$TAG_PREFIX" "$1" "$2"
+}
+
 # ---- Docker helpers ----
 docker_network_exists() { docker network inspect "$1" >/dev/null 2>&1; }
 docker_network_bridge_name() { docker network inspect "$1" --format '{{ index .Options "com.docker.network.bridge.name" }}' 2>/dev/null || true; }
@@ -162,8 +176,9 @@ docker_network_is_safe_to_remove() {
 ufw_is_active() { ufw status | head -n1 | grep -qi 'Status: active'; }
 ufw_list_numbered() { ufw status numbered; }
 
+iface_exists() { ip link show "$1" >/dev/null 2>&1; }
 
-# Normalize "ufw status numbered" lines so regex can anchor at start of rule.
+# Normalize "ufw status numbered" lines so regex can anchor at start of rule:
 # - Strip leading "[ N] "
 # - Strip trailing " # comment"
 ufw_normalized_numbered_lines() {
@@ -177,6 +192,94 @@ ufw_normalized_numbered_lines() {
   '
 }
 
+delete_ufw_rule_by_number() {
+  local n="$1"
+  [ -n "$n" ] || return 0
+
+  if [ "$APPLY" -eq 1 ]; then
+    if yes y | ufw delete "$n" >/dev/null 2>&1; then
+      log "UFW: deleted rule [$n]"
+    else
+      log "UFW: WARN could not delete rule [$n] (may have been renumbered/removed); continuing"
+    fi
+  else
+    log "DRY-RUN: ufw delete $n"
+  fi
+}
+
+# Delete rules whose normalized LINE matches a regex.
+# Deletes highest->lowest to avoid renumbering issues.
+delete_ufw_rules_matching_line_regex() {
+  local line_re="$1"
+
+  local nums
+  nums="$(
+    ufw_list_numbered | awk -v re="$line_re" '
+      $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
+        raw=$0
+        line=raw
+        sub(/^\[[[:space:]]*[0-9]+\][[:space:]]+/, "", line)
+        sub(/[[:space:]]+#.*$/, "", line)
+        if (line ~ re) {
+          match(raw, /^\[[[:space:]]*([0-9]+)\]/, m)
+          if (m[1] != "") print m[1]
+        }
+      }
+    ' | sort -nr
+  )"
+
+  [ -n "$nums" ] || return 0
+
+  log "UFW: deleting rules matching line regex: ${line_re}"
+  while read -r n; do
+    [ -n "$n" ] || continue
+    delete_ufw_rule_by_number "$n"
+  done <<<"$nums"
+}
+
+# Delete rules by tag in the raw numbered output line (comment portion).
+delete_ufw_rules_by_tag() {
+  local tag="$1"
+  local tag_re="#[[:space:]]*${TAG_PREFIX}${tag}([[:space:]]|$)"
+
+  local nums
+  nums="$(
+    ufw_list_numbered | awk -v re="$tag_re" '
+      $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
+        if ($0 ~ re) {
+          match($0, /^\[[[:space:]]*([0-9]+)\]/, m)
+          if (m[1] != "") print m[1]
+        }
+      }
+    ' | sort -nr
+  )"
+
+  [ -n "$nums" ] || return 0
+
+  log "UFW: deleting rules by tag ${TAG_PREFIX}${tag}"
+  while read -r n; do
+    [ -n "$n" ] || continue
+    delete_ufw_rule_by_number "$n"
+  done <<<"$nums"
+}
+
+# Returns 0 if there exists a rule whose normalized line matches line_re AND whose raw line contains tag.
+ufw_rule_present_with_tag() {
+  local line_re="$1"
+  local tag="$2"
+  local tag_re="#[[:space:]]*${TAG_PREFIX}${tag}([[:space:]]|$)"
+
+  ufw_list_numbered | awk -v line_re="$line_re" -v tag_re="$tag_re" '
+    $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
+      raw=$0
+      norm=raw
+      sub(/^\[[[:space:]]*[0-9]+\][[:space:]]+/, "", norm)
+      sub(/[[:space:]]+#.*$/, "", norm)
+      if (norm ~ line_re && raw ~ tag_re) { found=1 }
+    }
+    END { exit(found?0:1) }
+  '
+}
 
 backup_ufw_status() {
   local dir="/var/backups/raspberry-pi-homelab"
@@ -192,110 +295,8 @@ backup_ufw_status() {
   fi
 }
 
-iface_exists() { ip link show "$1" >/dev/null 2>&1; }
-
-delete_ufw_rule_by_number() {
-  local num="$1"
-  if [ "$APPLY" -eq 1 ]; then
-    if yes y | ufw delete "$num" >/dev/null 2>&1; then
-      log "UFW: deleted rule [$num]"
-    else
-      # Don't abort the whole reconcile because UFW renumbered or rule already vanished.
-      log "UFW: WARN could not delete rule [$num] (may have been renumbered/removed); continuing"
-    fi
-  else
-    log "DRY-RUN: ufw delete $num"
-  fi
-}
-
-# Delete rules whose LINE (after "[ N]") matches a regex.
-# Deleting from highest index down avoids renumbering issues.
-delete_ufw_rules_matching_line_regex() {
-  local line_re="$1"
-
-  # DRY-RUN: do NOT loop, because nothing gets deleted.
-  # Just compute the matching rule numbers once and print them.
-  if [ "${APPLY:-0}" -eq 0 ]; then
-    local nums
-    nums="$(
-      ufw_list_numbered | awk -v re="$line_re" '
-        $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
-          raw=$0
-          num=raw
-          sub(/^\[[[:space:]]*/, "", num)
-          sub(/\].*$/, "", num)
-          gsub(/[[:space:]]+/, "", num)
-
-          line=raw
-          sub(/^\[[[:space:]]*[0-9]+\][[:space:]]+/, "", line)
-
-          if (line ~ re) {
-            print num
-          }
-        }' | sort -nr
-    )"
-
-    if [ -z "${nums:-}" ]; then
-      vlog "UFW: no rules matched regex: $line_re"
-      return 0
-    fi
-
-    local n
-    for n in $nums; do
-      log "UFW: deleting matched rule [$n] (regex=$line_re)"
-      log "DRY-RUN: ufw delete $n"
-    done
-    return 0
-  fi
-
-  # APPLY: Renumbering-safe delete loop (recompute highest match each time).
-  local iter=0
-  local max_iter=200
-
-  while true; do
-    iter=$((iter + 1))
-    if [ "$iter" -gt "$max_iter" ]; then
-      die "UFW: aborting delete loop (max_iter=${max_iter}) for regex: $line_re"
-    fi
-
-    local n
-    n="$(
-      ufw_list_numbered | awk -v re="$line_re" '
-        $0 ~ /^\[[[:space:]]*[0-9]+\]/ {
-          raw=$0
-          num=raw
-          sub(/^\[[[:space:]]*/, "", num)
-          sub(/\].*$/, "", num)
-          gsub(/[[:space:]]+/, "", num)
-
-          line=raw
-          sub(/^\[[[:space:]]*[0-9]+\][[:space:]]+/, "", line)
-
-          if (line ~ re) {
-            print num
-          }
-        }' | sort -nr | head -n1
-    )"
-
-    if [ -z "${n:-}" ]; then
-      vlog "UFW: no rules matched regex: $line_re"
-      return 0
-    fi
-
-    log "UFW: deleting matched rule [$n] (regex=$line_re)"
-    if yes y | ufw delete "$n" >/dev/null 2>&1; then
-      log "UFW: deleted rule [$n]"
-    else
-      log "UFW: WARN could not delete rule [$n] (may have been renumbered/removed); continuing"
-    fi
-  done
-}
-
-
+# ---- Fix (1): no truncation of ufw status numbered ----
 cleanup_stale_ufw_iface_rules() {
-  local lines
-  lines="$(ufw_list_numbered | sed -n '1,340p')"
-
   while IFS= read -r line; do
     local num iface
     num="$(echo "$line" | sed -n 's/^\[\s*\([0-9]\+\)\].*/\1/p')"
@@ -316,46 +317,93 @@ cleanup_stale_ufw_iface_rules() {
         vlog "UFW: iface missing but not in stale prefix allowlist; skipping: iface=$iface line=$line"
       fi
     fi
-  done < <(echo "$lines" | grep -E '^\[\s*[0-9]+\]' || true)
+  done < <(ufw_list_numbered | grep -E '^\[\s*[0-9]+\]' || true)
 }
 
+# Wrapper to add rules with optional comment support.
+ufw_allow_with_comment() {
+  # args: ...; last two args are: tag, human
+  local tag="$1"; shift
+  local human="$1"; shift
+
+  local c
+  c="$(tag_comment "$tag" "$human")"
+  if [ "$UFW_HAS_COMMENT" -eq 1 ]; then
+    run_cmd ufw "$@" comment "$c"
+  else
+    run_cmd ufw "$@"
+  fi
+}
+
+ufw_deny_with_comment() {
+  local tag="$1"; shift
+  local human="$1"; shift
+
+  local c
+  c="$(tag_comment "$tag" "$human")"
+  if [ "$UFW_HAS_COMMENT" -eq 1 ]; then
+    run_cmd ufw "$@" comment "$c"
+  else
+    run_cmd ufw "$@"
+  fi
+}
 
 ensure_ufw_rule_for_docker_engine_metrics() {
+  local tag="docker-engine-metrics"
+  local human="Docker engine metrics from monitoring net"
   local want_re
   want_re="^${DOCKER_ENGINE_PORT}/tcp on ${EXPECTED_BRIDGE_NAME}[[:space:]]+ALLOW IN[[:space:]]+${EXPECTED_SUBNET}([[:space:]]|$)"
 
-  if ufw_normalized_numbered_lines | grep -Eq "$want_re"; then
-    log "UFW: OK (found allow rule for ${EXPECTED_BRIDGE_NAME} ${EXPECTED_SUBNET} port ${DOCKER_ENGINE_PORT})"
+  if ufw_rule_present_with_tag "$want_re" "$tag"; then
+    log "UFW: OK (tagged allow rule for ${EXPECTED_BRIDGE_NAME} ${EXPECTED_SUBNET} port ${DOCKER_ENGINE_PORT})"
     return 0
   fi
 
-  log "UFW: missing allow rule for ${EXPECTED_BRIDGE_NAME} ${EXPECTED_SUBNET} port ${DOCKER_ENGINE_PORT}"
-  run_cmd ufw allow in on "$EXPECTED_BRIDGE_NAME" from "$EXPECTED_SUBNET" to any port "$DOCKER_ENGINE_PORT" proto tcp comment "Docker engine metrics from monitoring net"
-}
+  # If rule exists untagged, replace it with tagged one
+  if ufw_normalized_numbered_lines | grep -Eq "$want_re"; then
+    log "UFW: metrics rule exists but is untagged/wrong-tagged -> replacing"
+    delete_ufw_rules_matching_line_regex "$want_re"
+  fi
 
+  # Remove any previous managed variants under this tag
+  delete_ufw_rules_by_tag "$tag"
+
+  log "UFW: ensuring tagged metrics allow rule"
+  ufw_allow_with_comment "$tag" "$human" allow in on "$EXPECTED_BRIDGE_NAME" from "$EXPECTED_SUBNET" to any port "$DOCKER_ENGINE_PORT" proto tcp
+}
 
 # ---- Enforce deterministic exposure rules ----
 
 ensure_allow_from_cidr_to_port_v4() {
   local cidr="$1"
   local port="$2"
-  local comment="$3"
+  local tag="$3"
+  local human="$4"
 
   local want_re="^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+${cidr}([[:space:]]|$)"
 
-  if ufw_normalized_numbered_lines | grep -Eq "$want_re"; then
-    log "UFW: OK (allow ${port}/tcp from ${cidr})"
+  if ufw_rule_present_with_tag "$want_re" "$tag"; then
+    log "UFW: OK (tagged allow ${port}/tcp from ${cidr})"
     return 0
   fi
 
-  log "UFW: missing allow ${port}/tcp from ${cidr}"
-  run_cmd ufw allow from "$cidr" to any port "$port" proto tcp comment "$comment"
-}
+  # Replace untagged (or wrong-tagged) matching rule
+  if ufw_normalized_numbered_lines | grep -Eq "$want_re"; then
+    log "UFW: allow ${port}/tcp from ${cidr} exists but is untagged/wrong-tagged -> replacing"
+    delete_ufw_rules_matching_line_regex "$want_re"
+  fi
 
+  # Remove any previous managed variants under this tag
+  delete_ufw_rules_by_tag "$tag"
+
+  log "UFW: ensuring tagged allow ${port}/tcp from ${cidr}"
+  ufw_allow_with_comment "$tag" "$human" allow from "$cidr" to any port "$port" proto tcp
+}
 
 ensure_deny_anywhere_for_port() {
   local port="$1"
-  local comment="$2"
+  local tag="$2"
+  local human="$3"
 
   local want_v4 want_v6
   want_v4="^${port}/tcp[[:space:]]+DENY IN[[:space:]]+Anywhere([[:space:]]|$)"
@@ -364,21 +412,30 @@ ensure_deny_anywhere_for_port() {
   # - "9428/tcp (v6) DENY IN Anywhere (v6)"
   want_v6="^${port}/tcp([[:space:]]+\\(v6\\))?[[:space:]]+DENY IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
 
-  if ufw_normalized_numbered_lines | grep -Eq "$want_v4"; then
-    log "UFW: OK (deny ${port}/tcp Anywhere)"
+  if ufw_rule_present_with_tag "$want_v4" "$tag"; then
+    log "UFW: OK (tagged deny ${port}/tcp Anywhere)"
   else
-    log "UFW: adding deny ${port}/tcp Anywhere"
-    run_cmd ufw deny "${port}/tcp" comment "$comment"
+    if ufw_normalized_numbered_lines | grep -Eq "$want_v4"; then
+      log "UFW: deny ${port}/tcp Anywhere exists but untagged/wrong-tagged -> replacing"
+      delete_ufw_rules_matching_line_regex "$want_v4"
+    fi
+    delete_ufw_rules_by_tag "$tag"
+    log "UFW: ensuring tagged deny ${port}/tcp Anywhere"
+    ufw_deny_with_comment "$tag" "$human" deny "${port}/tcp"
   fi
 
-  if ufw_normalized_numbered_lines | grep -Eq "$want_v6"; then
-    log "UFW: OK (deny ${port}/tcp Anywhere (v6))"
+  if ufw_rule_present_with_tag "$want_v6" "$tag"; then
+    log "UFW: OK (tagged deny ${port}/tcp Anywhere (v6))"
   else
-    log "UFW: ensuring deny ${port}/tcp Anywhere (v6)"
-    run_cmd ufw deny "${port}/tcp" comment "$comment"
+    if ufw_normalized_numbered_lines | grep -Eq "$want_v6"; then
+      log "UFW: deny ${port}/tcp Anywhere (v6) exists but untagged/wrong-tagged -> replacing"
+      delete_ufw_rules_matching_line_regex "$want_v6"
+    fi
+    # same tag: deny rules are separate v4/v6 internally; enforce again (idempotent)
+    log "UFW: ensuring tagged deny ${port}/tcp Anywhere (v6)"
+    ufw_deny_with_comment "$tag" "$human" deny "${port}/tcp"
   fi
 }
-
 
 remove_unwanted_rules_for_port() {
   local port="$1"
@@ -386,8 +443,8 @@ remove_unwanted_rules_for_port() {
   # Remove any broad allows:
   # - ALLOW IN Anywhere (v4)
   # - ALLOW IN Anywhere (v6)
-  # - ALLOW IN 2000::/3 (the previous dangerous pattern)
-  # - ALLOW IN fe80::/10 (link-local allows; not desired)
+  # - ALLOW IN 2000::/3
+  # - ALLOW IN fe80::/10
   delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere(\\s|$)"
   delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
   delete_ufw_rules_matching_line_regex "^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+2000::/3([[:space:]]|$)"
@@ -425,20 +482,19 @@ enforce_inbound_exposure_policy() {
   delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
   delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]|$)"
 
-  # 3) Ensure desired IPv4 allows
-  ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$GRAFANA_PORT" "Grafana UI from LAN"
-  ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$VLOGS_UI_PORT" "VictoriaLogs UI from LAN"
+  # 3) Ensure desired IPv4 allows (tagged)
+  ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$GRAFANA_PORT" "grafana-lan" "Grafana UI from LAN"
+  ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$VLOGS_UI_PORT" "victorialogs-ui-lan" "VictoriaLogs UI from LAN"
 
-  ensure_allow_from_cidr_to_port_v4 "$ADMIN_IPV4" "$SSH_PORT" "SSH admin IPv4"
-  ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$SSH_PORT" "SSH LAN IPv4"
+  ensure_allow_from_cidr_to_port_v4 "$ADMIN_IPV4" "$SSH_PORT" "ssh-admin" "SSH admin IPv4"
+  ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$SSH_PORT" "ssh-lan" "SSH LAN IPv4"
 
-  # 4) Ensure explicit deny-anywhere for Grafana/VLogs to avoid accidental future broad allow
-  ensure_deny_anywhere_for_port "$GRAFANA_PORT" "Block Grafana except LAN"
-  ensure_deny_anywhere_for_port "$VLOGS_UI_PORT" "Block VictoriaLogs UI except LAN"
+  # 4) Ensure explicit deny-anywhere for Grafana/VLogs to avoid accidental future broad allow (tagged)
+  ensure_deny_anywhere_for_port "$GRAFANA_PORT" "deny-grafana-anywhere" "Block Grafana except LAN"
+  ensure_deny_anywhere_for_port "$VLOGS_UI_PORT" "deny-vlogs-ui-anywhere" "Block VictoriaLogs UI except LAN"
 }
 
 # ---- Main ----
-
 main() {
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -453,8 +509,20 @@ main() {
   require_env LAN_CIDR
   require_env ADMIN_IPV4
 
+  # (2) Normalize ADMIN_IPV4 to /32 if not already CIDR
+  if ! echo "$ADMIN_IPV4" | grep -q '/'; then
+    ADMIN_IPV4="${ADMIN_IPV4}/32"
+  fi
+
   command -v docker >/dev/null 2>&1 || die "docker not found"
   command -v ufw >/dev/null 2>&1 || die "ufw not found"
+
+  if ufw_supports_comment; then
+    UFW_HAS_COMMENT=1
+  else
+    UFW_HAS_COMMENT=0
+    log "ufw: WARN 'comment' not supported; managed rules will be enforced but untagged"
+  fi
 
   log "mode: $( [ "$APPLY" -eq 1 ] && echo APPLY || echo DRY-RUN )"
   log "exposure: LAN_CIDR=${LAN_CIDR} ADMIN_IPV4=${ADMIN_IPV4}"
