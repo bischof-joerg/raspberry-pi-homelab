@@ -345,8 +345,7 @@ services:
       - --event_storage_event_limit=default=0
       - --event_storage_age_limit=default=0
       # Prevents cAdvisor from trying to monitor the whole host, focusing only on containers
-      # disabled to get rid of Kubernetes-related warnings in cAdvisor logs; re-enable if you want to reduce noise and don't care about host-level metrics
-      # - --docker_only=true
+      - --docker_only=true
       # Enable filtering metrics in Grafana by the labels set in compose file
       - --store_container_labels=true
       # Added for Pi 5 / cgroup v2 handling:
