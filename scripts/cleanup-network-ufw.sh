@@ -273,7 +273,6 @@ delete_ufw_rules_by_tag() {
   done <<<"$nums"
 }
 
-
 # Returns 0 if there exists a rule whose normalized line matches line_re AND whose raw line contains tag.
 ufw_rule_present_with_tag() {
   local line_re="$1"
@@ -291,7 +290,6 @@ ufw_rule_present_with_tag() {
     END { exit(found?0:1) }
   '
 }
-
 
 backup_ufw_status() {
   local dir="/var/backups/raspberry-pi-homelab"
@@ -366,6 +364,17 @@ ensure_ufw_rule_for_docker_engine_metrics() {
   local want_re
   want_re="^${DOCKER_ENGINE_PORT}/tcp on ${EXPECTED_BRIDGE_NAME}[[:space:]]+ALLOW IN[[:space:]]+${EXPECTED_SUBNET}([[:space:]]|$)"
 
+  # If comment/tagging isn't available, treat "shape present" as OK (idempotent)
+  if [ "$UFW_HAS_COMMENT" -eq 0 ]; then
+    if ufw_normalized_numbered_lines | grep -Eq "$want_re"; then
+      log "UFW: OK (metrics allow rule present; tagging unavailable)"
+      return 0
+    fi
+    log "UFW: ensuring metrics allow rule (tagging unavailable)"
+    ufw_allow_with_comment "$tag" "$human" allow in on "$EXPECTED_BRIDGE_NAME" from "$EXPECTED_SUBNET" to any port "$DOCKER_ENGINE_PORT" proto tcp
+    return 0
+  fi
+
   if ufw_rule_present_with_tag "$want_re" "$tag"; then
     log "UFW: OK (tagged allow rule for ${EXPECTED_BRIDGE_NAME} ${EXPECTED_SUBNET} port ${DOCKER_ENGINE_PORT})"
     return 0
@@ -393,6 +402,17 @@ ensure_allow_from_cidr_to_port_v4() {
   local human="$4"
 
   local want_re="^${port}/tcp[[:space:]]+ALLOW IN[[:space:]]+${cidr}([[:space:]]|$)"
+
+  # If comment/tagging isn't available, treat "shape present" as OK (idempotent)
+  if [ "$UFW_HAS_COMMENT" -eq 0 ]; then
+    if ufw_normalized_numbered_lines | grep -Eq "$want_re"; then
+      log "UFW: OK (allow ${port}/tcp from ${cidr} present; tagging unavailable)"
+      return 0
+    fi
+    log "UFW: ensuring allow ${port}/tcp from ${cidr} (tagging unavailable)"
+    ufw_allow_with_comment "$tag" "$human" allow from "$cidr" to any port "$port" proto tcp
+    return 0
+  fi
 
   if ufw_rule_present_with_tag "$want_re" "$tag"; then
     log "UFW: OK (tagged allow ${port}/tcp from ${cidr})"
@@ -423,6 +443,32 @@ ensure_deny_anywhere_for_port() {
   # - "9428/tcp DENY IN Anywhere (v6)"
   # - "9428/tcp (v6) DENY IN Anywhere (v6)"
   want_v6="^${port}/tcp([[:space:]]+\\(v6\\))?[[:space:]]+DENY IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
+
+  # If comment/tagging isn't available, treat "shape present" as OK (idempotent).
+  # Note: for v6 deny, UFW prints "Anywhere (v6)" in the destination, and ufw deny <port>/tcp
+  # will typically create both v4+v6 rules over time. We only add if missing.
+  if [ "$UFW_HAS_COMMENT" -eq 0 ]; then
+    local have_v4=0 have_v6=0
+
+    if ufw_normalized_numbered_lines | grep -Eq "$want_v4"; then have_v4=1; fi
+    if ufw_normalized_numbered_lines | grep -Eq "$want_v6"; then have_v6=1; fi
+
+    if [ "$have_v4" -eq 1 ]; then
+      log "UFW: OK (deny ${port}/tcp Anywhere present; tagging unavailable)"
+    else
+      log "UFW: ensuring deny ${port}/tcp Anywhere (tagging unavailable)"
+      ufw_deny_with_comment "$tag" "$human" deny "${port}/tcp"
+    fi
+
+    if [ "$have_v6" -eq 1 ]; then
+      log "UFW: OK (deny ${port}/tcp Anywhere (v6) present; tagging unavailable)"
+    else
+      log "UFW: ensuring deny ${port}/tcp Anywhere (v6) (tagging unavailable)"
+      ufw_deny_with_comment "$tag" "$human" deny "${port}/tcp"
+    fi
+
+    return 0
+  fi
 
   if ufw_rule_present_with_tag "$want_v4" "$tag"; then
     log "UFW: OK (tagged deny ${port}/tcp Anywhere)"
@@ -494,14 +540,14 @@ enforce_inbound_exposure_policy() {
   delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere \\(v6\\)([[:space:]]|$)"
   delete_ufw_rules_matching_line_regex "^${SSH_PORT}/tcp[[:space:]]+ALLOW IN[[:space:]]+Anywhere([[:space:]]|$)"
 
-  # 3) Ensure desired IPv4 allows (tagged)
+  # 3) Ensure desired IPv4 allows (tagged when possible; shape-based idempotent otherwise)
   ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$GRAFANA_PORT" "grafana-lan" "Grafana UI from LAN"
   ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$VLOGS_UI_PORT" "victorialogs-ui-lan" "VictoriaLogs UI from LAN"
 
   ensure_allow_from_cidr_to_port_v4 "$ADMIN_IPV4" "$SSH_PORT" "ssh-admin" "SSH admin IPv4"
   ensure_allow_from_cidr_to_port_v4 "$LAN_CIDR" "$SSH_PORT" "ssh-lan" "SSH LAN IPv4"
 
-  # 4) Ensure explicit deny-anywhere for Grafana/VLogs to avoid accidental future broad allow (tagged)
+  # 4) Ensure explicit deny-anywhere for Grafana/VLogs to avoid accidental future broad allow (tagged when possible)
   ensure_deny_anywhere_for_port "$GRAFANA_PORT" "deny-grafana-anywhere" "Block Grafana except LAN"
   ensure_deny_anywhere_for_port "$VLOGS_UI_PORT" "deny-vlogs-ui-anywhere" "Block VictoriaLogs UI except LAN"
 }
