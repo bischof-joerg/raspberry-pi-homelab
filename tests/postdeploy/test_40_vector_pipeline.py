@@ -1,174 +1,150 @@
+"""
+Postdeploy: Vector docker_logs -> VictoriaLogs.
+
+Emits a short burst of logfmt lines from a temporary container and asserts:
+- the marker arrives in VictoriaLogs
+- Vector extracted structured fields (e2e_token, e2e_seq) from logfmt
+"""
+
+from __future__ import annotations
+
+import json
 import os
 import subprocess
 import time
 import uuid
+from typing import Any
 
 import pytest
 import requests
 
-# --- Configuration via env (keep fast on Pi) ---------------------------------
+pytestmark = pytest.mark.postdeploy
 
-# Vector container discovery
-VECTOR_CONTAINER_CANDIDATES = os.getenv(
-    "VECTOR_CONTAINER_CANDIDATES",
-    "homelab-home-prod-mon-vector-1,homelab-home-prod-mon-vector-0,vector",
-).split(",")
+if os.getenv("POSTDEPLOY_ON_TARGET") != "1":
+    pytest.skip(
+        "postdeploy tests must run on target (set POSTDEPLOY_ON_TARGET=1)",
+        allow_module_level=True,
+    )
 
-# VictoriaLogs query endpoint (host-reachable)
-VLOGS_HOST = os.getenv("VLOGS_HOST", "http://127.0.0.1:9428")
+VLOGS_QUERY_URL = os.getenv("VLOGS_QUERY_URL", "http://127.0.0.1:9428/select/logsql/query")
 
-# Total time budget for the end-to-end assertion
-VECTORE2E_TIMEOUT_S = int(os.getenv("VECTOR_E2E_TIMEOUT_S", "60"))
+# Must match Vector's docker source include_labels / normalize labels.
+STACK = os.getenv("VECTORE2E_STACK", "homelab-home-prod-mon")
+SERVICE = os.getenv("VECTORE2E_SERVICE", "vector-e2e")
 
-# Emitter behavior (fast + avoids docker_logs attach race)
-VECTORE2E_START_DELAY_S = float(os.getenv("VECTOR_E2E_START_DELAY_S", "1.0"))
-VECTORE2E_BURST_LINES = int(os.getenv("VECTOR_E2E_BURST_LINES", "40"))
-VECTORE2E_TAIL_HOLD_S = float(os.getenv("VECTOR_E2E_TAIL_HOLD_S", "2.0"))
+# Keep noise low by default.
+BURST_LINES = int(os.getenv("VECTORE2E_BURST_LINES", "30"))
+BUSYBOX_IMAGE = os.getenv("VECTORE2E_IMAGE", "busybox:1.36")
 
-# Retry logic: keep the worst-case upper bound similar to the old behavior
-# (default 5 * 40 = 200 lines), but reduce noise in the common "first try succeeds" case.
-VECTORE2E_MAX_ATTEMPTS = int(os.getenv("VECTOR_E2E_MAX_ATTEMPTS", "5"))
+QUERY_WINDOW = os.getenv("VECTORE2E_QUERY_WINDOW", "5m")
+TIMEOUT_S = float(os.getenv("VECTORE2E_TIMEOUT_S", "25"))
+POLL_S = float(os.getenv("VECTORE2E_POLL_S", "0.8"))
 
 
-def _run(cmd: list[str], check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        cmd,
-        check=check,
+def _run(args: list[str], *, timeout: float | None = None) -> str:
+    res = subprocess.run(
+        args,
+        check=True,
+        capture_output=True,
         text=True,
-        stdout=subprocess.PIPE if capture else None,
-        stderr=subprocess.STDOUT if capture else None,
+        timeout=timeout,
     )
+    return res.stdout
 
 
-def _pick_vector_container() -> str:
-    for name in VECTOR_CONTAINER_CANDIDATES:
-        name = name.strip()
-        if not name:
-            continue
-        cp = _run(["docker", "inspect", name], check=False, capture=True)
-        if cp.returncode == 0:
-            return name
-    raise RuntimeError(
-        f"Could not find Vector container. Tried: {', '.join(VECTOR_CONTAINER_CANDIDATES)}"
-    )
-
-
-def _emit_burst_docker_logs(token: str, *, run_id: str, attempt: int) -> None:
+def _emit_docker_logs(token: str) -> None:
     """
-    Emit many log lines quickly, but keep the container alive briefly.
-    This avoids the attach race with docker_logs and reduces test runtime.
-    """
-    cname = f"vector-test-vector-e2e-{run_id[:8]}-{attempt}"
+    Emit log lines from an ephemeral container.
 
-    # Emit logfmt for readability + optional parsing in Vector.
-    # Keep the token present as `marker=<token>` so the query stays trivial.
-    script = (
-        f"sleep {VECTORE2E_START_DELAY_S}; "
-        f"i=1; while [ $i -le {VECTORE2E_BURST_LINES} ]; do "
-        f"echo 'event=vector_e2e marker={token} run_id={run_id} attempt={attempt} seq='\"$i\"' total={VECTORE2E_BURST_LINES}'; "
-        "i=$((i+1)); "
-        "done; "
-        f"sleep {VECTORE2E_TAIL_HOLD_S}"
-    )
+    Labels are set so that:
+    - Vector's docker source include_labels picks it up
+    - normalize can derive stable stack/service labels
+    """
+    script = r"""
+      i=1
+      while [ "$i" -le "$LINES" ]; do
+        # logfmt for readability + parsability
+        echo "event=vector_e2e token=$TOKEN seq=$i"
+        i=$((i+1))
+      done
+    """.strip()
 
     _run(
         [
             "docker",
             "run",
             "--rm",
-            "--name",
-            cname,
             "--label",
-            "com.docker.compose.project=homelab-home-prod-mon",
+            f"com.docker.compose.project={STACK}",
             "--label",
-            "com.docker.compose.service=vector-e2e",
-            "busybox:1.36",
+            f"com.docker.compose.service={SERVICE}",
+            "-e",
+            f"TOKEN={token}",
+            "-e",
+            f"LINES={BURST_LINES}",
+            BUSYBOX_IMAGE,
             "sh",
             "-lc",
             script,
         ],
-        check=True,
+        timeout=30,
     )
 
 
-def _vlogs_query(q: str) -> list[dict]:
-    """
-    Query VictoriaLogs LogSQL endpoint. Returns parsed JSON lines.
-    """
-    url = f"{VLOGS_HOST}/select/logsql/query"
-    resp = requests.post(url, data={"query": q}, timeout=10)
+def _query_vlogs(query: str) -> list[dict[str, Any]]:
+    resp = requests.post(VLOGS_QUERY_URL, data={"query": query}, timeout=6)
     resp.raise_for_status()
 
-    lines = []
+    rows: list[dict[str, Any]] = []
     for line in resp.text.splitlines():
         line = line.strip()
         if not line:
             continue
-        lines.append(resp.json() if line.startswith("{") and line.endswith("}") else None)
-
-    # VictoriaLogs returns newline-delimited JSON objects (each line is JSON)
-    out: list[dict] = []
-    for line in resp.text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        out.append(requests.models.complexjson.loads(line))
-    return out
+        rows.append(json.loads(line))
+    return rows
 
 
-def _wait_for_token_in_vlogs(token: str, timeout_s: int) -> None:
-    """
-    Poll VictoriaLogs for the marker token to show up in the last N minutes.
-    """
-    deadline = time.time() + timeout_s
-    last_resp: list[dict] | None = None
-    last_err: Exception | None = None
+def _wait_for_token(token: str) -> dict[str, Any]:
+    deadline = time.monotonic() + TIMEOUT_S
 
-    # Search the last 10 minutes for marker presence
-    q = f'_time:10m "{token}" | limit 5'
+    # Enforce that Vector extracted structured fields from logfmt.
+    q = (
+        f'{{stack="{STACK}",service="{SERVICE}"}} '
+        f'e2e_token:"{token}" _time:{QUERY_WINDOW} | limit 1'
+    )
 
-    while time.time() < deadline:
-        try:
-            last_resp = _vlogs_query(q)
-            for obj in last_resp:
-                msg = obj.get("_msg", "")
-                if token in msg:
-                    return
-        except Exception as e:
-            last_err = e
+    while time.monotonic() < deadline:
+        rows = _query_vlogs(q)
+        if rows:
+            return rows[0]
+        time.sleep(POLL_S)
 
-        time.sleep(2)
+    # Helpful diagnostics: show recent logs from the same stream.
+    sample_q = (
+        f'{{stack="{STACK}",service="{SERVICE}"}} '
+        f"_time:{QUERY_WINDOW} | sort by (_time) desc | limit 5"
+    )
+    sample = _query_vlogs(sample_q)
 
-    diag = {
-        "query": q,
-        "last_error": repr(last_err) if last_err else None,
-        "last_response_sample": last_resp[:2] if last_resp else None,
-    }
-    raise AssertionError(f"Did not find token in VictoriaLogs within {timeout_s}s. diag={diag}")
+    pytest.fail(
+        "Vector → VictoriaLogs e2e marker not found.\n"
+        f"- Expected: e2e_token={token} within _time:{QUERY_WINDOW}\n"
+        f"- Query: {q}\n\n"
+        "If sample rows contain the token in _msg but NOT e2e_token, "
+        "Vector likely hasn't reloaded the updated remap (send SIGHUP or recreate the container).\n\n"
+        f"Sample (last 5 rows):\n{json.dumps(sample, indent=2)[:4000]}"
+    )
+    raise AssertionError("unreachable")
 
 
-@pytest.mark.postdeploy
-def test_vector_end_to_end_dockerlogs_to_victorialogs():
-    vector_name = _pick_vector_container()
+def test_vector_docker_logs_reach_victorialogs() -> None:
+    # Fail fast if VictoriaLogs isn't reachable/authenticated.
+    _ = _query_vlogs("* | limit 1")
 
-    # 1) Validate vector config inside container
-    _run(["docker", "exec", vector_name, "vector", "validate", "/etc/vector/vector.yaml"])
+    token = f"vector-e2e-{uuid.uuid4().hex[:12]}"
+    _emit_docker_logs(token)
+    row = _wait_for_token(token)
 
-    token = f"vector-e2e-{uuid.uuid4()}"
-    run_id = token.removeprefix("vector-e2e-")
-
-    # 2) Emit a burst of logs (retry a few times to reduce noise in the common case)
-    last_err: AssertionError | None = None
-    per_attempt_timeout_s = max(5, int(VECTORE2E_TIMEOUT_S / max(1, VECTORE2E_MAX_ATTEMPTS)))
-
-    for attempt in range(1, VECTORE2E_MAX_ATTEMPTS + 1):
-        _emit_burst_docker_logs(token, run_id=run_id, attempt=attempt)
-        try:
-            _wait_for_token_in_vlogs(token, timeout_s=per_attempt_timeout_s)
-            return
-        except AssertionError as e:
-            last_err = e
-
-    # 3) Verify it arrives in VictoriaLogs (final error)
-    assert last_err is not None
-    raise last_err
+    msg = str(row.get("_msg", ""))
+    assert token in msg, f"token missing from _msg: {msg!r}"
+    assert row.get("e2e_token") == token, f"e2e_token missing/mismatch: {row.get('e2e_token')!r}"

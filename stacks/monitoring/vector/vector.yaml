@@ -8,9 +8,8 @@ sources:
     type: docker_logs
     docker_host: unix:///var/run/docker.sock
     include_labels:
-      # Filter to only include logs from the "homelab-home-prod-mon" compose project.
-      # Note: the postdeploy Vector E2E test intentionally sets this label on its
-      # short-lived emitter container so the pipeline is exercised end-to-end.
+      # Only ingest logs from the "homelab-home-prod-mon" stack.
+      # Postdeploy e2e emits a labeled container on purpose so it is included.
       - com.docker.compose.project=homelab-home-prod-mon
   host_journald:
     type: journald
@@ -30,8 +29,6 @@ transforms:
         "systemd-udevd.service",
       ]
 
-      # Keep only entries that have a systemd unit and are in the allowed list.
-      # (Most unit-scoped messages have _SYSTEMD_UNIT set.)
       if !exists(._SYSTEMD_UNIT) {
         abort
       }
@@ -63,24 +60,16 @@ transforms:
       .message = to_string(.message) ?? to_string(.log) ?? to_string(.MESSAGE) ?? ""
 
       # Drop known benign cAdvisor noise on Raspberry Pi (no PC/BIOS DMI)
-      # Example: "gce.go:45] Error while reading product_name: open /sys/class/dmi/id/product_name: no such file or directory"
       if contains(.message, "Error while reading product_name: open /sys/class/dmi/id/product_name") {
         abort
       }
 
       # Timestamp field for VictoriaLogs (_time_field=timestamp)
-      # - docker_logs usually provides .timestamp
-      # - journald provides _SOURCE_REALTIME_TIMESTAMP (microseconds since epoch) and/or __REALTIME_TIMESTAMP
-      # Timestamp field for VictoriaLogs (_time_field=timestamp)
-      # docker_logs: .timestamp is typically RFC3339 string
-      # journald: _SOURCE_REALTIME_TIMESTAMP is decimal string microseconds since epoch (UTC)
       .ts = null
       if exists(.timestamp) {
-        # docker_logs usually provides an RFC3339-like timestamp string; "%+" is the common "any" parser
         .ts = parse_timestamp(to_string(.timestamp) ?? "", "%+") ?? null
       }
       if is_null(.ts) && exists(._SOURCE_REALTIME_TIMESTAMP) {
-        # journald: microseconds since epoch as decimal string
         us = to_int(to_string(._SOURCE_REALTIME_TIMESTAMP) ?? "") ?? null
         if !is_null(us) {
           .ts = from_unix_timestamp(us, unit: "microseconds") ?? null
@@ -94,36 +83,29 @@ transforms:
       del(.ts)
 
       # 2. Host & Container
-      # Host (prefer env injection; fallback to container hostname)
       .host = get_env_var("HOST_NODE_NAME") ?? get_env_var("HOSTNAME") ?? "unknown"
-      # Container / identity
-      # - docker_logs: .container_name, labels
-      # - journald: _SYSTEMD_UNIT / SYSLOG_IDENTIFIER
       .container_name = to_string(.container_name) ?? to_string(.docker.container_name) ?? to_string(._SYSTEMD_UNIT) ?? to_string(.SYSLOG_IDENTIFIER) ?? "unknown"
 
-      # 3. Stack & Service Labels: Compose metadata if present (docker); otherwise derive from unit
+      # 3. Stack & Service Labels
       .stack = to_string(.label."com.docker.compose.project") ?? to_string(.labels."com.docker.compose.project") ?? "homelab-home-prod"
       .service = to_string(.label."com.docker.compose.service") ?? to_string(.labels."com.docker.compose.service") ?? .container_name
 
-      # Fix for E651: Einfache Zuweisung, da .namespace vorher nicht existiert
       .namespace = "prod"
 
-      # 3b. Enrich postdeploy Vector E2E marker events.
-      # The E2E emitter prints logfmt like:
-      #   event=vector_e2e marker=... run_id=... attempt=... seq=... total=...
-      # Keep it cheap: only parse if we detect the marker.
-      msg = to_string(.message) ?? ""
-      if contains(msg, "event=vector_e2e") {
+      # 3b. Postdeploy e2e markers (logfmt): extract token/seq into dedicated fields.
+      # Expected message shape: event=vector_e2e token=<...> seq=<n>
+      if match(.message, r'^event=vector_e2e\b') {
+        # Ensure stable service label even if compose service label is missing.
         .service = "vector-e2e"
-        .vector_e2e = true
 
-        kv, err = parse_logfmt(msg)
+        e2e, err = parse_logfmt(.message)
         if err == null {
-          . = merge(., kv)
+          .e2e_token = to_string(e2e.token) ?? null
+          .e2e_seq = to_int(to_string(e2e.seq) ?? "") ?? null
         }
       }
 
-      # 4. Basic level normalization (avoid false positives like "errors_total")
+      # 4. Basic level normalization
       tmp = downcase(to_string(.level) ?? "")
       if tmp != "" {
         .level = tmp
@@ -140,12 +122,12 @@ transforms:
         }
       }
 
-      # 5. Keep original unit (useful for queries), if present
+      # 5. Keep original unit, if present
       if exists(._SYSTEMD_UNIT) {
         .systemd_unit = to_string(._SYSTEMD_UNIT) ?? null
       }
 
-      # 6. Cleanup: Reduce noise / remove bulky nested structures commonly present on docker events
+      # 6. Cleanup
       del(.label)
       del(.labels)
       del(.docker)
@@ -154,13 +136,12 @@ transforms:
       del(.container_id)
       del(.container_created_at)
       del(.source_type)
-      del(.stream) # stderr/stdout ist oft redundant, wenn level gesetzt ist
+      del(.stream)
 
 sinks:
   vlogs:
     type: http
     inputs: ["drop_cadvisor_sysinfo_noise"]
-    # yamllint disable-line rule:line-length
     uri: "http://victorialogs:9428/insert/jsonline?_stream_fields=host,stack,service,namespace,container_name&_msg_field=message&_time_field=timestamp"
     compression: gzip
     encoding:
