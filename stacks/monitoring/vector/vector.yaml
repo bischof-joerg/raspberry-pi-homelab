@@ -46,8 +46,7 @@ transforms:
       type: vrl
       source: |
         msg = to_string(.message) ?? ""
-        is_noise = (.service == "cadvisor") && (contains(msg, "Found node without any CPU") || contains(msg, "Found node without cache information"))
-        !is_noise
+        !( .service == "cadvisor" && ( contains(msg, "Found node without any CPU") || contains(msg, "Found node without cache information")))
 
   normalize:
     type: remap
@@ -110,11 +109,11 @@ transforms:
         .level = tmp
       } else {
         m = downcase(.message)
-        if match_regex(m, r'\berror\b') {
+        if match(m, r'\berror\b') {
           .level = "error"
-        } else if match_regex(m, r'\bwarn(ing)?\b') {
+        } else if match(m, r'\bwarn(ing)?\b') {
           .level = "warn"
-        } else if match_regex(m, r'\bdebug\b') {
+        } else if match(m, r'\bdebug\b') {
           .level = "debug"
         } else {
           .level = "info"
