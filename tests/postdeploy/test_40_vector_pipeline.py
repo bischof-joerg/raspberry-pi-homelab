@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import textwrap
 import time
 import uuid
 from typing import Any
@@ -40,6 +41,12 @@ QUERY_WINDOW = os.getenv("VECTORE2E_QUERY_WINDOW", "5m")
 TIMEOUT_S = float(os.getenv("VECTORE2E_TIMEOUT_S", "25"))
 POLL_S = float(os.getenv("VECTORE2E_POLL_S", "0.8"))
 
+# Avoid docker_logs attach race for very short-lived containers:
+# - wait a moment before emitting
+# - keep the container alive briefly after emitting
+START_DELAY_S = float(os.getenv("VECTORE2E_START_DELAY_S", "1.0"))
+TAIL_HOLD_S = float(os.getenv("VECTORE2E_TAIL_HOLD_S", "2.0"))
+
 
 def _run(args: list[str], *, timeout: float | None = None) -> str:
     res = subprocess.run(
@@ -60,14 +67,19 @@ def _emit_docker_logs(token: str) -> None:
     - Vector's docker source include_labels picks it up
     - normalize can derive stable stack/service labels
     """
-    script = r"""
+    script = textwrap.dedent(f"""
+      set -e
+      sleep {START_DELAY_S}
+
       i=1
       while [ "$i" -le "$LINES" ]; do
         # logfmt for readability + parsability
         echo "event=vector_e2e token=$TOKEN seq=$i"
         i=$((i+1))
       done
-    """.strip()
+
+      sleep {TAIL_HOLD_S}
+    """).strip()
 
     _run(
         [
