@@ -32,7 +32,7 @@ services:
       options:
         max-size: "10m"
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     cap_drop: [ALL]
     read_only: true
     tmpfs:
@@ -128,7 +128,7 @@ services:
     labels:
       - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     cap_drop: [ALL]
     read_only: false
     # no mpfs: - /tmp section as the alertmanager-config-render service is a one-shot initialization container (it runs once and exits).
@@ -164,7 +164,7 @@ services:
         max-size: "10m"
         max-file: "3"
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     cap_drop: [ALL]
     read_only: true
     tmpfs:
@@ -201,7 +201,7 @@ services:
       options:
         max-size: "10m"
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     cap_drop: [ALL]
     read_only: true
     tmpfs:
@@ -242,7 +242,7 @@ services:
       options:
         max-size: "10m"
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     cap_drop: [ALL]
     read_only: true
     tmpfs:
@@ -284,7 +284,7 @@ services:
       options:
         max-size: "10m"
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     cap_drop: [ALL]
     # Grafana needs write access to /var/lib/grafana (volume), so not fully read-only
     tmpfs:
@@ -310,7 +310,7 @@ services:
       options:
         max-size: "5m"
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     cap_drop: [ALL]
     read_only: true
     tmpfs:
@@ -374,7 +374,7 @@ services:
       - /tmp
     cap_drop: [ALL]
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     volumes:
       - victorialogs-data:/vlogs
 
@@ -401,7 +401,7 @@ services:
       - /tmp
     cap_drop: [ALL]
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     volumes:
       - /srv/data/stacks/monitoring/vector:/var/lib/vector
       - ../vector/vector.yaml:/etc/vector/vector.yaml:ro
