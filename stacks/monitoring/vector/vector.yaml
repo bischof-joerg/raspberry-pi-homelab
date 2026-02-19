@@ -36,6 +36,23 @@ transforms:
         abort
       }
 
+  # drop cadvisor noise about missing DMI info on Raspberry Pi (no PC/BIOS DMI)
+  # see for example issue https://github.com/google/cadvisor/issues/3828
+  # establish chain: normalize → drop_cadvisor_sysinfo_noise → vlogs
+  drop_cadvisor_sysinfo_noise:
+    type: filter
+    inputs: ["normalize"]
+    condition:
+      type: vrl
+      source: |
+        !(
+          .service == "cadvisor" &&
+          (
+            contains(string!(.message), "Found node without any CPU") ||
+            contains(string!(.message), "Found node without cache information")
+          )
+        )
+
   normalize:
     type: remap
     inputs: ["docker", "filter_journald_units"]
@@ -122,7 +139,7 @@ transforms:
 sinks:
   vlogs:
     type: http
-    inputs: ["normalize"]
+    inputs: ["drop_cadvisor_sysinfo_noise"]
     # yamllint disable-line rule:line-length
     uri: "http://victorialogs:9428/insert/jsonline?_stream_fields=host,stack,service,namespace,container_name&_msg_field=message&_time_field=timestamp"
     compression: gzip
