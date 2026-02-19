@@ -104,16 +104,21 @@ transforms:
       # Fix for E651: Einfache Zuweisung, da .namespace vorher nicht existiert
       .namespace = "prod"
 
-      # 4. Basic level normalization (flat & safe)
+      # 4. Basic level normalization (avoid false positives like "errors_total")
       tmp = downcase(to_string(.level) ?? "")
       if tmp != "" {
         .level = tmp
       } else {
-        .level = "info"
         m = downcase(.message)
-        if contains(m, "debug") { .level = "debug" }
-        if contains(m, "warn")  { .level = "warn" }
-        if contains(m, "error") { .level = "error" }
+        if match_regex(m, r'\berror\b') {
+          .level = "error"
+        } else if match_regex(m, r'\bwarn(ing)?\b') {
+          .level = "warn"
+        } else if match_regex(m, r'\bdebug\b') {
+          .level = "debug"
+        } else {
+          .level = "info"
+        }
       }
 
       # 5. Keep original unit (useful for queries), if present
