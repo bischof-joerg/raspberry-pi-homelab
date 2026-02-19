@@ -1,7 +1,10 @@
-# tests/postdeploy/test_22_victorialogs_stats_query.py
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
+import time
+import uuid
 from typing import Any
 
 import pytest
@@ -74,10 +77,82 @@ def _row_count(row: dict[str, Any]) -> int:
     return 0
 
 
+def _vlogs_query(base: str, query: str, timeout_s: float) -> str:
+    r = requests.post(
+        f"{base}/select/logsql/query",
+        data={"query": query},
+        timeout=timeout_s,
+    )
+    r.raise_for_status()
+    return r.text or ""
+
+
+def _emit_docker_log_token(token: str) -> None:
+    """
+    Emit a single log line that Vector will pick up under your include_labels filter.
+    We attach the Compose project label so it is NOT filtered out.
+    """
+    if not shutil.which("docker"):
+        pytest.skip("docker not available on PATH")
+
+    project = (
+        os.environ.get("COMPOSE_PROJECT_NAME", "homelab-home-prod-mon").strip()
+        or "homelab-home-prod-mon"
+    )
+
+    # Keep it minimal/fast and avoid needing network access
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--label",
+        f"com.docker.compose.project={project}",
+        "--label",
+        "com.docker.compose.service=vlogs-stats-smoke",
+        "alpine:3.20",
+        "sh",
+        "-lc",
+        f'echo "{token}"',
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _wait_for_token_in_vlogs(base: str, token: str, timeout_s: float) -> None:
+    """
+    Poll VictoriaLogs until the token appears in _msg. Needed because ingestion is async
+    (docker -> vector -> victorialogs).
+    """
+    deadline = time.time() + timeout_s
+    last = ""
+    # Token has no spaces => quoting ok. Keep LogsQL simple.
+    q = f'_time:10m _msg:"{token}" | limit 5'
+
+    interval = 0.5
+    while time.time() < deadline:
+        try:
+            last = _vlogs_query(base, q, timeout_s=min(5.0, timeout_s))
+            if token in last:
+                return
+        except Exception as e:  # noqa: BLE001
+            last = str(e)
+
+        time.sleep(interval)
+        interval = min(interval * 1.5, 3.0)
+
+    raise AssertionError(
+        "Token did not appear in VictoriaLogs within timeout.\n"
+        f"base={base}\nquery={q!r}\nlast={last[:1200]!r}"
+    )
+
+
 @pytest.mark.postdeploy
 def test_victorialogs_stats_query_has_nonzero_service_bucket() -> None:
     """
     Robust smoke:
+    - triggers a log line (so stats aren't empty on fresh systems)
+    - waits until it is ingested into VictoriaLogs (async pipeline)
     - calls /select/logsql/stats_query
     - parses JSON
     - asserts at least one bucket with non-empty service has count > 0
@@ -93,9 +168,17 @@ def test_victorialogs_stats_query_has_nonzero_service_bucket() -> None:
 
     base = _base_url()
 
-    # 30m window to avoid flakiness on quiet systems
-    query = os.environ.get("VLOGS_STATS_QUERY", "_time:30m | stats by (service) count()")
     timeout_s = float(os.environ.get("VLOGS_TIMEOUT_SECONDS", "5"))
+    # Separate timeout for "seed log + wait", keep it modest but > pipeline latency
+    seed_timeout_s = float(os.environ.get("VLOGS_SEED_TIMEOUT_SECONDS", "20"))
+
+    # 0) Seed: generate one known log event that should get a service label
+    token = f"vlogs-stats-seed-{uuid.uuid4()}"
+    _emit_docker_log_token(token)
+    _wait_for_token_in_vlogs(base, token, timeout_s=seed_timeout_s)
+
+    # 1) Stats query
+    query = os.environ.get("VLOGS_STATS_QUERY", "_time:30m | stats by (service) count()")
 
     r = requests.post(
         f"{base}/select/logsql/stats_query",
@@ -117,7 +200,6 @@ def test_victorialogs_stats_query_has_nonzero_service_bucket() -> None:
     for row in rows:
         svc = _row_service(row)
         if not svc:
-            # ignore empty service buckets like service=""
             continue
         if _row_count(row) > 0:
             nonzero_services.append(svc)
@@ -125,5 +207,6 @@ def test_victorialogs_stats_query_has_nonzero_service_bucket() -> None:
     assert nonzero_services, (
         "No service bucket with count>0 returned by VictoriaLogs stats_query.\n"
         f"base={base}\nquery={query}\n"
+        f"seed_token={token}\n"
         f"sample_json={str(payload)[:800]}"
     )
