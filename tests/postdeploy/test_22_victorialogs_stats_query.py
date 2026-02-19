@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import time
 import uuid
@@ -87,36 +86,30 @@ def _vlogs_query(base: str, query: str, timeout_s: float) -> str:
     return r.text or ""
 
 
-def _emit_docker_log_token(token: str) -> None:
-    """
-    Emit a single log line that Vector will pick up under your include_labels filter.
-    We attach the Compose project label so it is NOT filtered out.
-    """
-    if not shutil.which("docker"):
-        pytest.skip("docker not available on PATH")
+COMPOSE_PROJECT = (
+    os.environ.get("COMPOSE_PROJECT", "homelab-home-prod-mon").strip() or "homelab-home-prod-mon"
+)
 
-    project = (
-        os.environ.get("COMPOSE_PROJECT_NAME", "homelab-home-prod-mon").strip()
-        or "homelab-home-prod-mon"
+
+def _emit_seed_log_token(token: str) -> None:
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--label",
+            f"com.docker.compose.project={COMPOSE_PROJECT}",
+            "--label",
+            "com.docker.compose.service=vlogs-seed",
+            "alpine:3.20",
+            "sh",
+            "-lc",
+            f"echo {token}",
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
     )
-
-    # Keep it minimal/fast and avoid needing network access
-    cmd = [
-        "docker",
-        "run",
-        "--rm",
-        "--network",
-        "none",
-        "--label",
-        f"com.docker.compose.project={project}",
-        "--label",
-        "com.docker.compose.service=vlogs-stats-smoke",
-        "alpine:3.20",
-        "sh",
-        "-lc",
-        f'echo "{token}"',
-    ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def _wait_for_token_in_vlogs(base: str, token: str, timeout_s: float) -> None:
@@ -174,7 +167,7 @@ def test_victorialogs_stats_query_has_nonzero_service_bucket() -> None:
 
     # 0) Seed: generate one known log event that should get a service label
     token = f"vlogs-stats-seed-{uuid.uuid4()}"
-    _emit_docker_log_token(token)
+    _emit_seed_log_token(token)
     _wait_for_token_in_vlogs(base, token, timeout_s=seed_timeout_s)
 
     # 1) Stats query
