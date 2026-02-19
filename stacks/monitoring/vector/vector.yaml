@@ -45,13 +45,15 @@ transforms:
     condition:
       type: vrl
       source: |
-        !(
-          .service == "cadvisor" &&
+        msg = to_string(.message) ?? ""
+        is_noise =
+          (.service == "cadvisor") &&
           (
-            contains(string!(.message), "Found node without any CPU") ||
-            contains(string!(.message), "Found node without cache information")
+            contains(msg, "Found node without any CPU") ||
+            contains(msg, "Found node without cache information")
           )
-        )
+
+        !is_noise
 
   normalize:
     type: remap
