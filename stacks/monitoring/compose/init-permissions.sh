@@ -134,12 +134,12 @@ main() {
   # Grafana runs as UID/GID 472 in official image.
   chown -R "${graf_uid}:${graf_gid}" "$grafana_dir"
   chmod 0750 "$grafana_dir"
-  chmod -R u+rwX,go-rwx "$grafana_dir"
+  chmod -R u+rwX,g+rX,o-rwx "$grafana_dir"
 
   # Alertmanager runs as nobody:nogroup (or nobody:<primary-group> on some distros).
   chown -R "${prom_uid}:${prom_gid}" "$alertmanager_dir"
   chmod 0750 "$alertmanager_dir"
-  chmod -R u+rwX,go-rwx "$alertmanager_dir"
+  chmod -R u+rwX,g+rX,o-rwx "$alertmanager_dir"
 
   # Rendered Alertmanager config directory (written by config-render job as root, mounted RO into alertmanager).
   chown -R 0:0 "$alertmanager_cfg_dir"
@@ -149,19 +149,19 @@ main() {
   # Must be writable for non-root Vector (journald checkpoints/state, etc.).
   chown -R "${vector_uid}:${vector_gid}" "$vector_dir"
   chmod 0750 "$vector_dir"
-  chmod -R u+rwX,go-rwx "$vector_dir"
+  chmod -R u+rwX,g+rX,o-rwx "$vector_dir"
 
   # VictoriaMetrics TSDB dir (bind-mounted to /victoria-metrics-data).
   # Default owner root:root; override via VICTORIAMETRICS_UID/GID if you run the container non-root.
   chown -R "${victoriametrics_uid}:${victoriametrics_gid}" "$victoriametrics_dir"
   chmod 0750 "$victoriametrics_dir"
-  chmod -R u+rwX,go-rwx "$victoriametrics_dir"
+  chmod -R u+rwX,g+rX,o-rwx "$victoriametrics_dir"
 
   # VictoriaLogs storage dir (bind-mounted to /vlogs).
   # Default owner root:root; override via VICTORIALOGS_UID/GID if you run the container non-root.
   chown -R "${victorialogs_uid}:${victorialogs_gid}" "$victorialogs_dir"
   chmod 0750 "$victorialogs_dir"
-  chmod -R u+rwX,go-rwx "$victorialogs_dir"
+  chmod -R u+rwX,g+rX,o-rwx "$victorialogs_dir"
 
   log "init-permissions(apply): done"
 }
