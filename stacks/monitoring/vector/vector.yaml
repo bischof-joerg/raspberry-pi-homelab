@@ -46,13 +46,7 @@ transforms:
       type: vrl
       source: |
         msg = to_string(.message) ?? ""
-        is_noise =
-          (.service == "cadvisor") &&
-          (
-            contains(msg, "Found node without any CPU") ||
-            contains(msg, "Found node without cache information")
-          )
-
+        is_noise = (.service == "cadvisor") && (contains(msg, "Found node without any CPU") || contains(msg, "Found node without cache information"))
         !is_noise
 
   normalize:
