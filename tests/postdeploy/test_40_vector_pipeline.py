@@ -84,7 +84,19 @@ def _emit_burst_docker_logs(token: str) -> None:
     )
 
     _run(
-        ["docker", "run", "--rm", "--name", cname, "busybox:1.36", "sh", "-lc", script],
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            cname,
+            "--label",
+            "com.docker.compose.project=homelab-home-prod-mon",
+            "busybox:1.36",
+            "sh",
+            "-lc",
+            script,
+        ],
         check=True,
     )
 
