@@ -8,7 +8,9 @@ sources:
     type: docker_logs
     docker_host: unix:///var/run/docker.sock
     include_labels:
-      # Filter to only include logs from the "homelab-home-prod-mon" stack and thus exclude logs from temporary containers by test executions
+      # Filter to only include logs from the "homelab-home-prod-mon" compose project.
+      # Note: the postdeploy Vector E2E test intentionally sets this label on its
+      # short-lived emitter container so the pipeline is exercised end-to-end.
       - com.docker.compose.project=homelab-home-prod-mon
   host_journald:
     type: journald
@@ -105,6 +107,21 @@ transforms:
 
       # Fix for E651: Einfache Zuweisung, da .namespace vorher nicht existiert
       .namespace = "prod"
+
+      # 3b. Enrich postdeploy Vector E2E marker events.
+      # The E2E emitter prints logfmt like:
+      #   event=vector_e2e marker=... run_id=... attempt=... seq=... total=...
+      # Keep it cheap: only parse if we detect the marker.
+      msg = to_string(.message) ?? ""
+      if contains(msg, "event=vector_e2e") {
+        .service = "vector-e2e"
+        .vector_e2e = true
+
+        kv, err = parse_logfmt(msg)
+        if err == null {
+          . = merge(., kv)
+        }
+      }
 
       # 4. Basic level normalization (avoid false positives like "errors_total")
       tmp = downcase(to_string(.level) ?? "")
