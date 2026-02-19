@@ -9,7 +9,6 @@ sources:
     docker_host: unix:///var/run/docker.sock
     include_labels:
       # Only ingest logs from the "homelab-home-prod-mon" stack.
-      # Postdeploy e2e emits a labeled container on purpose so it is included.
       - com.docker.compose.project=homelab-home-prod-mon
   host_journald:
     type: journald
@@ -38,18 +37,6 @@ transforms:
         abort
       }
 
-  # drop cadvisor noise about missing DMI info on Raspberry Pi (no PC/BIOS DMI)
-  # see for example issue https://github.com/google/cadvisor/issues/3828
-  # establish chain: normalize → drop_cadvisor_sysinfo_noise → vlogs
-  drop_cadvisor_sysinfo_noise:
-    type: filter
-    inputs: ["normalize"]
-    condition:
-      type: vrl
-      source: |
-        msg = to_string(.message) ?? ""
-        !( .service == "cadvisor" && ( contains(msg, "Found node without any CPU") || contains(msg, "Found node without cache information")))
-
   normalize:
     type: remap
     inputs: ["docker", "filter_journald_units"]
@@ -60,6 +47,7 @@ transforms:
       .message = to_string(.message) ?? to_string(.log) ?? to_string(.MESSAGE) ?? ""
 
       # Drop known benign cAdvisor noise on Raspberry Pi (no PC/BIOS DMI)
+      # This part was already in your normalize block
       if contains(.message, "Error while reading product_name: open /sys/class/dmi/id/product_name") {
         abort
       }
@@ -93,11 +81,8 @@ transforms:
       .namespace = "prod"
 
       # 3b. Postdeploy e2e markers (logfmt): extract token/seq into dedicated fields.
-      # Expected message shape: event=vector_e2e token=<...> seq=<n>
       if match(.message, r'^event=vector_e2e\b') {
-        # Ensure stable service label even if compose service label is missing.
         .service = "vector-e2e"
-
         e2e, err = parse_logfmt(.message)
         if err == null {
           .e2e_token = to_string(e2e.token) ?? null
@@ -138,10 +123,22 @@ transforms:
       del(.source_type)
       del(.stream)
 
+  # drop cadvisor noise about missing DMI info on Raspberry Pi (no PC/BIOS DMI)
+  # establish chain: normalize -> drop_cadvisor_sysinfo_noise -> vlogs
+  drop_cadvisor_sysinfo_noise:
+    type: filter
+    inputs: ["normalize"] # Input must be the normalized stream
+    condition:
+      type: vrl
+      source: |
+        msg = to_string(.message) ?? ""
+        # The filter condition: returns 'false' for logs that should be dropped
+        !( .service == "cadvisor" && ( contains(msg, "Found node without any CPU") || contains(msg, "Found node without cache information")))
+
 sinks:
   vlogs:
     type: http
-    inputs: ["drop_cadvisor_sysinfo_noise"]
+    inputs: ["drop_cadvisor_sysinfo_noise"] # Correct end of the chain
     uri: "http://victorialogs:9428/insert/jsonline?_stream_fields=host,stack,service,namespace,container_name&_msg_field=message&_time_field=timestamp"
     compression: gzip
     encoding:
