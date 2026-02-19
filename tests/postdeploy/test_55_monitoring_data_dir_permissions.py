@@ -118,3 +118,38 @@ def test_monitoring_data_dir_permissions(spec: DirSpec) -> None:
             + "\n".join(f"- {e}" for e in errors)
             + "\nHint: run: sudo bash stacks/monitoring/compose/init-permissions.sh"
         )
+
+
+@pytest.mark.postdeploy
+def test_monitoring_expected_data_directories_exist() -> None:
+    """
+    Guardrail: ensure the expected persistent monitoring directories exist on the host.
+    This catches regressions where bind-mount targets are missing (layout drift).
+    """
+    if os.environ.get("POSTDEPLOY_ON_TARGET", "") != "1":
+        pytest.skip(
+            "POSTDEPLOY_ON_TARGET is not set; this test is intended to run on the Pi target."
+        )
+
+    # Reuse the same directory specs you already use for permission checks.
+    missing: list[Path] = []
+    not_dirs: list[Path] = []
+
+    for spec in _specs():  # assumes your existing helper returns DirSpec entries
+        if not spec.path.exists():
+            missing.append(spec.path)
+        elif not spec.path.is_dir():
+            not_dirs.append(spec.path)
+
+    if missing or not_dirs:
+        msg = ["Expected monitoring data directories are missing or invalid:"]
+        if missing:
+            msg.append("Missing:")
+            msg.extend([f"  - {p}" for p in missing])
+        if not_dirs:
+            msg.append("Not a directory:")
+            msg.extend([f"  - {p}" for p in not_dirs])
+        msg.append(
+            "Hint: run: sudo bash stacks/monitoring/compose/init-permissions.sh (or sudo ./deploy.sh)"
+        )
+        raise AssertionError("\n".join(msg))
