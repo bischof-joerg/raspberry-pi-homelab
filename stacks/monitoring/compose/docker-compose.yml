@@ -356,7 +356,8 @@ services:
     security_opt:
       - no-new-privileges=true
     volumes:
-      - victorialogs-data:/vlogs
+      # Persistent log store (bind mount for deterministic backup/restore)
+      - /srv/data/stacks/monitoring/victorialogs:/vlogs
 
   vector:
     image: timberio/vector:0.53.0-debian
@@ -398,6 +399,3 @@ networks:
   apps:
     external: true
     name: apps
-
-volumes:
-  victorialogs-data:
