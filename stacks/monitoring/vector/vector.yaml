@@ -7,6 +7,8 @@ sources:
   docker:
     type: docker_logs
     docker_host: unix:///var/run/docker.sock
+    include_labels:
+      - com.docker.compose.project=homelab-home-prod-mon
   host_journald:
     type: journald
 
