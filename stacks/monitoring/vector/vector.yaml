@@ -81,12 +81,19 @@ transforms:
       .namespace = "prod"
 
       # 3b. Postdeploy e2e markers (logfmt): extract token/seq into dedicated fields.
-      if match(.message, r'^event=vector_e2e\b') {
+      # Use a more relaxed match (contains instead of starts with ^)
+      # to account for potential prefixing.
+      if match(.message, r'event=vector_e2e\b') {
+        # Ensure stable service label
         .service = "vector-e2e"
+
+        # Try to parse logfmt from the message
+        # We parse it into a temporary variable 'e2e'
         e2e, err = parse_logfmt(.message)
         if err == null {
+          # Use 'string' and 'int' casts safely
           .e2e_token = to_string(e2e.token) ?? null
-          .e2e_seq = to_int(to_string(e2e.seq) ?? "") ?? null
+          .e2e_seq = to_int(e2e.seq) ?? null
         }
       }
 
