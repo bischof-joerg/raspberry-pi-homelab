@@ -45,6 +45,10 @@ PULL_IMAGES="${PULL_IMAGES:-1}"                          # 1|0
 RUN_TESTS="${RUN_TESTS:-1}"                              # 1|0
 BOOTSTRAP_NETWORKS="${BOOTSTRAP_NETWORKS:-1}"            # 1|0
 
+# Docker daemon.json GitOps enforcement
+ENSURE_DOCKER_DAEMON_JSON="${ENSURE_DOCKER_DAEMON_JSON:-1}"  # 1|0
+DOCKER_DAEMON_SCRIPT="${DOCKER_DAEMON_SCRIPT:-$REPO_ROOT/scripts/host/ensure-docker-daemon-json.sh}"
+
 # repo ownership handling
 FIX_REPO_OWNERSHIP="${FIX_REPO_OWNERSHIP:-auto}"         # auto|always|never
 REPO_OWNER_USER="${REPO_OWNER_USER:-admin}"
@@ -88,6 +92,17 @@ check_prereqs() {
   command -v docker >/dev/null 2>&1 || die "docker not found"
   docker compose version >/dev/null 2>&1 || die "docker compose plugin not available"
   [[ -f "$COMPOSE_FILE" ]] || die "Compose file missing: $COMPOSE_FILE"
+}
+
+ensure_docker_daemon_json() {
+  [[ "$ENSURE_DOCKER_DAEMON_JSON" == "1" ]] || {
+    log "docker-daemon: skipped (ENSURE_DOCKER_DAEMON_JSON=0)"
+    return 0
+  }
+  [[ -x "$DOCKER_DAEMON_SCRIPT" ]] || die "docker-daemon script not executable: $DOCKER_DAEMON_SCRIPT"
+  log "docker-daemon: ensure"
+  "$DOCKER_DAEMON_SCRIPT" apply
+  log "docker-daemon: ensure done"
 }
 
 refuse_repo_root_env() {
@@ -287,6 +302,8 @@ main() {
   fix_repo_ownership_if_needed
   refuse_repo_root_env
   check_prereqs
+
+  ensure_docker_daemon_json
 
   validate_secrets_file
 

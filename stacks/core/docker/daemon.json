@@ -1,0 +1,10 @@
+{
+  "default-cgroupns-mode": "host",
+  "metrics-addr": "172.20.0.1:9323",
+  "experimental": true,
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
