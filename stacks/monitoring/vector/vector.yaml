@@ -118,6 +118,28 @@ transforms:
       if exists(._SYSTEMD_UNIT) {
         .systemd_unit = to_string(._SYSTEMD_UNIT) ?? null
       }
+      # Drop very noisy docker/containerd lifecycle chatter (triggered by short-lived containers).
+      if exists(.systemd_unit) && .level == "info" {
+        if .systemd_unit == "docker.service" && contains(.message, "msg=\"ignoring event\"") {
+          abort
+        }
+        if .systemd_unit == "containerd.service" && contains(.message, "cleaning up") {
+          abort
+        }
+      }
+      # Prune raw journald metadata (keep derived fields like systemd_unit, host, level, namespace, stack, service).
+      ks = keys(.)
+      for_each(ks) -> |_i, k| {
+        if match(k, r'^__') || match(k, r'^_') {
+          . = remove!(value: ., path: [k])
+        }
+      }
+
+      # Drop common redundant journald fields (non-fatal if missing).
+      . = remove(value: ., path: ["PRIORITY"]) ?? .
+      . = remove(value: ., path: ["SYSLOG_FACILITY"]) ?? .
+      . = remove(value: ., path: ["SYSLOG_IDENTIFIER"]) ?? .
+
 
       # 6. Cleanup
       del(.label)
