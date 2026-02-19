@@ -8,7 +8,7 @@ sources:
     type: docker_logs
     docker_host: unix:///var/run/docker.sock
     include_labels:
-      # Only ingest logs from the "homelab-home-prod-mon" stack.
+      # Filter to only include logs from the "homelab-home-prod-mon" stack and thus exclude logs from temporary containers by test executions
       - com.docker.compose.project=homelab-home-prod-mon
   host_journald:
     type: journald
@@ -28,6 +28,8 @@ transforms:
         "systemd-udevd.service",
       ]
 
+      # Keep only entries that have a systemd unit and are in the allowed list.
+      # (Most unit-scoped messages have _SYSTEMD_UNIT set.)
       if !exists(._SYSTEMD_UNIT) {
         abort
       }
@@ -36,6 +38,18 @@ transforms:
       if unit == "" || !includes(allowed, unit) {
         abort
       }
+
+  # drop cadvisor noise about missing DMI info on Raspberry Pi (no PC/BIOS DMI)
+  # see for example issue https://github.com/google/cadvisor/issues/3828
+  # establish chain: normalize → drop_cadvisor_sysinfo_noise → vlogs
+  drop_cadvisor_sysinfo_noise:
+    type: filter
+    inputs: ["normalize"]
+    condition:
+      type: vrl
+      source: |
+        msg = to_string(.message) ?? ""
+        !( .service == "cadvisor" && ( contains(msg, "Found node without any CPU") || contains(msg, "Found node without cache information")))
 
   normalize:
     type: remap
@@ -47,17 +61,24 @@ transforms:
       .message = to_string(.message) ?? to_string(.log) ?? to_string(.MESSAGE) ?? ""
 
       # Drop known benign cAdvisor noise on Raspberry Pi (no PC/BIOS DMI)
-      # This part was already in your normalize block
+      # Example: "gce.go:45] Error while reading product_name: open /sys/class/dmi/id/product_name: no such file or directory"
       if contains(.message, "Error while reading product_name: open /sys/class/dmi/id/product_name") {
         abort
       }
 
       # Timestamp field for VictoriaLogs (_time_field=timestamp)
+      # - docker_logs usually provides .timestamp
+      # - journald provides _SOURCE_REALTIME_TIMESTAMP (microseconds since epoch) and/or __REALTIME_TIMESTAMP
+      # Timestamp field for VictoriaLogs (_time_field=timestamp)
+      # docker_logs: .timestamp is typically RFC3339 string
+      # journald: _SOURCE_REALTIME_TIMESTAMP is decimal string microseconds since epoch (UTC)
       .ts = null
       if exists(.timestamp) {
+        # docker_logs usually provides an RFC3339-like timestamp string; "%+" is the common "any" parser
         .ts = parse_timestamp(to_string(.timestamp) ?? "", "%+") ?? null
       }
       if is_null(.ts) && exists(._SOURCE_REALTIME_TIMESTAMP) {
+        # journald: microseconds since epoch as decimal string
         us = to_int(to_string(._SOURCE_REALTIME_TIMESTAMP) ?? "") ?? null
         if !is_null(us) {
           .ts = from_unix_timestamp(us, unit: "microseconds") ?? null
@@ -71,33 +92,21 @@ transforms:
       del(.ts)
 
       # 2. Host & Container
+      # Host (prefer env injection; fallback to container hostname)
       .host = get_env_var("HOST_NODE_NAME") ?? get_env_var("HOSTNAME") ?? "unknown"
+      # Container / identity
+      # - docker_logs: .container_name, labels
+      # - journald: _SYSTEMD_UNIT / SYSLOG_IDENTIFIER
       .container_name = to_string(.container_name) ?? to_string(.docker.container_name) ?? to_string(._SYSTEMD_UNIT) ?? to_string(.SYSLOG_IDENTIFIER) ?? "unknown"
 
-      # 3. Stack & Service Labels
+      # 3. Stack & Service Labels: Compose metadata if present (docker); otherwise derive from unit
       .stack = to_string(.label."com.docker.compose.project") ?? to_string(.labels."com.docker.compose.project") ?? "homelab-home-prod"
       .service = to_string(.label."com.docker.compose.service") ?? to_string(.labels."com.docker.compose.service") ?? .container_name
 
+      # Fix for E651: Einfache Zuweisung, da .namespace vorher nicht existiert
       .namespace = "prod"
 
-      # 3b. Postdeploy e2e markers (logfmt): extract token/seq into dedicated fields.
-      # Use a more relaxed match (contains instead of starts with ^)
-      # to account for potential prefixing.
-      if match(.message, r'event=vector_e2e\b') {
-        # Ensure stable service label
-        .service = "vector-e2e"
-
-        # Try to parse logfmt from the message
-        # We parse it into a temporary variable 'e2e'
-        e2e, err = parse_logfmt(.message)
-        if err == null {
-          # Use 'string' and 'int' casts safely
-          .e2e_token = to_string(e2e.token) ?? null
-          .e2e_seq = to_int(e2e.seq) ?? null
-        }
-      }
-
-      # 4. Basic level normalization
+      # 4. Basic level normalization (avoid false positives like "errors_total")
       tmp = downcase(to_string(.level) ?? "")
       if tmp != "" {
         .level = tmp
@@ -114,34 +123,12 @@ transforms:
         }
       }
 
-      # 5. Keep original unit, if present
+      # 5. Keep original unit (useful for queries), if present
       if exists(._SYSTEMD_UNIT) {
         .systemd_unit = to_string(._SYSTEMD_UNIT) ?? null
       }
-      # Drop very noisy docker/containerd lifecycle chatter (triggered by short-lived containers).
-      if exists(.systemd_unit) && .level == "info" {
-        if .systemd_unit == "docker.service" && contains(.message, "msg=\"ignoring event\"") {
-          abort
-        }
-        if .systemd_unit == "containerd.service" && contains(.message, "cleaning up") {
-          abort
-        }
-      }
-      # Prune raw journald metadata (keep derived fields like systemd_unit, host, level, namespace, stack, service).
-      ks = keys(.)
-      for_each(ks) -> |_i, k| {
-        if match(k, r'^__') || match(k, r'^_') {
-          . = remove!(value: ., path: [k])
-        }
-      }
 
-      # Drop common redundant journald fields (non-fatal if missing).
-      . = remove(value: ., path: ["PRIORITY"]) ?? .
-      . = remove(value: ., path: ["SYSLOG_FACILITY"]) ?? .
-      . = remove(value: ., path: ["SYSLOG_IDENTIFIER"]) ?? .
-
-
-      # 6. Cleanup
+      # 6. Cleanup: Reduce noise / remove bulky nested structures commonly present on docker events
       del(.label)
       del(.labels)
       del(.docker)
@@ -150,24 +137,13 @@ transforms:
       del(.container_id)
       del(.container_created_at)
       del(.source_type)
-      del(.stream)
-
-  # drop cadvisor noise about missing DMI info on Raspberry Pi (no PC/BIOS DMI)
-  # establish chain: normalize -> drop_cadvisor_sysinfo_noise -> vlogs
-  drop_cadvisor_sysinfo_noise:
-    type: filter
-    inputs: ["normalize"] # Input must be the normalized stream
-    condition:
-      type: vrl
-      source: |
-        msg = to_string(.message) ?? ""
-        # The filter condition: returns 'false' for logs that should be dropped
-        !( .service == "cadvisor" && ( contains(msg, "Found node without any CPU") || contains(msg, "Found node without cache information")))
+      del(.stream) # stderr/stdout ist oft redundant, wenn level gesetzt ist
 
 sinks:
   vlogs:
     type: http
-    inputs: ["drop_cadvisor_sysinfo_noise"] # Correct end of the chain
+    inputs: ["drop_cadvisor_sysinfo_noise"]
+    # yamllint disable-line rule:line-length
     uri: "http://victorialogs:9428/insert/jsonline?_stream_fields=host,stack,service,namespace,container_name&_msg_field=message&_time_field=timestamp"
     compression: gzip
     encoding:
