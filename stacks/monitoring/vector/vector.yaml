@@ -8,6 +8,7 @@ sources:
     type: docker_logs
     docker_host: unix:///var/run/docker.sock
     include_labels:
+      # Filter to only include logs from the "homelab-home-prod-mon" stack and thus exclude logs from temporary containers by test executions
       - com.docker.compose.project=homelab-home-prod-mon
   host_journald:
     type: journald
