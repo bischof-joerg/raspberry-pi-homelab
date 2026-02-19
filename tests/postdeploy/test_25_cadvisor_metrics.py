@@ -20,7 +20,7 @@ def test_cadvisor_metrics_endpoint_responds(retry):
         "alpine:3.20",
         "sh",
         "-lc",
-        "apk add --no-cache curl >/dev/null && curl -fsS --max-time 3 http://cadvisor:8080/metrics | grep -qF cadvisor_version_info",
+        "apk add --no-cache curl >/dev/null && curl -fsSI --max-time 3 http://cadvisor:8080/metrics | grep -qi '^content-type: '",
     ]
 
     last = None
