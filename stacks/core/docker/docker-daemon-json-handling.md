@@ -156,3 +156,25 @@ If the repo-managed `daemon.json` is malformed, the script fails before applying
 - Commit and push changes via the normal Git workflow.
 - On the Pi, `git pull` + `sudo ./deploy.sh` applies the new state.
 - Rollback is done via `git revert` (GitOps rollback), then redeploy.
+
+## Post-deploy Test Coverage
+
+A small post-deploy test ensures the Docker daemon configuration and metrics exposure are correct from the host perspective:
+
+- **Test file:** `tests/postdeploy/test_05_docker_daemon_json_and_metrics.py`
+- **Assertions:**
+  - `/etc/docker/daemon.json` is **semantically identical** to the repo-managed copy (`stacks/core/docker/daemon.json`)
+    - also verifies required keys exist (e.g., `metrics-addr`, `log-driver`, `log-opts`)
+  - Docker **metrics endpoint is reachable from the host**, using the `metrics-addr` value from `/etc/docker/daemon.json`
+    - validates HTTP `200` and that the response looks like Prometheus text format
+
+Run it on the target host:
+
+```bash
+sudo bash -lc '
+  set -euo pipefail
+  set -a
+  source /etc/raspberry-pi-homelab/monitoring.env
+  set +a
+  POSTDEPLOY_ON_TARGET=1 pytest -q -m postdeploy tests/postdeploy/test_05_docker_daemon_json_and_metrics.py
+'
