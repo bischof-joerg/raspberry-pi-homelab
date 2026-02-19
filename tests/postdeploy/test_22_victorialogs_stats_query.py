@@ -1,82 +1,43 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 import requests
 
 
-def _env_bool(name: str, default: str = "0") -> bool:
-    return os.environ.get(name, default).strip() == "1"
+def _env_bool(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _base_url() -> str:
-    # Prefer explicit override
-    url = os.environ.get("VLOGS_BASE_URL", "").strip()
-    if url:
-        return url.rstrip("/")
-
-    # Fallback for on-target runs (matches your curl usage)
-    return "http://127.0.0.1:9428"
+    return os.environ.get("VLOGS_BASE_URL", "http://127.0.0.1:9428").rstrip("/")
 
 
 def _extract_rows(payload: Any) -> list[dict[str, Any]]:
-    """
-    VictoriaLogs /select/logsql/stats_query can return a Prometheus-like shape:
-      {"status":"success","data":{"resultType":"vector","result":[{"metric":{...},"value":[ts,"7"]}, ...]}}
-    Be tolerant to a couple of other potential shapes as well.
-    """
-    if isinstance(payload, dict):
-        data = payload.get("data")
-        if isinstance(data, dict):
-            result = data.get("result")
-            if isinstance(result, list):
-                return [r for r in result if isinstance(r, dict)]
-
-        # Fallbacks if an alternative shape is returned
-        for k in ("rows", "result"):
-            v = payload.get(k)
-            if isinstance(v, list):
-                return [r for r in v if isinstance(r, dict)]
-
-    if isinstance(payload, list):
-        return [r for r in payload if isinstance(r, dict)]
-
-    return []
+    # VictoriaLogs stats_query returns a VM-like JSON response shape (vector result)
+    try:
+        data = payload.get("data", {})
+        res = data.get("result", [])
+        rows: list[dict[str, Any]] = []
+        for item in res:
+            # item likely has: {"metric": {...}, "value": [...]}
+            metric = item.get("metric", {})
+            value = item.get("value", [])
+            rows.append({"metric": metric, "value": value})
+        return rows
+    except Exception:  # noqa: BLE001
+        return []
 
 
-def _row_service(row: dict[str, Any]) -> str:
-    metric = row.get("metric")
-    if isinstance(metric, dict):
-        return str(metric.get("service", "")).strip()
-    return str(row.get("service", "")).strip()
-
-
-def _row_count(row: dict[str, Any]) -> int:
-    # Prometheus-like: row["value"] == [ts, "7"]
-    v = row.get("value")
-    if isinstance(v, list) and len(v) >= 2:
-        try:
-            return int(float(v[1]))
-        except Exception:
-            return 0
-
-    # Flat row variants (future-proof)
-    for k in ("count(*)", "count()", "count", "hits", "value"):
-        if k in row:
-            try:
-                return int(float(row[k]))
-            except Exception:
-                return 0
-
-    return 0
-
-
-def _vlogs_query(base: str, query: str, timeout_s: float) -> str:
+def _vlogs_query(base: str, query: str, timeout_s: float = 5.0) -> str:
     r = requests.post(
         f"{base}/select/logsql/query",
         data={"query": query},
@@ -86,40 +47,12 @@ def _vlogs_query(base: str, query: str, timeout_s: float) -> str:
     return r.text or ""
 
 
-COMPOSE_PROJECT = (
-    os.environ.get("COMPOSE_PROJECT", "homelab-home-prod-mon").strip() or "homelab-home-prod-mon"
-)
-
-
-def _emit_seed_log_token(token: str) -> None:
-    subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "--label",
-            f"com.docker.compose.project={COMPOSE_PROJECT}",
-            "--label",
-            "com.docker.compose.service=vlogs-seed",
-            "alpine:3.20",
-            "sh",
-            "-lc",
-            f"echo {token}",
-        ],
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-
-
 def _wait_for_token_in_vlogs(base: str, token: str, timeout_s: float) -> None:
     """
-    Poll VictoriaLogs until the token appears in _msg. Needed because ingestion is async
-    (docker -> vector -> victorialogs).
+    Poll VictoriaLogs until the token appears in _msg. Needed because ingestion can be async.
     """
     deadline = time.time() + timeout_s
     last = ""
-    # Token has no spaces => quoting ok. Keep LogsQL simple.
     q = f'_time:10m _msg:"{token}" | limit 5'
 
     interval = 0.5
@@ -140,17 +73,77 @@ def _wait_for_token_in_vlogs(base: str, token: str, timeout_s: float) -> None:
     )
 
 
+def _emit_seed_log_token(base: str, token: str) -> None:
+    """
+    Seed VictoriaLogs with a single log line so that stats_query has something to aggregate
+    even on a fresh / quiet system.
+
+    We intentionally insert directly via VictoriaLogs' /insert/jsonline endpoint instead of
+    going through docker->vector->victorialogs, because the end-to-end pipeline is already
+    validated elsewhere and we want this test to be deterministic.
+
+    VictoriaLogs supports /insert/jsonline with field mapping parameters. :contentReference[oaicite:1]{index=1}
+    """
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+    record = {
+        "_time": now,
+        "_msg": token,
+        "service": "vlogs-seed",
+        "level": "info",
+        "stack": "homelab-home-prod-mon",
+        "namespace": "prod",
+        "host": os.environ.get("HOSTNAME", "rpi-hub"),
+    }
+
+    params = {
+        "_time_field": "_time",
+        "_msg_field": "_msg",
+        "_stream_fields": "service,stack,namespace,host",
+    }
+
+    try:
+        r = requests.post(
+            f"{base}/insert/jsonline",
+            params=params,
+            data=json.dumps(record) + "\n",
+            timeout=5.0,
+        )
+        r.raise_for_status()
+        return
+    except Exception:
+        # Fallback to the docker->vector pipeline in case /insert/jsonline is disabled.
+        subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--label",
+                "com.docker.compose.project=homelab-home-prod-mon",
+                "--label",
+                "com.docker.compose.service=vlogs-seed",
+                "alpine:3.20",
+                "sh",
+                "-lc",
+                f"echo {token}",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+
 @pytest.mark.postdeploy
 def test_victorialogs_stats_query_has_nonzero_service_bucket() -> None:
     """
     Robust smoke:
-    - triggers a log line (so stats aren't empty on fresh systems)
-    - waits until it is ingested into VictoriaLogs (async pipeline)
+    - seeds at least one log line (so stats aren't empty on fresh systems)
+    - waits until it is queryable in VictoriaLogs
     - calls /select/logsql/stats_query
     - parses JSON
     - asserts at least one bucket with non-empty service has count > 0
 
-    Default: only runs on target (POSTDEPLOY_ON_TARGET=1).
+    Default: runs on target (POSTDEPLOY_ON_TARGET=1).
     Optional local: set VLOGS_BASE_URL to run against a reachable instance.
     """
     on_target = _env_bool("POSTDEPLOY_ON_TARGET")
@@ -162,15 +155,14 @@ def test_victorialogs_stats_query_has_nonzero_service_bucket() -> None:
     base = _base_url()
 
     timeout_s = float(os.environ.get("VLOGS_TIMEOUT_SECONDS", "5"))
-    # Separate timeout for "seed log + wait", keep it modest but > pipeline latency
     seed_timeout_s = float(os.environ.get("VLOGS_SEED_TIMEOUT_SECONDS", "20"))
 
     # 0) Seed: generate one known log event that should get a service label
     token = f"vlogs-stats-seed-{uuid.uuid4()}"
-    _emit_seed_log_token(token)
+    _emit_seed_log_token(base, token)
     _wait_for_token_in_vlogs(base, token, timeout_s=seed_timeout_s)
 
-    # 1) Stats query
+    # 1) Query stats
     query = os.environ.get("VLOGS_STATS_QUERY", "_time:30m | stats by (service) count()")
 
     r = requests.post(
@@ -189,17 +181,18 @@ def test_victorialogs_stats_query_has_nonzero_service_bucket() -> None:
     if not rows:
         pytest.fail(f"Unexpected stats_query JSON shape: {type(payload)} -> {payload}")
 
-    nonzero_services: list[str] = []
+    # Assert at least one service bucket has count > 0 (and service label non-empty)
+    # In VM-like response: value is ["<unix_ts>", "<count>"].
     for row in rows:
-        svc = _row_service(row)
-        if not svc:
-            continue
-        if _row_count(row) > 0:
-            nonzero_services.append(svc)
+        metric = row.get("metric", {})
+        val = row.get("value", [])
+        service = (metric.get("service") or "").strip()
+        if len(val) >= 2 and service:
+            try:
+                count = float(val[1])
+            except Exception:  # noqa: BLE001
+                continue
+            if count > 0:
+                return
 
-    assert nonzero_services, (
-        "No service bucket with count>0 returned by VictoriaLogs stats_query.\n"
-        f"base={base}\nquery={query}\n"
-        f"seed_token={token}\n"
-        f"sample_json={str(payload)[:800]}"
-    )
+    pytest.fail(f"No non-empty service bucket with count>0 found. rows={rows!r}")
