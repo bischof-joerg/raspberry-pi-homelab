@@ -69,7 +69,7 @@ ALERTMANAGER_TMPL := stacks/monitoring/alertmanager/alertmanager.yml.tmpl
 # Renovate runs as a container (no local Node/npm required).
 # - Check mode: scans local working tree (no PRs) via platform=local.
 # - Apply mode: creates branches/PRs on GitHub via platform=github.
-RENOVATE_IMAGE ?= renovate/renovate:43
+RENOVATE_IMAGE ?= renovate/renovate:43@sha256:03330afaf925f7ce790bb62958cb75fddcbc58300cb1b1ffd19da19d7fa158b7
 RENOVATE_ENV   ?= $(HOME)/.config/renovate/renovate.env
 RENOVATE_REPO  ?= bischof-joerg/raspberry-pi-homelab
 

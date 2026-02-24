@@ -44,6 +44,18 @@ The repo Makefile provides:
 
 If you re-bootstrap the repo, ensure your Makefile includes those targets.
 
+#### Note: Makefile calls immutable docker version
+
+The version is pinned via line
+`RENOVATE_IMAGE ?= renovate/renovate:43@sha256:...`
+
+The sha value can be determined via commands (check whether another docker version is used and adapt accordingly):
+
+```bash
+docker pull renovate/renovate:43
+docker inspect --format='{{index .RepoDigests 0}}' renovate/renovate:43
+```
+
 ---
 
 ## Renovate container image
@@ -140,6 +152,7 @@ make renovate
 ```
 
 Expected:
+
 - Logs show dependency extraction.
 - No branches or PRs are created.
 
@@ -164,6 +177,7 @@ make renovate-apply
 ```
 
 Expected:
+
 - Renovate creates/updates branches `renovate/...`
 - Renovate creates/updates PRs in GitHub
 
