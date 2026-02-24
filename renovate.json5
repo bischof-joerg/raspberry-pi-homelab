@@ -1,0 +1,82 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  extends: [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":separateMajorReleases",
+    // keep Renovate's own throttling disabled; you control via pr* limits below
+    ":disableRateLimiting",
+  ],
+
+  // Only manage Compose for now (no surprises from other managers)
+  enabledManagers: ["docker-compose"],
+
+  ignorePaths: ["**/.venv/**", "**/__pycache__/**", "**/node_modules/**", "**/.git/**"],
+
+  // Keep PR noise low
+  prConcurrentLimit: 2,
+  prHourlyLimit: 2,
+
+  labels: ["dependencies", "renovate"],
+  timezone: "Europe/Berlin",
+
+  packageRules: [
+    // --- CURRENT: monitoring only -------------------------------------------------
+    {
+      description: "Only manage monitoring docker-compose.yml for now.",
+      matchManagers: ["docker-compose"],
+      matchFileNames: ["stacks/monitoring/compose/docker-compose.yml"],
+      groupName: "monitoring",
+      groupSlug: "monitoring",
+      commitMessagePrefix: "chore(deps):",
+      separateMinorPatch: false,
+    },
+
+    // --- FUTURE: core (uncomment when stacks/core exists) -------------------------
+    // {
+      // description: "Manage core stack compose.",
+      // matchManagers: ["docker-compose"],
+      // matchFileNames: ["stacks/core/compose/docker-compose.yml"],
+      // groupName: "core",
+      // groupSlug: "core",
+      // commitMessagePrefix: "chore(deps):",
+      // separateMinorPatch: false,
+    // },
+
+    // --- FUTURE: apps (uncomment when stacks/apps/* exist) ------------------------
+    // {
+      // description: "Manage all app stack compose files (one grouped PR).",
+      // matchManagers: ["docker-compose"],
+      // matchFileNames: ["stacks/apps/**/compose/docker-compose.yml"],
+      // groupName: "apps",
+      // groupSlug: "apps",
+      // commitMessagePrefix: "chore(deps):",
+      // separateMinorPatch: false,
+    // },
+
+    // If you prefer one PR per app later, replace the apps rule above with this:
+    // {
+      // description: "Manage app stack compose files (separate PR per app folder).",
+      // matchManagers: ["docker-compose"],
+      // matchFileNames: ["stacks/apps/**/compose/docker-compose.yml"],
+      // groupName: "apps: {{parentDir}}",
+      // groupSlug: "apps-{{parentDir}}",
+      // commitMessagePrefix: "chore(deps):",
+      // separateMinorPatch: false,
+    // },
+
+    // --- Merge policy: manual review only ----------------------------------------
+    {
+      description: "Never automerge majors (explicit).",
+      matchUpdateTypes: ["major"],
+      automerge: false,
+    },
+    {
+      description: "No automerge by default; keep manual review + CI gates.",
+      matchUpdateTypes: ["minor", "patch", "pin", "digest"],
+      automerge: false,
+    },
+  ],
+}

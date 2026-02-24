@@ -64,6 +64,15 @@ VM_CFG      := stacks/monitoring/victoriametrics/victoriametrics.yml
 # Alertmanager is generated -> repo contains template only
 ALERTMANAGER_TMPL := stacks/monitoring/alertmanager/alertmanager.yml.tmpl
 
+# --- Renovate (self-hosted, on-demand via Docker Desktop) -------------------
+
+# Renovate runs as a container (no local Node/npm required).
+# - Check mode: scans local working tree (no PRs) via platform=local.
+# - Apply mode: creates branches/PRs on GitHub via platform=github.
+RENOVATE_IMAGE ?= renovate/renovate:43
+RENOVATE_ENV   ?= $(HOME)/.config/renovate/renovate.env
+RENOVATE_REPO  ?= bischof-joerg/raspberry-pi-homelab
+
 # --- Strictness knobs --------------------------------------------------------
 
 # If 1, doctor fails when a required config/template file is missing
@@ -83,6 +92,7 @@ VM_EXPECT_JOBS ?= 0
         postdeploy postdeploy-endpoints postdeploy-vm \
         test tests \
         doctor doctor-strict \
+        renovate renovate-check renovate-apply renovate-validate \
         check ci-doctor ci-precommit ci-tests ci \
         _guard-wsl _guard-pi
 
@@ -107,6 +117,14 @@ help: ## Show this help (auto-generated from target docstrings)
 	@echo "  POSTDEPLOY_ON_TARGET=1    mark tests as running on the Pi (default: 0)"
 	@echo "  VM_EXPECT_METRICS=1       enable metric-existence expectations in VM query tests (default: 0)"
 	@echo "  VM_EXPECT_JOBS=1          enable job-existence expectations in VM query tests (default: 0)"
+
+	@echo
+	@echo "Renovate (manual, Docker Desktop):"
+	@echo "  make renovate              run Renovate in check mode (local scan, no PRs) (WSL-only)"
+	@echo "  make renovate-apply         run Renovate in apply mode (create GitHub PRs) (WSL-only)"
+	@echo "  RENOVATE_IMAGE=...         renovate image tag (default: $(RENOVATE_IMAGE))"
+	@echo "  RENOVATE_ENV=...           path to env-file with RENOVATE_TOKEN (default: $(RENOVATE_ENV))"
+	@echo "  RENOVATE_REPO=...          GitHub org/repo (default: $(RENOVATE_REPO))"
 	@echo
 	@echo "Guardrails:"
 	@echo "  - check/ci and ci-* targets are WSL-only (fail fast on the Pi)."
@@ -226,6 +244,49 @@ postdeploy-vm: _guard-pi ## Run only postdeploy VM query tests (Pi only) [set VM
 	  VM_EXPECT_JOBS=$(VM_EXPECT_JOBS) \
 	  ./scripts/tests/run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
 	    tests/postdeploy -m postdeploy -k "vm_query or vm_queries or victoriametrics or vmagent or vmalert"
+
+# --- Renovate (self-hosted, on-demand) --------------------------------------
+
+renovate: renovate-check ## Renovate check mode (local scan, no PRs) (WSL-only)
+
+renovate-validate: _guard-wsl ## Validate Renovate config (Docker)
+	docker run --rm \
+	  -v "$(PWD):/repo" -w /repo \
+	  $(RENOVATE_IMAGE) \
+	  renovate-config-validator --strict
+
+renovate-check: _guard-wsl ## Run Renovate in check mode (local scan, no PRs) (WSL-only)
+	@set -euo pipefail; \
+	command -v docker >/dev/null 2>&1 || (echo "FAIL: docker missing" && exit 2); \
+	test -f "$(COMPOSE_FILE)" || (echo "FAIL: compose file missing ($(COMPOSE_FILE))" && exit 2); \
+	echo "== renovate (check) =="; \
+	echo "image: $(RENOVATE_IMAGE)"; \
+	docker run --rm \
+	  -e RENOVATE_PLATFORM=local \
+	  -e RENOVATE_REQUIRE_CONFIG=required \
+	  -v "$(PWD):/repo" -w /repo \
+	  $(RENOVATE_IMAGE)
+
+renovate-apply: _guard-wsl ## Run Renovate in apply mode (create/update PRs on GitHub) (WSL-only)
+	@set -euo pipefail; \
+	command -v docker >/dev/null 2>&1 || (echo "FAIL: docker missing" && exit 2); \
+	test -f "$(RENOVATE_ENV)" || { \
+	  echo "FAIL: Renovate env file missing: $(RENOVATE_ENV)"; \
+	  echo "HINT: create it with: mkdir -p $${HOME}/.config/renovate && chmod 700 $${HOME}/.config/renovate"; \
+	  echo "      and put RENOVATE_TOKEN=... into $(RENOVATE_ENV) (chmod 600)"; \
+	  exit 2; \
+	}; \
+	set -a; . "$(RENOVATE_ENV)"; set +a; \
+	test -n "$${RENOVATE_TOKEN:-}" || { echo "FAIL: RENOVATE_TOKEN is empty in $(RENOVATE_ENV)"; exit 2; }; \
+	echo "== renovate (apply) =="; \
+	echo "repo: $(RENOVATE_REPO)"; \
+	echo "image: $(RENOVATE_IMAGE)"; \
+	docker run --rm \
+	  --env-file "$(RENOVATE_ENV)" \
+	  -e RENOVATE_PLATFORM=github \
+	  -e RENOVATE_AUTODISCOVER=false \
+	  -e RENOVATE_REPOSITORIES="$(RENOVATE_REPO)" \
+	  $(RENOVATE_IMAGE)
 
 # --- Doctor -----------------------------------------------------------------
 
