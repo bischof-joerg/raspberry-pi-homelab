@@ -8,7 +8,7 @@ name: ${COMPOSE_PROJECT_NAME:-homelab-home-prod-mon}
 services:
 
   alertmanager:
-    image: prom/alertmanager:v0.28.0
+    image: prom/alertmanager:v0.31.1
     restart: unless-stopped
     networks: [monitoring]
     ports:
@@ -41,7 +41,7 @@ services:
   # One-shot renderer: renders alertmanager.yml from template using envsubst and
   # copies templates into the same volume.
   alertmanager-config-render:
-    image: alpine:3.20
+    image: alpine:3.23
     restart: "no"
     networks: [monitoring]
 
@@ -136,7 +136,7 @@ services:
 
   # --- New: VictoriaMetrics single-node TSDB ---
   victoriametrics:
-    image: victoriametrics/victoria-metrics:v1.135.0
+    image: victoriametrics/victoria-metrics:v1.136.0
     restart: unless-stopped
     networks: [monitoring]
     # Localhost-bound UI/API for debugging; remove or move behind Traefik later.
@@ -167,7 +167,7 @@ services:
 
   # --- New: scrape agent -> remote_write into VictoriaMetrics ---
   vmagent:
-    image: victoriametrics/vmagent:v1.135.0
+    image: victoriametrics/vmagent:v1.136.0
     restart: unless-stopped
     networks: [monitoring]
     ports:
@@ -200,7 +200,7 @@ services:
 
   # --- New: alert rules evaluation -> Alertmanager ---
   vmalert:
-    image: victoriametrics/vmalert:v1.135.0
+    image: victoriametrics/vmalert:v1.136.0
     restart: unless-stopped
     networks: [monitoring]
     depends_on:
@@ -236,7 +236,7 @@ services:
       - /tmp
 
   grafana:
-    image: grafana/grafana:11.4.2
+    image: grafana/grafana:11.6.12
     restart: unless-stopped
     networks: [monitoring]
     ports:
@@ -276,7 +276,7 @@ services:
       - /tmp
 
   node-exporter:
-    image: quay.io/prometheus/node-exporter:v1.8.2
+    image: quay.io/prometheus/node-exporter:v1.10.2
     restart: unless-stopped
     networks: [monitoring]
     # Do NOT expose to LAN; vmagent scrapes it via Docker network
@@ -336,7 +336,7 @@ services:
       # - --cgroup_hierarchy_root=/sys/fs/cgroup # Forces cAdvisor to the correct Cgroup V2 root on Pi OS
 
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.44.0
+    image: victoriametrics/victoria-logs:v1.46.0
     command:
       - --storageDataPath=/vlogs
       - --httpListenAddr=:9428
