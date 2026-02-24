@@ -83,7 +83,7 @@ It is:
 ### Default behavior
 
 ```bash
-sudo scripts/bootstrap-networks.sh
+sudo scripts/network/bootstrap-networks.sh
 ```
 
 - Creates missing networks
@@ -96,7 +96,7 @@ sudo scripts/bootstrap-networks.sh
 export MONITORING_SUBNET=172.20.0.0/16
 export MONITORING_GATEWAY=172.20.0.1
 export MONITORING_BRIDGE_NAME=br-monitoring
-sudo scripts/bootstrap-networks.sh
+sudo scripts/network/bootstrap-networks.sh
 ```
 
 If the existing network does not match these values, the script fails.
@@ -104,7 +104,7 @@ If the existing network does not match these values, the script fails.
 ### Dry run
 
 ```bash
-DRY_RUN=1 sudo scripts/bootstrap-networks.sh
+DRY_RUN=1 sudo scripts/network/bootstrap-networks.sh
 ```
 
 ---
@@ -132,11 +132,11 @@ This enables:
 
 ---
 
-## 5. Network & UFW Cleanup (`cleanup-network-ufw.sh`)
+## 5. Network & UFW Cleanup (`scripts/network/cleanup-ufw.sh`)
 
 ### Purpose
 
-`cleanup-network-ufw.sh` reconciles the **actual system state** with the expected steady state.
+`scripts/network/cleanup-ufw.sh` reconciles the **actual system state** with the expected steady state.
 
 It is intentionally conservative.
 
@@ -164,19 +164,19 @@ It is intentionally conservative.
 Dry run (default):
 
 ```bash
-sudo scripts/cleanup-network-ufw.sh
+sudo scripts/network/cleanup-ufw.sh
 ```
 
 Apply changes:
 
 ```bash
-sudo scripts/cleanup-network-ufw.sh --apply
+sudo scripts/network/cleanup-ufw.sh --apply
 ```
 
 Verbose:
 
 ```bash
-sudo scripts/cleanup-network-ufw.sh --apply --verbose
+sudo scripts/network/cleanup-ufw.sh --apply --verbose
 ```
 
 ---

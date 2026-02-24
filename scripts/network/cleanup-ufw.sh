@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/cleanup-network-ufw.sh
+# scripts/network/cleanup-ufw.sh
 #
 # Usage:
 : <<'DOC'
@@ -9,7 +9,7 @@ sudo bash -lc '
   set -a
   source /etc/raspberry-pi-homelab/monitoring.env
   set +a
-  /home/admin/iac/raspberry-pi-homelab/scripts/cleanup-network-ufw.sh --verbose
+  /home/admin/iac/raspberry-pi-homelab/scripts/network/cleanup-ufw.sh --verbose
 '
 
 Apply:
@@ -18,7 +18,7 @@ sudo bash -lc '
   set -a
   source /etc/raspberry-pi-homelab/monitoring.env
   set +a
-  /home/admin/iac/raspberry-pi-homelab/scripts/cleanup-network-ufw.sh --apply --verbose
+  /home/admin/iac/raspberry-pi-homelab/scripts/network/cleanup-ufw.sh --apply --verbose
 '
 DOC
 #

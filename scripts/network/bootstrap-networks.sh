@@ -10,8 +10,8 @@ set -euo pipefail
 # - If missing and subnet config is set, create with that config.
 #
 # Usage:
-#   sudo ./scripts/bootstrap-networks.sh
-#   DRY_RUN=1 sudo ./scripts/bootstrap-networks.sh
+#   sudo ./scripts/network/bootstrap-networks.sh
+#   DRY_RUN=1 sudo ./scripts/network/bootstrap-networks.sh
 #
 # Env:
 #   MONITORING_NETWORK=monitoring

@@ -35,12 +35,12 @@ The project adopts the following networking and firewall model:
    - IPAM, bridge names, and lifecycle are managed outside of Compose.
 
 2. **Explicit network bootstrap**
-   - A dedicated script (`scripts/bootstrap-networks.sh`) ensures required networks exist.
+   - A dedicated script (`scripts/network/bootstrap-networks.sh`) ensures required networks exist.
    - The script is idempotent and guarded against subnet overlap.
    - Network creation and validation happen before any container deployment.
 
 3. **Explicit network and firewall reconciliation**
-   - A cleanup script (`scripts/cleanup-network-ufw.sh`) reconciles:
+   - A cleanup script (`scripts/network/cleanup-ufw.sh`) reconciles:
      - Unused Docker networks
      - Stale UFW rules referencing removed bridge interfaces
    - Required firewall rules are enforced explicitly and minimally.

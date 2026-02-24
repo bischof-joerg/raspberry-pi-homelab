@@ -203,7 +203,7 @@ precommit: _guard-wsl venv ## Run pre-commit hooks + python precommit tests (WSL
 # Unit/integration test suite (WSL/CI) explicitly excludes Pi-only postdeploy tests.
 # This keeps CI deterministic and fast, while postdeploy remains a separate on-target gate.
 test: _guard-wsl venv ## Run unit/integration tests (excludes tests/postdeploy + tests/precommit)
-	./run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
+	./scripts/tests/run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
 	  tests -m "not postdeploy" --ignore=tests/postdeploy --ignore=tests/precommit
 
 tests: test ## Alias for `make test` (useful for CI job naming)
@@ -212,19 +212,19 @@ postdeploy: _guard-pi ## Run all post-deploy checks (Pi only)
 	@POSTDEPLOY_ON_TARGET=1 \
 	  VM_EXPECT_METRICS=$(VM_EXPECT_METRICS) \
 	  VM_EXPECT_JOBS=$(VM_EXPECT_JOBS) \
-	  ./run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
+	  ./scripts/tests/run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
 	    tests/postdeploy -m postdeploy
 
 postdeploy-endpoints: _guard-pi ## Run only postdeploy endpoint tests (Pi only) [use PYTEST_ARGS for -k/-vv]
 	@POSTDEPLOY_ON_TARGET=$(POSTDEPLOY_ON_TARGET) \
-	  ./run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
+	  ./scripts/tests/run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
 	    tests/postdeploy -m postdeploy -k endpoints
 
 postdeploy-vm: _guard-pi ## Run only postdeploy VM query tests (Pi only) [set VM_EXPECT_METRICS=1 and/or VM_EXPECT_JOBS=1]
 	@POSTDEPLOY_ON_TARGET=$(POSTDEPLOY_ON_TARGET) \
 	  VM_EXPECT_METRICS=$(VM_EXPECT_METRICS) \
 	  VM_EXPECT_JOBS=$(VM_EXPECT_JOBS) \
-	  ./run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
+	  ./scripts/tests/run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
 	    tests/postdeploy -m postdeploy -k "vm_query or vm_queries or victoriametrics or vmagent or vmalert"
 
 # --- Doctor -----------------------------------------------------------------

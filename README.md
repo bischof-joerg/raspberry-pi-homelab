@@ -41,7 +41,7 @@ The monitoring stack is implemented as an isolated, hardened Docker stack and pr
   - `postdeploy/` (runtime checks against the running stack)
 - `scripts/`
   - `deploy.sh`
-  - `cleanup-network-ufw.sh`
+  - `scripts/network/cleanup-ufw.sh`
 
 ---
 

@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "[run-tests] ERROR: not inside a git worktree" >&2
+  exit 2
+}
 STACK_ENV_FILE="${STACK_ENV_FILE:-/etc/raspberry-pi-homelab/monitoring.env}"
 
 cd "$REPO_ROOT"

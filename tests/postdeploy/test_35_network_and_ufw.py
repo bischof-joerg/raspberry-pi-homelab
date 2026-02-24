@@ -247,7 +247,7 @@ def test_negative_apps_cannot_reach_docker_engine_metrics_on_monitoring_gateway(
 @pytest.mark.postdeploy
 def test_ufw_inbound_exposure_allowlisted_v4_and_closed_v6():
     """
-    Exposure contract (enforced by scripts/cleanup-network-ufw.sh):
+    Exposure contract (enforced by scripts/network/cleanup-ufw.sh):
 
     Required inbound (IPv4):
       - SSH 22/tcp: ALLOW IN from ADMIN_IPV4 and LAN_CIDR

@@ -59,7 +59,7 @@ PROMETHEUS_REMOVAL_ENFORCE="${PROMETHEUS_REMOVAL_ENFORCE:-0}"
 
 # toggles/variables to verify journald read access (for Vector host logs ingestion)
 ENSURE_JOURNALD_READ="${ENSURE_JOURNALD_READ:-1}"
-JOURNALD_SCRIPT="${JOURNALD_SCRIPT:-$REPO_ROOT/scripts/ensure-journald-read.sh}"
+JOURNALD_SCRIPT="${JOURNALD_SCRIPT:-$REPO_ROOT/scripts/host/ensure-journald-read.sh}"
 JOURNALD_TARGET_USER="${JOURNALD_TARGET_USER:-admin}"
 
 
@@ -135,7 +135,7 @@ bootstrap_networks() {
     return 0
   }
 
-  local script="$REPO_ROOT/scripts/bootstrap-networks.sh"
+  local script="$REPO_ROOT/scripts/network/bootstrap-networks.sh"
   [[ -x "$script" ]] || die "bootstrap script not executable: $script"
 
   log "networks: bootstrap"
