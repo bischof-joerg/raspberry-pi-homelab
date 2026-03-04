@@ -13,7 +13,7 @@
   // Only manage Compose for now (no surprises from other managers)
   enabledManagers: ["docker-compose"],
 
-  ignorePaths: ["**/.venv/**", "**/__pycache__/**", "**/node_modules/**", "**/.git/**"],
+  ignorePaths: ["**/.venv/**", "**/__pycache__/**", "**/node_modules/**", "**/.git/**", "**/logs/**"],
 
   // Keep PR noise low
   prConcurrentLimit: 2,
@@ -71,6 +71,7 @@
     {
       description: "Never automerge majors (explicit).",
       matchUpdateTypes: ["major"],
+      recreateWhen: "always",
       automerge: false,
     },
     {
