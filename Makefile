@@ -82,6 +82,41 @@ VM_CONFIG_STRICT ?= 0
 POSTDEPLOY_ON_TARGET ?= 0
 VM_EXPECT_METRICS ?= 0
 VM_EXPECT_JOBS ?= 0
+# --- Logging (optional, local only) -------------------------------------------
+#
+# Default behavior: commands log to the terminal.
+# Opt-in logging:   LOG=1 make <target>  -> writes logs/<target>-<utc-ts>.log
+#
+# Special case: `make renovate` always logs (so you can review discovered updates).
+LOG_DIR ?= logs
+LOG ?= 0
+
+# Internal helper:
+# $(call RUN,<name>,<shell command>)
+define RUN
+	@set -euo pipefail; \
+	mkdir -p "$(LOG_DIR)"; \
+	_ts="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	_log="$(LOG_DIR)/$(1)-$${_ts}.log"; \
+	if [ "$(LOG)" = "1" ]; then \
+	  echo "Logging to $${_log}"; \
+	  ( $(2) ) 2>&1 | tee -a "$${_log}"; \
+	else \
+	  ( $(2) ); \
+	fi
+endef
+
+# Internal helper:
+# Always logs to logs/<name>-<utc-ts>.log (used for renovate-check).
+define RUN_ALWAYS_LOG
+	@set -euo pipefail; \
+	mkdir -p "$(LOG_DIR)"; \
+	_ts="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	_log="$(LOG_DIR)/$(1)-$${_ts}.log"; \
+	echo "Logging to $${_log}"; \
+	( $(2) ) 2>&1 | tee -a "$${_log}"
+endef
+
 
 # --- Phony targets -----------------------------------------------------------
 
@@ -112,6 +147,7 @@ help: ## Show this help (auto-generated from target docstrings)
 	@echo "  PYTEST_QUIET=1            add -q to pytest (default: 0)"
 	@echo "  PYTEST_STRICT=\"...\"      override strict flags (default: --strict-markers --maxfail=1)"
 	@echo "  PYTEST_REPORT=\"...\"      override reporting flags (default: -rA)"
+	@echo "  LOG=1                     tee command output to logs/<target>-<utc-ts>.log (default: 0)"
 	@echo
 	@echo "Postdeploy test toggles (consumed by tests):"
 	@echo "  POSTDEPLOY_ON_TARGET=1    mark tests as running on the Pi (default: 0)"
@@ -120,7 +156,7 @@ help: ## Show this help (auto-generated from target docstrings)
 
 	@echo
 	@echo "Renovate (manual, Docker Desktop):"
-	@echo "  make renovate              run Renovate in check mode (local scan, no PRs) (WSL-only)"
+	@echo "  make renovate              run Renovate in check mode (local scan, no PRs) (WSL-only; always logs to logs/renovate-check-*.log)"
 	@echo "  make renovate-apply         run Renovate in apply mode (create GitHub PRs) (WSL-only)"
 	@echo "  RENOVATE_IMAGE=...         renovate image tag (default: $(RENOVATE_IMAGE))"
 	@echo "  RENOVATE_ENV=...           path to env-file with RENOVATE_TOKEN (default: $(RENOVATE_ENV))"
@@ -250,22 +286,28 @@ postdeploy-vm: _guard-pi ## Run only postdeploy VM query tests (Pi only) [set VM
 renovate: renovate-check ## Renovate check mode (local scan, no PRs) (WSL-only)
 
 renovate-validate: _guard-wsl ## Validate Renovate config (Docker)
-	docker run --rm \
-	  -v "$(PWD):/repo" -w /repo \
-	  $(RENOVATE_IMAGE) \
-	  renovate-config-validator --strict
+	$(call RUN,renovate-validate, \
+	  docker run --rm \
+	    -e LOG_LEVEL \
+	    -v "$(PWD):/repo" -w /repo \
+	    $(RENOVATE_IMAGE) \
+	    renovate-config-validator --strict \
+	)
 
 renovate-check: _guard-wsl ## Run Renovate in check mode (local scan, no PRs) (WSL-only)
 	@set -euo pipefail; \
 	command -v docker >/dev/null 2>&1 || (echo "FAIL: docker missing" && exit 2); \
 	test -f "$(COMPOSE_FILE)" || (echo "FAIL: compose file missing ($(COMPOSE_FILE))" && exit 2); \
 	echo "== renovate (check) =="; \
-	echo "image: $(RENOVATE_IMAGE)"; \
-	docker run --rm \
-	  -e RENOVATE_PLATFORM=local \
-	  -e RENOVATE_REQUIRE_CONFIG=required \
-	  -v "$(PWD):/repo" -w /repo \
-	  $(RENOVATE_IMAGE)
+	echo "image: $(RENOVATE_IMAGE)";
+	$(call RUN_ALWAYS_LOG,renovate-check,\
+	  docker run --rm \
+	    -e LOG_LEVEL \
+	    -e RENOVATE_PLATFORM=local \
+	    -e RENOVATE_REQUIRE_CONFIG=required \
+	    -v "$(PWD):/repo" -w /repo \
+	    $(RENOVATE_IMAGE)\
+	)
 
 renovate-apply: _guard-wsl ## Run Renovate in apply mode (create/update PRs on GitHub) (WSL-only)
 	@set -euo pipefail; \
@@ -280,13 +322,17 @@ renovate-apply: _guard-wsl ## Run Renovate in apply mode (create/update PRs on G
 	test -n "$${RENOVATE_TOKEN:-}" || { echo "FAIL: RENOVATE_TOKEN is empty in $(RENOVATE_ENV)"; exit 2; }; \
 	echo "== renovate (apply) =="; \
 	echo "repo: $(RENOVATE_REPO)"; \
-	echo "image: $(RENOVATE_IMAGE)"; \
-	docker run --rm \
-	  --env-file "$(RENOVATE_ENV)" \
-	  -e RENOVATE_PLATFORM=github \
-	  -e RENOVATE_AUTODISCOVER=false \
-	  -e RENOVATE_REPOSITORIES="$(RENOVATE_REPO)" \
-	  $(RENOVATE_IMAGE)
+	echo "image: $(RENOVATE_IMAGE)";
+	$(call RUN,renovate-apply,\
+	  docker run --rm \
+	    --env-file "$(RENOVATE_ENV)" \
+			-e LOG_LEVEL \
+	    -e RENOVATE_PLATFORM=github \
+	    -e RENOVATE_AUTODISCOVER=false \
+	    -e RENOVATE_REPOSITORIES="$(RENOVATE_REPO)" \
+	    $(RENOVATE_IMAGE)\
+	)
+
 
 # --- Doctor -----------------------------------------------------------------
 

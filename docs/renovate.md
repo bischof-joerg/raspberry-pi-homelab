@@ -38,9 +38,9 @@ In `docker info`, the server should show `Operating System: Docker Desktop` and 
 
 The repo Makefile provides:
 
-- `make renovate` (check mode, local scan)
-- `make renovate-apply` (apply mode, create/update PRs)
-- `make renovate-validate` (validate Renovate config using the Renovate container)
+- `make renovate` (check mode, local scan) and logs result into directory `logs` on wsl
+- `make renovate-apply` (apply mode, create/update PRs) - if logs are wanted `LOG=1 make renovate-apply`
+- `make renovate-validate` (validate Renovate config using the Renovate container) - if logs are wanted `LOG=1 make renovate-validate`
 
 If you re-bootstrap the repo, ensure your Makefile includes those targets.
 
@@ -85,7 +85,7 @@ Renovate needs a GitHub token with permission to:
 
 Recommended: **Fine-grained PAT** limited to this repository.
 
-### Store token locally (NOT in Git)
+Regenerate PAT token on [https://github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens)
 
 Create a local env file:
 
@@ -95,7 +95,6 @@ chmod 700 ~/.config/renovate
 
 cat > ~/.config/renovate/renovate.env <<'EOF'
 RENOVATE_TOKEN=github_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXX
-RENOVATE_GIT_AUTHOR=<no-reply-mail-from-github-emails-section>
 LOG_LEVEL=info
 EOF
 

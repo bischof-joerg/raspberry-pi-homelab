@@ -24,6 +24,9 @@ build/
 # distribution files
 dist/
 
+# runtime logs (local only)
+logs/
+
 # Python caches
 __pycache__/
 *.pyc
