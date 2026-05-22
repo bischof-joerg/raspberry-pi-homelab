@@ -18,7 +18,6 @@ This runbook defines **what is backed up, how backups are created, how restores 
 
 * OS reinstallation procedures (covered separately)
 * Disaster recovery across different hardware
-* Point-in-time restore of Prometheus metrics beyond filesystem snapshots
 
 ### Design Principles
 
@@ -109,7 +108,7 @@ Notes:
 
 * Filesystem-level backup using `tar` or snapshot-based tooling
 * Backups executed on the host
-* Containers remain running (acceptable for Prometheus/Loki)
+* Containers remain running (if possible)
 
 ---
 

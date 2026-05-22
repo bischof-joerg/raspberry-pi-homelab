@@ -64,6 +64,13 @@ VM_CFG      := stacks/monitoring/victoriametrics/victoriametrics.yml
 # Alertmanager is generated -> repo contains template only
 ALERTMANAGER_TMPL := stacks/monitoring/alertmanager/alertmanager.yml.tmpl
 
+# Host runtime maintenance scripts (Pi-only)
+HOST_RUNTIME_DIR := scripts/host-runtime
+HOST_RUNTIME_AUDIT := $(HOST_RUNTIME_DIR)/audit-runtime.sh
+HOST_RUNTIME_UPGRADE_PLAN := $(HOST_RUNTIME_DIR)/upgrade-plan.sh
+HOST_RUNTIME_UPGRADE_APPLY := $(HOST_RUNTIME_DIR)/upgrade-apply.sh
+HOST_RUNTIME_EEPROM_APPLY := $(HOST_RUNTIME_DIR)/eeprom-apply.sh
+
 # --- Renovate (self-hosted, on-demand via Docker Desktop) -------------------
 
 # Renovate runs as a container (no local Node/npm required).
@@ -125,6 +132,7 @@ endef
         hooks precommit \
         ruff ruff-fix format \
         postdeploy postdeploy-endpoints postdeploy-vm \
+        host-audit host-upgrade-plan host-upgrade-apply host-eeprom-apply \
         test tests \
         doctor doctor-strict \
         renovate renovate-check renovate-apply renovate-validate \
@@ -153,7 +161,12 @@ help: ## Show this help (auto-generated from target docstrings)
 	@echo "  POSTDEPLOY_ON_TARGET=1    mark tests as running on the Pi (default: 0)"
 	@echo "  VM_EXPECT_METRICS=1       enable metric-existence expectations in VM query tests (default: 0)"
 	@echo "  VM_EXPECT_JOBS=1          enable job-existence expectations in VM query tests (default: 0)"
-
+	@echo
+	@echo "Host runtime updates (Pi-only):"
+	@echo "  make host-audit            audit OS, APT, EEPROM, Docker, systemd, storage, firewall"
+	@echo "  make host-upgrade-plan     refresh APT metadata and simulate host package updates"
+	@echo "  make host-upgrade-apply    apply APT full-upgrade/autoremove/autoclean"
+	@echo "  make host-eeprom-apply     explicitly apply Raspberry Pi EEPROM update"
 	@echo
 	@echo "Renovate (manual, Docker Desktop):"
 	@echo "  make renovate              run Renovate in check mode (local scan, no PRs) (WSL-only; always logs to logs/renovate-check-*.log)"
@@ -164,7 +177,8 @@ help: ## Show this help (auto-generated from target docstrings)
 	@echo
 	@echo "Guardrails:"
 	@echo "  - check/ci and ci-* targets are WSL-only (fail fast on the Pi)."
-	@echo "  - postdeploy targets are Pi-only (fail fast on non-Pi hosts)."
+	@echo "  - postdeploy and host runtime targets are Pi-only (fail fast on non-Pi hosts)."
+	@echo "  - host-upgrade-apply and host-eeprom-apply require a clean Git work tree."
 	@echo
 	@echo "Alertmanager config:"
 	@echo "  - Repo expects template: $(ALERTMANAGER_TMPL)"
@@ -280,6 +294,28 @@ postdeploy-vm: _guard-pi ## Run only postdeploy VM query tests (Pi only) [set VM
 	  VM_EXPECT_JOBS=$(VM_EXPECT_JOBS) \
 	  ./scripts/tests/run-tests.sh $(PYTEST_QUIET_FLAG) $(PYTEST_STRICT) $(PYTEST_REPORT) $(PYTEST_ARGS) \
 	    tests/postdeploy -m postdeploy -k "vm_query or vm_queries or victoriametrics or vmagent or vmalert"
+
+# --- Host runtime maintenance (Pi-only) -------------------------------------
+
+host-audit: _guard-pi ## Audit Raspberry Pi host runtime state (Pi only)
+	$(call RUN,host-audit, \
+	  "$(HOST_RUNTIME_AUDIT)" \
+	)
+
+host-upgrade-plan: _guard-pi ## Plan Raspberry Pi host package/runtime updates (Pi only)
+	$(call RUN,host-upgrade-plan, \
+	  "$(HOST_RUNTIME_UPGRADE_PLAN)" \
+	)
+
+host-upgrade-apply: _guard-pi ## Apply Raspberry Pi OS/Docker host package updates (Pi only; clean Git required)
+	$(call RUN,host-upgrade-apply, \
+	  "$(HOST_RUNTIME_UPGRADE_APPLY)" \
+	)
+
+host-eeprom-apply: _guard-pi ## Apply Raspberry Pi EEPROM bootloader update explicitly (Pi only; clean Git required)
+	$(call RUN,host-eeprom-apply, \
+	  "$(HOST_RUNTIME_EEPROM_APPLY)" \
+	)
 
 # --- Renovate (self-hosted, on-demand) --------------------------------------
 
