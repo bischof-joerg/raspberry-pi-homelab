@@ -1,6 +1,8 @@
 # Backup & Restore Runbook
 
-This runbook defines the backup and restore operating model for the Raspberry Pi GitOps homelab. It is the source document for the future `backup`, `backup_verify`, and `restore` scripts.
+Last updated: 2026-05-22
+
+This runbook defines the backup and restore operating model for the Raspberry Pi GitOps homelab. It is the source specification for the future `backup`, `backup_verify`, and `restore` scripts.
 
 The runbook is intentionally specific to the current monitoring stack and host layout. When new stacks are added, update the artifact inventory before implementing or changing backup scripts.
 
@@ -21,9 +23,122 @@ Backups must not replace GitOps. Git remains the authoritative source for applic
 
 ---
 
-## 2. Standard Procedure
+## 2. Script Contract
 
-### 2.1 Create a backup
+The future implementation should expose these Make targets:
+
+```bash
+make backup
+make backup_verify
+make restore
+```
+
+An optional compatibility alias may also be provided:
+
+```bash
+make backup-verify
+```
+
+Recommended script layout:
+
+```text
+scripts/
+  backup/
+    common.sh
+    backup.sh
+    backup-verify.sh
+    restore.sh
+```
+
+### 2.1 Required defaults
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `BACKUP_ROOT` | `/srv/backups/homelab` | Local backup root |
+| `DATA_ROOT` | `/srv/data/stacks` | Persistent bind-mount root |
+| `STACK_NAME` | `monitoring` | Initial stack scope |
+| `STACK_DATA_ROOT` | `/srv/data/stacks/monitoring` | Monitoring data root |
+| `REPO_ROOT` | auto-detected from script path or current repo | GitOps repository |
+| `COMPOSE_FILE` | `$REPO_ROOT/stacks/monitoring/compose/docker-compose.yml` | Compose file |
+| `SECRETS_FILE` | `/etc/raspberry-pi-homelab/monitoring.env` | Authoritative env/secrets file |
+| `HOST_SECRETS_DIR` | `/etc/raspberry-pi-homelab` | Host-only env/secrets directory |
+| `BACKUP_RETENTION_DAYS` | `7` | Local retention target |
+| `BACKUP_SIZE_THRESHOLD_BYTES` | `536870912000` | 500 GB size threshold |
+| `BACKUP_MAX_AGE_HOURS` | `36` | Latest verified backup freshness threshold |
+| `BACKUP_QUIESCE` | `1` | Stop stack before archiving data |
+| `BACKUP_INCLUDE_METRICS` | `1` | Include VictoriaMetrics archive |
+| `BACKUP_INCLUDE_LOGS` | `1` | Include VictoriaLogs archive |
+| `BACKUP_INCLUDE_SSH_HOST_KEYS` | `1` | Include encrypted SSH host key archive |
+| `GPG_PASSPHRASE_FILE` | unset | Optional non-interactive GPG passphrase file |
+
+### 2.2 Restore controls
+
+Restore must be intentionally guarded. Recommended controls:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `RESTORE_BACKUP` | unset | Required path or backup ID to restore |
+| `RESTORE_APPLY` | `0` | `0` means dry-run only; `1` applies changes |
+| `RESTORE_COMPONENTS` | `all` | Comma-separated data components or `all` |
+| `RESTORE_SECRETS` | `1` | Restore host-only secrets |
+| `RESTORE_DATA` | `1` | Restore persistent data archives |
+| `RESTORE_SSH_HOST_KEYS` | `0` | Restore SSH host keys only if explicitly enabled |
+| `RESTORE_MACHINE_ID` | `0` | Machine ID restore disabled by default |
+| `RESTORE_CONFIRM` | unset | Must be set to a documented confirmation string for destructive restore |
+
+Recommended destructive restore confirmation:
+
+```bash
+RESTORE_APPLY=1 RESTORE_CONFIRM=RESTORE_HOMELAB_DATA make restore RESTORE_BACKUP=/srv/backups/homelab/<timestamp>
+```
+
+### 2.3 Exit codes
+
+Scripts should use stable exit codes so CI/tests and future alerts can distinguish failures.
+
+| Exit code | Meaning |
+|---:|---|
+| `0` | Success |
+| `2` | Invalid usage, missing config, or failed pre-flight |
+| `3` | Backup verification failed |
+| `4` | Restore safety guard refused the operation |
+| `5` | GPG encryption/decryption failed |
+| `6` | Archive creation/listing/extraction failed |
+| `7` | Deploy or postdeploy validation failed |
+
+### 2.4 Locking
+
+Backup and restore must not run concurrently.
+
+Use a host-level lock file, for example:
+
+```text
+/run/lock/homelab-backup.lock
+```
+
+The first implementation should fail fast if another backup or restore is active. It must not silently wait forever.
+
+### 2.5 Test mode
+
+The implementation must be testable from WSL without touching the real Pi paths.
+
+The scripts should support fixture overrides such as:
+
+```bash
+BACKUP_ROOT=/tmp/homelab-test/backups
+DATA_ROOT=/tmp/homelab-test/data/stacks
+HOST_SECRETS_DIR=/tmp/homelab-test/etc/raspberry-pi-homelab
+SECRETS_FILE=/tmp/homelab-test/etc/raspberry-pi-homelab/monitoring.env
+HOMELAB_ALLOW_NON_PI=1
+```
+
+Production execution must still require the Raspberry Pi target unless explicitly overridden for tests.
+
+---
+
+## 3. Standard Procedure
+
+### 3.1 Create a backup
 
 Run on the Raspberry Pi:
 
@@ -47,14 +162,15 @@ The bundle must contain:
   manifest.json
   checksums.sha256
   data/
+  generated/
   secrets/
   host/
   logs/
 ```
 
-Secrets must be encrypted with GPG. Runtime data archives may remain unencrypted initially unless secrets are embedded in the data path; the script must still compute checksums for every produced artifact.
+Secrets must be encrypted with GPG. Runtime data archives may remain unencrypted initially unless secrets are embedded in the data path. The script must compute checksums for every produced artifact.
 
-### 2.2 Verify a backup
+### 3.2 Verify a backup
 
 Run after every backup:
 
@@ -64,13 +180,16 @@ make backup_verify
 
 Verification must prove at minimum:
 
-- the manifest exists and is valid JSON
+- `manifest.json` exists and is valid JSON
+- required manifest fields are present
 - every file listed in `checksums.sha256` exists
 - every checksum matches
-- every archive can be listed
-- encrypted secret archives can be decrypted or at least GPG packet-validated, depending on non-interactive constraints
+- every tar archive can be listed
+- archive members are relative and do not contain unsafe `..` traversal entries
+- encrypted secret archives can be decrypted and listed if `GPG_PASSPHRASE_FILE` is available
+- encrypted secret archives are at least valid GPG packets if no passphrase is available
 - the backup root has not exceeded the configured size threshold
-- the latest backup is recent enough for the configured policy
+- the latest verified backup is recent enough for the configured policy
 
 The backup size alert threshold is:
 
@@ -78,7 +197,7 @@ The backup size alert threshold is:
 500 GB
 ```
 
-### 2.3 Restore on the same host
+### 3.3 Restore on the same host
 
 Use this path when the OS and repository are still intact, but service data or secrets must be restored.
 
@@ -88,34 +207,35 @@ Use this path when the OS and repository are still intact, but service data or s
    ls -lh /srv/backups/homelab
    ```
 
-2. Stop the affected stack:
+2. Verify the selected backup:
 
    ```bash
-   cd ~/iac/raspberry-pi-homelab
-   sudo docker compose \
-     --env-file /etc/raspberry-pi-homelab/monitoring.env \
-     -f stacks/monitoring/compose/docker-compose.yml \
-     down
+   RESTORE_BACKUP=/srv/backups/homelab/<timestamp> make backup_verify
    ```
 
-3. Restore secrets first, if needed.
-
-4. Restore persistent bind-mounted data.
-
-5. Run the normal deploy reconciliation:
+3. Dry-run restore:
 
    ```bash
-   sudo ./deploy.sh
+   RESTORE_BACKUP=/srv/backups/homelab/<timestamp> make restore
    ```
 
-6. Validate:
+4. Apply restore:
+
+   ```bash
+   sudo RESTORE_BACKUP=/srv/backups/homelab/<timestamp> \
+     RESTORE_APPLY=1 \
+     RESTORE_CONFIRM=RESTORE_HOMELAB_DATA \
+     make restore
+   ```
+
+5. Validate:
 
    ```bash
    make postdeploy
    make backup_verify
    ```
 
-### 2.4 Restore after fresh OS install
+### 3.4 Restore after fresh OS install
 
 Use this path for a clean Raspberry Pi OS install on the same Pi or a replacement Pi.
 
@@ -130,12 +250,7 @@ Use this path for a clean Raspberry Pi OS install on the same Pi or a replacemen
    cd raspberry-pi-homelab
    ```
 
-4. Restore `/etc/rspberry-pi-homelab` host-only secrets, with the corrected target path:
-
-   ```text
-   /etc/raspberry-pi-homelab
-   ```
-
+4. Restore `/etc/raspberry-pi-homelab` host-only secrets.
 5. Restore selected host identity artifacts only if explicitly intended.
 6. Restore persistent bind-mounted data under `/srv/data/stacks`.
 7. Run:
@@ -159,9 +274,9 @@ OS baseline -> Git checkout -> host-only secrets -> persistent data -> deploy ->
 
 ---
 
-## 3. Current Backup-Relevant Reality
+## 4. Current Backup-Relevant Reality
 
-### 3.1 Runtime env files
+### 4.1 Runtime env files
 
 The current deploy path uses one authoritative host-only environment file:
 
@@ -173,6 +288,7 @@ Observed on the host:
 
 ```text
 600 root:root /etc/raspberry-pi-homelab/monitoring.env
+600 root:root /etc/raspberry-pi-homelab/secrets.env.bak-2026-02-02
 ```
 
 The backup scope includes:
@@ -181,12 +297,13 @@ The backup scope includes:
 |---|---|
 | `/etc/raspberry-pi-homelab/monitoring.env` | Back up encrypted with GPG |
 | Any future `/etc/raspberry-pi-homelab/*.env` | Back up encrypted |
+| `/etc/raspberry-pi-homelab/*.bak-*` | Back up encrypted until cleaned up; restore only if explicitly selected |
 | `stacks/monitoring/compose/.env.example` | Git-tracked example only; not backed up as secret |
 | `stacks/monitoring/compose/.env` | Non-authoritative local artifact; do not rely on it for deploy; migrate unique values into `/etc/raspberry-pi-homelab/monitoring.env` and delete if possible |
 
 `deploy.sh` refuses a repository-root `.env` file and validates that the active `SECRETS_FILE` exists, is readable, is owned by `root:root`, and has mode `600`.
 
-### 3.2 Persistent service data
+### 4.2 Persistent service data
 
 The current monitoring stack uses deterministic bind mounts under:
 
@@ -199,7 +316,7 @@ These are the currently observed data directories:
 | Path | Owner/mode observed | Backup policy |
 |---|---:|---|
 | `/srv/data/stacks/monitoring/alertmanager` | `750 nobody:nogroup` | Back up and restore |
-| `/srv/data/stacks/monitoring/alertmanager-config` | `755 root:root` | Do not treat as authoritative; recreate from Git + env; may include in host diagnostics only |
+| `/srv/data/stacks/monitoring/alertmanager-config` | `755 root:root` | Do not treat as authoritative; recreate from Git + env; include as generated diagnostics only |
 | `/srv/data/stacks/monitoring/grafana` | `750 472:472` | Back up and restore |
 | `/srv/data/stacks/monitoring/vector` | `750 65532:65532` | Back up and restore |
 | `/srv/data/stacks/monitoring/victorialogs` | `750 root:root` | Back up by default; restore by default; acceptable to lose history if explicitly selected |
@@ -207,7 +324,7 @@ These are the currently observed data directories:
 
 Subdirectories inherit the same backup policy as their parent directory unless explicitly excluded.
 
-### 3.3 Rendered bind mounts
+### 4.3 Rendered bind mounts
 
 The rendered monitoring stack includes these backup-relevant host mounts:
 
@@ -228,13 +345,13 @@ The rendered monitoring stack includes these backup-relevant host mounts:
 
 ---
 
-## 4. Artifact Inventory
+## 5. Artifact Inventory
 
-### 4.1 Authoritative Git state
+### 5.1 Authoritative Git state
 
 | Artifact | Backup? | Restore source |
 |---|---:|---|
-| Repository files | No separate Pi backup required | GitHub / Git remote |
+| Repository files | No separate Pi backup required | Git remote |
 | Compose files | No separate Pi backup required | Git |
 | Grafana provisioning | No separate Pi backup required | Git |
 | Grafana dashboards | No separate Pi backup required | Git |
@@ -243,7 +360,7 @@ The rendered monitoring stack includes these backup-relevant host mounts:
 | Vector config | No separate Pi backup required | Git |
 | Alertmanager templates and template source config | No separate Pi backup required | Git |
 
-### 4.2 Host-only secrets
+### 5.2 Host-only secrets
 
 | Artifact | Backup? | Encryption | Restore mode |
 |---|---:|---:|---|
@@ -254,7 +371,7 @@ The rendered monitoring stack includes these backup-relevant host mounts:
 | SMTP secrets inside env file | Yes, as part of env file | GPG | `root:root 600` |
 | Grafana admin credentials inside env file | Yes, as part of env file | GPG | `root:root 600` |
 
-### 4.3 Persistent data
+### 5.3 Persistent data
 
 | Artifact | Backup? | Restore? | Notes |
 |---|---:|---:|---|
@@ -265,20 +382,21 @@ The rendered monitoring stack includes these backup-relevant host mounts:
 | `/srv/data/stacks/monitoring/victorialogs` | Yes by default | Yes by default | Logs are useful but not mandatory; capped separately by VictoriaLogs |
 | `/srv/data/stacks/monitoring/alertmanager-config` | Diagnostic only | No by default | Generated from Git templates and env |
 
-### 4.4 Host configuration exports
+### 5.4 Host configuration exports
 
 | Artifact | Backup? | Restore? | Notes |
 |---|---:|---:|---|
 | `ufw status numbered` output | Yes | Manually reconcile | Human-readable restore evidence |
 | `/etc/ufw` | Yes | Carefully, same OS only | Useful for full host recovery |
 | `/etc/docker/daemon.json` | Yes | Usually recreated by deploy | Also enforced by GitOps script |
+| Rendered Compose config | Yes | No | Debugging and restore evidence |
 | Docker networks listing | Yes | Recreated by deploy/bootstrap | Export for diagnostics |
 | Docker version / Compose version | Yes | No | Manifest/debugging only |
 | Package list | Yes | No | Debugging and rebuild evidence |
 | `/etc/machine-id` value | Export only | Do not restore blindly | Restoring can duplicate host identity |
 | `/etc/ssh/ssh_host_*` | Yes | Optional/manual | Restore only if stable SSH host identity is desired |
 
-### 4.5 Explicit exclusions
+### 5.5 Explicit exclusions
 
 Do not back up these as part of the application backup:
 
@@ -298,9 +416,9 @@ Do not back up these as part of the application backup:
 
 ---
 
-## 5. Backup Strategy
+## 6. Backup Strategy
 
-### 5.1 Frequency
+### 6.1 Frequency
 
 | Trigger | Required action |
 |---|---|
@@ -311,7 +429,7 @@ Do not back up these as part of the application backup:
 | After service topology change | Update this runbook first, then run backup and verification |
 | Before destructive restore test | Run backup and verification |
 
-### 5.2 Retention
+### 6.2 Retention
 
 Default retention:
 
@@ -319,19 +437,25 @@ Default retention:
 7 days
 ```
 
-The backup implementation must not delete the only verified backup. Retention cleanup must run only after a new backup has passed verification.
+Retention cleanup must not delete the only verified backup. Cleanup may run only after a new backup has passed verification.
 
-### 5.3 Size alert
+Recommended first implementation:
+
+- `backup.sh` creates a new bundle but does not prune.
+- `backup-verify.sh` verifies the selected or latest backup.
+- If verification succeeds, `backup-verify.sh` may prune backups older than `BACKUP_RETENTION_DAYS`, while keeping at least the latest verified backup.
+
+### 6.3 Size alert
 
 The backup verification script must alert or fail when:
 
-```text
-du -sb /srv/backups/homelab > 500 GB
+```bash
+du -sb /srv/backups/homelab > 536870912000
 ```
 
-The first implementation may fail the verification target. Later this can be integrated into Alertmanager.
+This is a 500 GB threshold. The first implementation may fail the verification target. Later this can be integrated into Alertmanager.
 
-### 5.4 Local-only phase
+### 6.4 Local-only phase
 
 The first implementation creates local backup bundles only.
 
@@ -340,14 +464,14 @@ Out of scope for the first script version:
 - NAS copy
 - S3/object storage copy
 - off-site replication
-- snapshot integration
+- filesystem snapshot integration
 - automated remote retention
 
 These can be added after local backup/restore correctness is proven.
 
 ---
 
-## 6. Backup Bundle Format
+## 7. Backup Bundle Format
 
 Each backup must be self-describing.
 
@@ -378,14 +502,16 @@ Example layout:
     docker-version.txt
     docker-compose-version.txt
     docker-networks.txt
+    docker-compose-rendered.yml
     package-list.txt
     os-release.txt
     uname.txt
   logs/
     backup.log
+    backup-verify.log
 ```
 
-### 6.1 Manifest requirements
+### 7.1 Manifest requirements
 
 `manifest.json` must include at least:
 
@@ -396,26 +522,58 @@ Example layout:
   "hostname": "rpi-hub",
   "repo_root": "/home/admin/iac/raspberry-pi-homelab",
   "git_commit": "unknown",
+  "git_status_clean": true,
   "backup_root": "/srv/backups/homelab",
+  "backup_id": "2026-05-22T203000Z",
   "compose_file": "stacks/monitoring/compose/docker-compose.yml",
   "secrets_file": "/etc/raspberry-pi-homelab/monitoring.env",
+  "data_root": "/srv/data/stacks/monitoring",
   "included_paths": [],
   "excluded_paths": [],
+  "archives": [],
+  "encrypted_archives": [],
+  "host_exports": [],
+  "options": {
+    "backup_quiesce": true,
+    "include_metrics": true,
+    "include_logs": true
+  },
   "notes": []
 }
 ```
 
 The scripts may extend this schema, but must not remove existing fields without updating this runbook.
 
+### 7.2 Checksum requirements
+
+`checksums.sha256` must include all generated artifacts except `checksums.sha256` itself.
+
+It must include:
+
+- `manifest.json`
+- every file under `data/`
+- every file under `generated/`
+- every file under `secrets/`
+- every file under `host/`
+- every file under `logs/` that exists before checksum generation
+
+Verification must run:
+
+```bash
+sha256sum -c checksums.sha256
+```
+
+from the backup bundle directory.
+
 ---
 
-## 7. Backup Procedure Details
+## 8. Backup Procedure Details
 
-### 7.1 Pre-flight checks
+### 8.1 Pre-flight checks
 
 The backup script must check:
 
-- running on the Raspberry Pi target, not the WSL dev machine
+- running on the Raspberry Pi target, not the WSL dev machine, unless `HOMELAB_ALLOW_NON_PI=1` is set for tests
 - `docker` and `docker compose` are available
 - repository exists
 - `git rev-parse HEAD` succeeds
@@ -424,23 +582,50 @@ The backup script must check:
 - `/srv/backups/homelab` exists or can be created
 - enough free space is available for a local backup
 - `gpg` is installed
+- no repo-root `.env` exists
+- `stacks/monitoring/compose/.env` is either absent or recorded as a non-authoritative warning in the manifest
 
-### 7.2 Stack quiescing policy
+### 8.2 Free-space policy
+
+Before archiving, estimate source data size with:
+
+```bash
+du -sb /srv/data/stacks/monitoring /etc/raspberry-pi-homelab
+```
+
+Then compare with available space under `BACKUP_ROOT`.
+
+The first implementation may use a conservative rule:
+
+```text
+available bytes must be greater than estimated source bytes
+```
+
+This is conservative because compression may reduce size, but it avoids predictable backup failures.
+
+### 8.3 Stack quiescing policy
 
 Default first implementation:
 
 - Stop the monitoring stack before archiving persistent data.
 - Archive data.
-- Start the stack again with `sudo ./deploy.sh`. Implicitely runs postdeploy tests.
+- Start the stack again with `sudo ./deploy.sh`.
+- Let deploy run postdeploy tests by default.
 
 Reason: this is slower but simpler and safer than live-copying TSDB and SQLite-like service state.
+
+Required failure behavior:
+
+- If the script stopped the stack, it must attempt to run `sudo ./deploy.sh` in an `EXIT` trap unless explicitly disabled for tests.
+- If archiving fails, the script must still attempt to restart the stack.
+- The script must record restart/deploy result in `logs/backup.log` and `manifest.json` notes.
 
 Future improvement:
 
 - Add service-specific online snapshot support where available.
 - Allow `BACKUP_QUIESCE=0` only after backup consistency has been proven.
 
-### 7.3 Data archives
+### 8.4 Data archives
 
 Archive these paths:
 
@@ -460,13 +645,25 @@ Archive this path as generated/diagnostic, not authoritative restore state:
 
 Each archive must preserve:
 
-- owner
-- group
+- numeric owner
+- numeric group
 - mode
 - symlinks
 - timestamps
 
-### 7.4 Secrets archive
+Recommended command shape:
+
+```bash
+sudo tar --create --gzip --file data/monitoring-grafana.tar.gz \
+  --numeric-owner \
+  --one-file-system \
+  -C /srv/data/stacks/monitoring \
+  grafana
+```
+
+Restore must extract as root and preserve numeric owner information.
+
+### 8.5 Secrets archive
 
 Encrypt the entire host-only env directory:
 
@@ -484,21 +681,37 @@ Required properties:
 - passphrase must not be echoed in logs
 - restore procedure must verify target file mode after decryption
 
-### 7.5 Host configuration exports
+Interactive mode is acceptable for manual backups. Scheduled backups need a root-readable passphrase source.
+
+Recommended non-interactive shape when `GPG_PASSPHRASE_FILE` is set:
+
+```bash
+sudo tar -czpf - -C /etc raspberry-pi-homelab \
+  | gpg --batch --yes --pinentry-mode loopback \
+      --passphrase-file "$GPG_PASSPHRASE_FILE" \
+      --symmetric --cipher-algo AES256 \
+      --output secrets/etc-raspberry-pi-homelab.tar.gz.gpg
+```
+
+The passphrase file itself must be outside Git and protected as `root:root 600`.
+
+### 8.6 Host configuration exports
 
 Export at least:
 
 ```bash
-cat /etc/os-release
-uname -a
-docker version
-docker compose version
-docker network ls
+cat /etc/os-release > host/os-release.txt
+uname -a > host/uname.txt
+docker version > host/docker-version.txt
+docker info > host/docker-info.txt
+docker compose version > host/docker-compose-version.txt
+docker network ls > host/docker-networks.txt
 docker compose --env-file /etc/raspberry-pi-homelab/monitoring.env \
-  -f stacks/monitoring/compose/docker-compose.yml config
-sudo ufw status numbered
-sudo ufw status verbose
-sudo tar -czf etc-ufw.tar.gz /etc/ufw
+  -f stacks/monitoring/compose/docker-compose.yml \
+  config > host/docker-compose-rendered.yml
+sudo ufw status numbered > host/ufw-status-numbered.txt
+sudo ufw status verbose > host/ufw-status-verbose.txt
+sudo tar -czpf host/etc-ufw.tar.gz -C / etc/ufw
 sudo cp /etc/docker/daemon.json host/docker-daemon.json
 cat /etc/machine-id > host/machine-id.txt
 dpkg-query -W > host/package-list.txt
@@ -514,9 +727,99 @@ Do not restore SSH host keys automatically unless the operator explicitly reques
 
 ---
 
-## 8. Restore Procedure Details
+## 9. Backup Verification Details
 
-### 8.1 Pre-restore checks
+### 9.1 Selecting a backup
+
+`backup-verify.sh` must verify one of:
+
+1. `RESTORE_BACKUP` if set.
+2. `BACKUP_DIR` if set.
+3. the latest backup under `BACKUP_ROOT` if neither is set.
+
+The selected path must contain `manifest.json` and `checksums.sha256`.
+
+### 9.2 Manifest validation
+
+The first implementation may validate manifest JSON with Python standard library:
+
+```bash
+python3 -m json.tool manifest.json >/dev/null
+```
+
+It must additionally check required keys, at minimum:
+
+- `schema_version`
+- `created_at_utc`
+- `hostname`
+- `backup_root`
+- `backup_id`
+- `secrets_file`
+- `data_root`
+- `archives`
+- `encrypted_archives`
+
+### 9.3 Archive validation
+
+For every `*.tar.gz` archive:
+
+```bash
+tar -tzf <archive> >/dev/null
+```
+
+For every archive, verify that member paths are safe:
+
+- no absolute paths
+- no path segments equal to `..`
+- no empty member names
+
+### 9.4 GPG validation
+
+If `GPG_PASSPHRASE_FILE` is set, encrypted tar archives must be decrypted to stdout and listed without writing plaintext to disk:
+
+```bash
+gpg --batch --yes --pinentry-mode loopback \
+  --passphrase-file "$GPG_PASSPHRASE_FILE" \
+  --decrypt secrets/etc-raspberry-pi-homelab.tar.gz.gpg \
+  | tar -tzf - >/dev/null
+```
+
+If no passphrase file is available, the verification may only perform packet-level validation:
+
+```bash
+gpg --list-packets secrets/etc-raspberry-pi-homelab.tar.gz.gpg >/dev/null
+```
+
+Packet-level validation is weaker than a real decrypt/list test. The verifier must report this as a warning, not as full secret-restore proof.
+
+### 9.5 Status files
+
+The verifier should write machine-readable status files:
+
+```text
+/srv/backups/homelab/status/latest.json
+/srv/backups/homelab/status/latest-success.json
+/srv/backups/homelab/status/latest-failure.json
+```
+
+At minimum, `latest.json` should include:
+
+```json
+{
+  "checked_at_utc": "2026-05-22T20:45:00Z",
+  "backup_id": "2026-05-22T203000Z",
+  "backup_dir": "/srv/backups/homelab/2026-05-22T203000Z",
+  "result": "ok",
+  "warnings": [],
+  "errors": []
+}
+```
+
+---
+
+## 10. Restore Procedure Details
+
+### 10.1 Pre-restore checks
 
 Before restore, verify:
 
@@ -525,8 +828,23 @@ Before restore, verify:
 - Docker is installed and running
 - no unexpected local Git changes exist
 - backup timestamp and manifest match the intended recovery point
+- destructive restore flags are present if applying changes
+- target paths are not symlinks to unexpected locations
 
-### 8.2 Restore host-only secrets
+### 10.2 Dry-run behavior
+
+Default restore mode is dry-run.
+
+When `RESTORE_APPLY=0`, the restore script must:
+
+- select the backup
+- run verification
+- list what would be restored
+- list what would be skipped
+- list any current target directories that would be moved aside
+- not change files, services, ownerships, or permissions
+
+### 10.3 Restore host-only secrets
 
 Restore encrypted `/etc/raspberry-pi-homelab` material.
 
@@ -540,13 +858,15 @@ Command shape:
 
 ```bash
 sudo install -d -m 700 -o root -g root /etc/raspberry-pi-homelab
-sudo gpg --decrypt secrets/etc-raspberry-pi-homelab.tar.gz.gpg \
+gpg --decrypt secrets/etc-raspberry-pi-homelab.tar.gz.gpg \
   | sudo tar -xzpf - -C /
 sudo chown root:root /etc/raspberry-pi-homelab/*.env
 sudo chmod 600 /etc/raspberry-pi-homelab/*.env
 ```
 
-### 8.3 Restore data
+If `GPG_PASSPHRASE_FILE` is set, use the non-interactive GPG shape from this runbook.
+
+### 10.4 Restore data
 
 Stop the monitoring stack first:
 
@@ -569,7 +889,30 @@ Required behavior:
 - keep a pre-restore safety copy when restoring on a non-empty directory
 - do not restore `alertmanager-config` as authoritative state
 
-### 8.4 Recreate generated config and permissions
+Recommended safety-copy layout:
+
+```text
+/srv/backups/homelab/pre-restore/<timestamp>/
+```
+
+Recommended restore shape per component:
+
+```bash
+sudo mkdir -p /srv/data/stacks/monitoring
+sudo rm -rf /srv/data/stacks/monitoring/.restore-tmp-grafana
+sudo mkdir -p /srv/data/stacks/monitoring/.restore-tmp-grafana
+sudo tar -xzpf data/monitoring-grafana.tar.gz \
+  --numeric-owner \
+  -C /srv/data/stacks/monitoring/.restore-tmp-grafana
+
+# Move current target aside, then move restored directory into place.
+sudo mv /srv/data/stacks/monitoring/grafana \
+  /srv/backups/homelab/pre-restore/<timestamp>/grafana
+sudo mv /srv/data/stacks/monitoring/.restore-tmp-grafana/grafana \
+  /srv/data/stacks/monitoring/grafana
+```
+
+### 10.5 Recreate generated config and permissions
 
 Do not manually restore generated Alertmanager config as authoritative state. Let deploy recreate it from Git templates and env.
 
@@ -581,7 +924,7 @@ sudo ./deploy.sh
 
 This deploy path validates the host-only env file, ensures Docker daemon config, ensures journald read access, bootstraps networks, optionally runs init permissions, applies Compose, and runs postdeploy tests by default.
 
-### 8.5 Restore `/etc/machine-id`
+### 10.6 Restore `/etc/machine-id`
 
 Default policy:
 
@@ -591,7 +934,7 @@ Do not restore /etc/machine-id blindly.
 
 The backup keeps `machine-id.txt` for diagnostics. Restore it only for an explicit, documented reason.
 
-### 8.6 Restore SSH host keys
+### 10.7 Restore SSH host keys
 
 SSH host keys are backed up because replacing them changes the host identity seen by SSH clients.
 
@@ -605,7 +948,7 @@ Restore them only when stable SSH host identity is required and the target host 
 
 ---
 
-## 9. Restore Validation
+## 11. Restore Validation
 
 After every restore:
 
@@ -633,7 +976,7 @@ Additional manual checks:
 
 ---
 
-## 10. Monitoring and Alerting Requirements
+## 12. Monitoring and Alerting Requirements
 
 The backup system must eventually export or support checks for:
 
@@ -660,7 +1003,7 @@ Example:
 
 ---
 
-## 11. What Not To Do
+## 13. What Not To Do
 
 Do not:
 
@@ -674,24 +1017,71 @@ Do not:
 - restore TSDB/log archives across incompatible image major versions without a migration plan
 - hand-edit Grafana or Alertmanager state after restore instead of fixing Git or restored data
 - delete old backups before a new backup has passed verification
+- leave plaintext secret archives on disk after GPG encryption or decryption
 
 ---
 
-## 12. Open Follow-up Items
+## 14. Required Tests for Future Scripts
 
-Before implementing `backup`, `backup_verify`, and `restore`, resolve or encode these as explicit script defaults:
+Before accepting `backup`, `backup_verify`, and `restore`, add focused tests.
+
+### 14.1 Static checks
+
+- `bash -n scripts/backup/*.sh`
+- ShellCheck for all backup scripts
+- no CRLF
+- no secrets committed
+
+### 14.2 Unit-style tests with fixtures
+
+Use temporary directories and environment overrides.
+
+Required cases:
+
+- backup creates expected directory layout
+- manifest JSON validates
+- checksums validate
+- archive listing validates
+- unsafe archive members are rejected
+- missing required secret file fails pre-flight
+- wrong `monitoring.env` mode fails pre-flight
+- repo-root `.env` fails or warns according to policy
+- GPG packet validation works
+- GPG full decrypt/list works when `GPG_PASSPHRASE_FILE` is provided
+- dry-run restore changes nothing
+- restore refuses without `RESTORE_APPLY=1`
+- restore refuses without `RESTORE_CONFIRM=RESTORE_HOMELAB_DATA`
+- restore safety copy is created for non-empty target directories
+- retention does not delete the only verified backup
+
+### 14.3 Integration tests on Pi
+
+Required before enabling scheduled backups:
+
+1. Create backup.
+2. Verify backup.
+3. Restore into temporary directory only.
+4. Restore one non-critical component on the live Pi.
+5. Run `sudo ./deploy.sh`.
+6. Run `make postdeploy`.
+
+---
+
+## 15. Open Follow-up Items
+
+Before implementing scheduled backups, resolve or encode these as explicit script defaults:
 
 1. Remove or migrate `stacks/monitoring/compose/.env` if it contains unique values.
 2. Decide whether VictoriaMetrics and VictoriaLogs can be skipped with flags such as:
    - `BACKUP_INCLUDE_METRICS=0`
    - `BACKUP_INCLUDE_LOGS=0`
-3. Decide how the GPG passphrase is provided non-interactively, if scheduled backups are required.
-4. Decide whether `make backup` should stop the monitoring stack by default or require `BACKUP_QUIESCE=1`.
-5. Add a restore test target that restores into a temporary directory before touching live paths.
+3. Decide how the GPG passphrase is provided non-interactively for scheduled backups.
+4. Add a restore test target that restores into a temporary directory before touching live paths.
+5. Add Alertmanager integration for backup freshness and backup root size.
 
 ---
 
-## 13. Design Decisions
+## 16. Design Decisions
 
 ### DD-001: Git first, backup second
 
@@ -740,3 +1130,24 @@ Restore ends by running `sudo ./deploy.sh`, which applies the GitOps deployment 
 ### DD-012: Future scripts must be test-first
 
 `backup`, `backup_verify`, and `restore` scripts must include focused tests before being accepted into the repository.
+
+### DD-013: Restore is dry-run by default
+
+The restore script must not mutate the host unless `RESTORE_APPLY=1` and the confirmation token are provided.
+
+### DD-014: Quiesced backup first
+
+The first implementation stops the monitoring stack before archiving service data. Live backups may be added only after consistency has been proven.
+
+### DD-015: Verification is a first-class artifact
+
+A backup is not considered usable until `backup_verify` succeeds and writes a successful status file.
+
+---
+
+## 17. References
+
+- Docker bind mounts: https://docs.docker.com/engine/storage/bind-mounts/
+- Docker Compose environment variable precedence: https://docs.docker.com/compose/how-tos/environment-variables/envvars-precedence/
+- GNU tar option summary: https://www.gnu.org/software/tar/manual/html_node/Option-Summary.html
+- GnuPG symmetric encryption: https://www.gnupg.org/documentation/manuals/gnupg/Operational-GPG-Commands.html
