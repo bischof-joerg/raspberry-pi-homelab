@@ -288,7 +288,6 @@ Observed on the host:
 
 ```text
 600 root:root /etc/raspberry-pi-homelab/monitoring.env
-600 root:root /etc/raspberry-pi-homelab/secrets.env.bak-2026-02-02
 ```
 
 The backup scope includes:
