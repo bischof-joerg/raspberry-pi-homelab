@@ -71,6 +71,12 @@ HOST_RUNTIME_UPGRADE_PLAN := $(HOST_RUNTIME_DIR)/upgrade-plan.sh
 HOST_RUNTIME_UPGRADE_APPLY := $(HOST_RUNTIME_DIR)/upgrade-apply.sh
 HOST_RUNTIME_EEPROM_APPLY := $(HOST_RUNTIME_DIR)/eeprom-apply.sh
 
+# Backup, verification, and restore scripts
+BACKUP_SCRIPT_DIR := scripts/backup
+BACKUP_SCRIPT := $(BACKUP_SCRIPT_DIR)/backup.sh
+BACKUP_VERIFY_SCRIPT := $(BACKUP_SCRIPT_DIR)/backup-verify.sh
+RESTORE_SCRIPT := $(BACKUP_SCRIPT_DIR)/restore.sh
+
 # --- Renovate (self-hosted, on-demand via Docker Desktop) -------------------
 
 # Renovate runs as a container (no local Node/npm required).
@@ -133,6 +139,7 @@ endef
         ruff ruff-fix format \
         postdeploy postdeploy-endpoints postdeploy-vm \
         host-audit host-upgrade-plan host-upgrade-apply host-eeprom-apply \
+        backup backup_verify backup-verify backup-verify-decrypt restore \
         test tests \
         doctor doctor-strict \
         renovate renovate-check renovate-apply renovate-validate \
@@ -167,6 +174,16 @@ help: ## Show this help (auto-generated from target docstrings)
 	@echo "  make host-upgrade-plan     refresh APT metadata and simulate host package updates"
 	@echo "  make host-upgrade-apply    apply APT full-upgrade/autoremove/autoclean"
 	@echo "  make host-eeprom-apply     explicitly apply Raspberry Pi EEPROM update"
+	@echo
+	@echo "Backup, verification, and restore:"
+	@echo "  make backup                create encrypted local backup bundle (Pi; testable with HOMELAB_ALLOW_NON_PI=1)"
+	@echo "  make backup_verify         verify latest/selected backup at artifact level"
+	@echo "  make backup-verify         alias for backup_verify"
+	@echo "  make backup-verify-decrypt decrypt/list verify backup artifacts (WSL/Admin; private key required)"
+	@echo "  make restore               restore dry-run by default; apply requires RESTORE_APPLY=1 RESTORE_CONFIRM=RESTORE_HOMELAB_DATA"
+	@echo "  BACKUP_DIR=...             verify a specific backup directory"
+	@echo "  RESTORE_BACKUP=...         select backup for restore"
+	@echo "  RESTORE_TARGET=user@host   stream WSL/Admin decrypt restore to Pi over SSH"
 	@echo
 	@echo "Renovate (manual, Docker Desktop):"
 	@echo "  make renovate              run Renovate in check mode (local scan, no PRs) (WSL-only; always logs to logs/renovate-check-*.log)"
@@ -315,6 +332,31 @@ host-upgrade-apply: _guard-pi ## Apply Raspberry Pi OS/Docker host package updat
 host-eeprom-apply: _guard-pi ## Apply Raspberry Pi EEPROM bootloader update explicitly (Pi only; clean Git required)
 	$(call RUN,host-eeprom-apply, \
 	  "$(HOST_RUNTIME_EEPROM_APPLY)" \
+	)
+
+
+# --- Backup, verification, and restore --------------------------------------
+
+backup: ## Create encrypted local backup bundle (Pi; testable with HOMELAB_ALLOW_NON_PI=1)
+	$(call RUN,backup, \
+	  "$(BACKUP_SCRIPT)" \
+	)
+
+backup_verify: ## Verify latest or selected backup at artifact level (Pi/WSL)
+	$(call RUN,backup-verify, \
+	  "$(BACKUP_VERIFY_SCRIPT)" \
+	)
+
+backup-verify: backup_verify ## Alias for `make backup_verify`
+
+backup-verify-decrypt: ## Decrypt/list verification for WSL/Admin (private key required)
+	$(call RUN,backup-verify-decrypt, \
+	  BACKUP_VERIFY_DECRYPT=1 "$(BACKUP_VERIFY_SCRIPT)" --decrypt \
+	)
+
+restore: ## Restore dry-run/apply workflow; apply requires RESTORE_APPLY=1 and RESTORE_CONFIRM=RESTORE_HOMELAB_DATA
+	$(call RUN,restore, \
+	  "$(RESTORE_SCRIPT)" \
 	)
 
 # --- Renovate (self-hosted, on-demand) --------------------------------------

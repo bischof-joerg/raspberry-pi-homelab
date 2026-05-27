@@ -7,6 +7,12 @@
 **/*.key
 **/*.p12
 **/*.pfx
+/secrets/
+*.kdbx
+*.keyx
+*.asc.tmp
+*.tar
+*.tar.zst
 
 # --- OS ---
 .DS_Store

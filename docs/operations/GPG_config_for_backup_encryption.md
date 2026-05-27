@@ -51,7 +51,8 @@ sudo apt install -y \
   ca-certificates \
   tar \
   zstd \
-  coreutils
+  coreutils\
+  util-linux
 ```
 
 Configure terminal pinentry:
@@ -90,7 +91,8 @@ sudo apt install -y \
   ca-certificates \
   tar \
   zstd \
-  coreutils
+  coreutils\
+  util-linux
 ```
 
 Create the dedicated public-key-only GnuPG home:
