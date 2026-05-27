@@ -1,6 +1,6 @@
-# Backup & Restore Runbook
+# ADR-009: Backup, Verification, Restore, and GPG Encryption Architecture
 
-Last updated: 2026-05-22
+Last updated: 2026-05-27
 
 This runbook defines the backup and restore operating model for the Raspberry Pi GitOps homelab. It is the source specification for the future `backup`, `backup_verify`, and `restore` scripts.
 
@@ -69,7 +69,10 @@ scripts/
 | `BACKUP_INCLUDE_METRICS` | `1` | Include VictoriaMetrics archive |
 | `BACKUP_INCLUDE_LOGS` | `1` | Include VictoriaLogs archive |
 | `BACKUP_INCLUDE_SSH_HOST_KEYS` | `1` | Include encrypted SSH host key archive |
-| `GPG_PASSPHRASE_FILE` | unset | Optional non-interactive GPG passphrase file |
+| `GPG_HOME` | `/var/lib/homelab-backup/gnupg` | Dedicated GnuPG home on the Pi; contains public keys only |
+| `GPG_PUBLIC_KEY_FILE` | `$REPO_ROOT/config/backup/homelab-backup-recovery-public.asc` | Git-tracked public backup recipient key |
+| `GPG_RECIPIENT_FINGERPRINT` | unset | Required full 40-hex fingerprint of the backup recipient key |
+| `GPG_PRIVATE_KEY_DIR` | `$REPO_ROOT/secrets/backup/gpg` | Local WSL/Admin-only, Git-ignored private-key material directory |
 
 ### 2.2 Restore controls
 
@@ -102,7 +105,7 @@ Scripts should use stable exit codes so CI/tests and future alerts can distingui
 | `2` | Invalid usage, missing config, or failed pre-flight |
 | `3` | Backup verification failed |
 | `4` | Restore safety guard refused the operation |
-| `5` | GPG encryption/decryption failed |
+| `5` | GPG encryption failed on Pi or decryption failed on WSL/Admin |
 | `6` | Archive creation/listing/extraction failed |
 | `7` | Deploy or postdeploy validation failed |
 
@@ -168,7 +171,7 @@ The bundle must contain:
   logs/
 ```
 
-Secrets must be encrypted with GPG. Runtime data archives may remain unencrypted initially unless secrets are embedded in the data path. The script must compute checksums for every produced artifact.
+Backup archives must use OpenPGP public-key encryption with GnuPG. The Raspberry Pi encrypts compressed tar artifacts to the dedicated `Homelab Backup Recovery` public key and never stores the corresponding private key. The standard artifact extension is `.tar.zst.gpg`. Plaintext metadata such as `manifest.json`, `checksums.sha256`, and status files may remain readable because they are needed for Pi-side artifact verification; they must not contain secrets.
 
 ### 3.2 Verify a backup
 
@@ -184,10 +187,11 @@ Verification must prove at minimum:
 - required manifest fields are present
 - every file listed in `checksums.sha256` exists
 - every checksum matches
-- every tar archive can be listed
+- every plaintext archive created during the backup phase is listed before encryption
 - archive members are relative and do not contain unsafe `..` traversal entries
-- encrypted secret archives can be decrypted and listed if `GPG_PASSPHRASE_FILE` is available
-- encrypted secret archives are at least valid GPG packets if no passphrase is available
+- encrypted archives are valid OpenPGP packets on the Pi
+- encrypted archives are addressed to the pinned backup-recipient fingerprint where recipient metadata is available
+- full decrypt/list verification is performed only on WSL/Admin, where the private key exists
 - the backup root has not exceeded the configured size threshold
 - the latest verified backup is recent enough for the configured policy
 
@@ -481,22 +485,22 @@ Example layout:
   manifest.json
   checksums.sha256
   data/
-    monitoring-alertmanager.tar.gz
-    monitoring-grafana.tar.gz
-    monitoring-vector.tar.gz
-    monitoring-victoriametrics.tar.gz
-    monitoring-victorialogs.tar.gz
+    monitoring-alertmanager.tar.zst.gpg
+    monitoring-grafana.tar.zst.gpg
+    monitoring-vector.tar.zst.gpg
+    monitoring-victoriametrics.tar.zst.gpg
+    monitoring-victorialogs.tar.zst.gpg
   generated/
-    monitoring-alertmanager-config.tar.gz
+    monitoring-alertmanager-config.tar.zst.gpg
   secrets/
-    etc-raspberry-pi-homelab.tar.gz.gpg
+    etc-raspberry-pi-homelab.tar.zst.gpg
   host/
     docker-daemon.json
     ufw-status-numbered.txt
     ufw-status-verbose.txt
-    etc-ufw.tar.gz
+    etc-ufw.tar.zst.gpg
     machine-id.txt
-    ssh-host-keys.tar.gz.gpg
+    ssh-host-keys.tar.zst.gpg
     docker-info.txt
     docker-version.txt
     docker-compose-version.txt
@@ -653,14 +657,18 @@ Each archive must preserve:
 Recommended command shape:
 
 ```bash
-sudo tar --create --gzip --file data/monitoring-grafana.tar.gz \
-  --numeric-owner \
-  --one-file-system \
+sudo tar --create --numeric-owner --one-file-system \
   -C /srv/data/stacks/monitoring \
-  grafana
+  grafana \
+  | zstd -T0 -19 \
+  | GNUPGHOME=/var/lib/homelab-backup/gnupg \
+      gpg --batch --yes --trust-model always \
+        --encrypt \
+        --recipient "$GPG_RECIPIENT_FINGERPRINT" \
+        --output data/monitoring-grafana.tar.zst.gpg
 ```
 
-Restore must extract as root and preserve numeric owner information.
+Restore must decrypt on WSL/Admin or another approved recovery workstation, extract as root on the Pi, and preserve numeric owner information.
 
 ### 8.5 Secrets archive
 
@@ -670,29 +678,24 @@ Encrypt the entire host-only env directory:
 /etc/raspberry-pi-homelab
 ```
 
-Use GPG symmetric encryption for the first implementation.
+Use OpenPGP public-key encryption with GnuPG. The Pi uses only the public `Homelab Backup Recovery` key. The private key must never be imported into the Pi GnuPG home.
 
 Required properties:
 
-- output must be `.gpg`
-- plaintext tar must not remain on disk after encryption
-- passphrase must not be committed
-- passphrase must not be echoed in logs
-- restore procedure must verify target file mode after decryption
+- output must be `.tar.zst.gpg`
+- plaintext tar streams must not remain on disk after encryption
+- the recipient must be the full pinned `GPG_RECIPIENT_FINGERPRINT`
+- the public key fingerprint must be verified before encryption
+- no GPG passphrase file is required or allowed on the Pi for backup creation
+- restore procedure must verify target file ownership and mode after decryption
 
-Interactive mode is acceptable for manual backups. Scheduled backups need a root-readable passphrase source.
-
-Recommended non-interactive shape when `GPG_PASSPHRASE_FILE` is set:
+Recommended non-interactive shape on the Pi:
 
 ```bash
-sudo tar -czpf - -C /etc raspberry-pi-homelab \
-  | gpg --batch --yes --pinentry-mode loopback \
-      --passphrase-file "$GPG_PASSPHRASE_FILE" \
-      --symmetric --cipher-algo AES256 \
-      --output secrets/etc-raspberry-pi-homelab.tar.gz.gpg
+sudo tar --create --numeric-owner -C /etc raspberry-pi-homelab   | zstd -T0 -19   | GNUPGHOME=/var/lib/homelab-backup/gnupg       gpg --batch --yes --trust-model always         --encrypt         --recipient "$GPG_RECIPIENT_FINGERPRINT"         --output secrets/etc-raspberry-pi-homelab.tar.zst.gpg
 ```
 
-The passphrase file itself must be outside Git and protected as `root:root 600`.
+The only GPG material on the Pi is the public keyring under `GPG_HOME`. The WSL/Admin private-key export may exist in the local repository working tree only under a Git-ignored path such as `secrets/backup/gpg/`.
 
 ### 8.6 Host configuration exports
 
@@ -710,7 +713,7 @@ docker compose --env-file /etc/raspberry-pi-homelab/monitoring.env \
   config > host/docker-compose-rendered.yml
 sudo ufw status numbered > host/ufw-status-numbered.txt
 sudo ufw status verbose > host/ufw-status-verbose.txt
-sudo tar -czpf host/etc-ufw.tar.gz -C / etc/ufw
+sudo tar -cpf - -C / etc/ufw | zstd -T0 -19 | gpg --batch --yes --trust-model always --encrypt --recipient "$GPG_RECIPIENT_FINGERPRINT" --output host/etc-ufw.tar.zst.gpg
 sudo cp /etc/docker/daemon.json host/docker-daemon.json
 cat /etc/machine-id > host/machine-id.txt
 dpkg-query -W > host/package-list.txt
@@ -760,36 +763,34 @@ It must additionally check required keys, at minimum:
 
 ### 9.3 Archive validation
 
-For every `*.tar.gz` archive:
-
-```bash
-tar -tzf <archive> >/dev/null
-```
-
-For every archive, verify that member paths are safe:
+During backup creation, every tar stream must be listed before encryption or recorded through an equivalent member manifest. For every plaintext archive member list, verify that member paths are safe:
 
 - no absolute paths
 - no path segments equal to `..`
 - no empty member names
 
+After encryption, Pi-side verification validates encrypted artifacts rather than plaintext tar contents. Full tar listing after decryption is a WSL/Admin verification responsibility because the private key is not installed on the Pi.
+
 ### 9.4 GPG validation
 
-If `GPG_PASSPHRASE_FILE` is set, encrypted tar archives must be decrypted to stdout and listed without writing plaintext to disk:
+Pi-side `backup_verify` must not require the private key. It must validate encrypted artifacts at artifact level:
 
 ```bash
-gpg --batch --yes --pinentry-mode loopback \
-  --passphrase-file "$GPG_PASSPHRASE_FILE" \
-  --decrypt secrets/etc-raspberry-pi-homelab.tar.gz.gpg \
-  | tar -tzf - >/dev/null
+GNUPGHOME=/var/lib/homelab-backup/gnupg   gpg --batch --list-packets secrets/etc-raspberry-pi-homelab.tar.zst.gpg >/dev/null
 ```
 
-If no passphrase file is available, the verification may only perform packet-level validation:
+Where recipient metadata is visible, verification must check that the encrypted packet is addressed to the configured backup recipient. This is still weaker than a real decrypt/list test and must be reported as Pi-side artifact verification, not full restore proof.
+
+WSL/Admin performs full decrypt/list verification because it holds the private key:
 
 ```bash
-gpg --list-packets secrets/etc-raspberry-pi-homelab.tar.gz.gpg >/dev/null
+gpg --decrypt secrets/etc-raspberry-pi-homelab.tar.zst.gpg   | zstd -d   | tar -tf - >/dev/null
 ```
 
-Packet-level validation is weaker than a real decrypt/list test. The verifier must report this as a warning, not as full secret-restore proof.
+The verifier must distinguish these two modes explicitly:
+
+- `artifact-only`: safe to run on the Pi; validates checksums, OpenPGP packets, freshness, and status files.
+- `decrypt`: requires WSL/Admin private key; proves encrypted artifacts can be decrypted and listed.
 
 ### 9.5 Status files
 
@@ -845,7 +846,7 @@ When `RESTORE_APPLY=0`, the restore script must:
 
 ### 10.3 Restore host-only secrets
 
-Restore encrypted `/etc/raspberry-pi-homelab` material.
+Restore encrypted `/etc/raspberry-pi-homelab` material from WSL/Admin. The private key is not installed on the Pi, so the standard restore path decrypts on WSL/Admin and streams the plaintext tar over SSH to the Pi.
 
 Required final state:
 
@@ -853,17 +854,25 @@ Required final state:
 /etc/raspberry-pi-homelab/monitoring.env root:root 600
 ```
 
-Command shape:
+Command shape from WSL/Admin:
 
 ```bash
-sudo install -d -m 700 -o root -g root /etc/raspberry-pi-homelab
-gpg --decrypt secrets/etc-raspberry-pi-homelab.tar.gz.gpg \
-  | sudo tar -xzpf - -C /
-sudo chown root:root /etc/raspberry-pi-homelab/*.env
-sudo chmod 600 /etc/raspberry-pi-homelab/*.env
+BACKUP_DIR=/path/to/verified/backup
+PI_HOST=admin@rpi-hub
+
+gpg --decrypt "$BACKUP_DIR/secrets/etc-raspberry-pi-homelab.tar.zst.gpg"   | zstd -d   | ssh "$PI_HOST" 'sudo tar --extract --preserve-permissions --numeric-owner --file - --directory /'
+
+ssh "$PI_HOST" 'sudo chown root:root /etc/raspberry-pi-homelab/*.env && sudo chmod 600 /etc/raspberry-pi-homelab/*.env'
 ```
 
-If `GPG_PASSPHRASE_FILE` is set, use the non-interactive GPG shape from this runbook.
+A local staging restore on WSL/Admin is also allowed for inspection:
+
+```bash
+mkdir -p restore-staging
+gpg --decrypt "$BACKUP_DIR/secrets/etc-raspberry-pi-homelab.tar.zst.gpg"   | zstd -d   | tar --extract --preserve-permissions --numeric-owner --file - --directory restore-staging
+```
+
+Temporary import of the private key on the Pi is an emergency-only exception and must be followed by deleting the secret key and the temporary GnuPG home.
 
 ### 10.4 Restore data
 
@@ -900,9 +909,10 @@ Recommended restore shape per component:
 sudo mkdir -p /srv/data/stacks/monitoring
 sudo rm -rf /srv/data/stacks/monitoring/.restore-tmp-grafana
 sudo mkdir -p /srv/data/stacks/monitoring/.restore-tmp-grafana
-sudo tar -xzpf data/monitoring-grafana.tar.gz \
-  --numeric-owner \
-  -C /srv/data/stacks/monitoring/.restore-tmp-grafana
+gpg --decrypt data/monitoring-grafana.tar.zst.gpg \
+  | zstd -d \
+  | sudo tar --extract --preserve-permissions --numeric-owner --file - \
+      --directory /srv/data/stacks/monitoring/.restore-tmp-grafana
 
 # Move current target aside, then move restored directory into place.
 sudo mv /srv/data/stacks/monitoring/grafana \
@@ -1045,8 +1055,8 @@ Required cases:
 - missing required secret file fails pre-flight
 - wrong `monitoring.env` mode fails pre-flight
 - repo-root `.env` fails or warns according to policy
-- GPG packet validation works
-- GPG full decrypt/list works when `GPG_PASSPHRASE_FILE` is provided
+- GPG packet validation works on the Pi without a private key
+- GPG full decrypt/list works on WSL/Admin when the private key is available
 - dry-run restore changes nothing
 - restore refuses without `RESTORE_APPLY=1`
 - restore refuses without `RESTORE_CONFIRM=RESTORE_HOMELAB_DATA`
@@ -1074,7 +1084,7 @@ Before implementing scheduled backups, resolve or encode these as explicit scrip
 2. Decide whether VictoriaMetrics and VictoriaLogs can be skipped with flags such as:
    - `BACKUP_INCLUDE_METRICS=0`
    - `BACKUP_INCLUDE_LOGS=0`
-3. Decide how the GPG passphrase is provided non-interactively for scheduled backups.
+3. Configure remote/offsite copy after local public-key encrypted backup/restore correctness is proven.
 4. Add a restore test target that restores into a temporary directory before touching live paths.
 5. Add Alertmanager integration for backup freshness and backup root size.
 
@@ -1092,7 +1102,7 @@ The monitoring stack uses deterministic host bind mounts under `/srv/data/stacks
 
 ### DD-003: Secrets are host-only and encrypted
 
-Runtime secrets live under `/etc/raspberry-pi-homelab` and are backed up encrypted with GPG.
+Runtime secrets live under `/etc/raspberry-pi-homelab` and are backed up with OpenPGP public-key encryption using GnuPG.
 
 ### DD-004: Local backup bundles first
 
@@ -1142,11 +1152,82 @@ The first implementation stops the monitoring stack before archiving service dat
 
 A backup is not considered usable until `backup_verify` succeeds and writes a successful status file.
 
+### DD-016: Public-key GPG is the backup encryption boundary
+
+The Pi encrypts backup artifacts with the dedicated `Homelab Backup Recovery` public key. The private key is generated and stored only on WSL/Admin, with an additional KeePassXC/offline recovery copy. Pi-side verification is artifact-only. Full decrypt verification and restore tests run on WSL/Admin.
+
 ---
 
-## 17. References
+## 17. GPG Encryption Architecture Decision
+
+### 17.1 Decision
+
+Backups use OpenPGP public-key encryption with GnuPG. The backup recipient is a dedicated `Homelab Backup Recovery` key generated on WSL/Admin with no expiry date. The Raspberry Pi stores only the public key and pins the full 40-hex fingerprint. The Pi produces encrypted `.tar.zst.gpg` artifacts and runs artifact-only verification. WSL/Admin holds the private key in the local repository checkout under a Git-ignored path and runs decrypt verification and restore tests.
+
+### 17.2 Rationale
+
+This keeps the deploy target from becoming the recovery trust anchor. If the Pi is compromised, an attacker can create new encrypted backups but cannot decrypt existing backup artifacts using material stored on the Pi. Restore authority remains on WSL/Admin and in documented offline/KeePassXC recovery material.
+
+### 17.3 Accepted trade-off: no key expiry
+
+The backup key is intentionally created without an expiry date to reduce disaster-recovery failure modes caused by an expired recipient key. This increases the importance of revocation handling, protected private-key storage, and periodic manual review of the key fingerprint and recovery material.
+
+### 17.4 Key material placement
+
+| Location | Allowed material | Prohibited material |
+|---|---|---|
+| Git repository remote | Public key, pinned fingerprint, scripts, tests, docs, `.env.example` | Private key, passphrase, storage credentials, real `.env` files |
+| Pi | Public keyring, pinned fingerprint, encrypted backup artifacts | Private key, private-key passphrase, KeePassXC database |
+| WSL/Admin local checkout | Private key export under Git-ignored path, restore tooling, decrypt-test fixtures | Committed private key or committed secrets |
+| KeePassXC | GPG passphrase, key metadata, backup storage credentials, private key attachment, restore notes, revocation certificate | Sole copy of all recovery material |
+| Offline storage | Private-key export, revocation certificate, ownertrust export, KeePassXC backup, printed recovery note | Permanently mounted writable backup target |
+
+### 17.5 Repository layout
+
+Recommended Git-tracked files:
+
+```text
+config/backup/homelab-backup-recovery-public.asc
+config/backup/homelab-backup-recovery-public.fingerprint
+docs/architecture/adr/ADR-009-backup-verify-restore.md
+docs/operations/BackupVerifyRestore.md
+docs/operations/GPG_config_for_backup_encryption.md
+```
+
+Recommended local-only ignored files:
+
+```text
+secrets/backup/gpg/homelab-backup-recovery-secret.asc
+secrets/backup/gpg/homelab-backup-recovery-ownertrust.txt
+secrets/backup/gpg/homelab-backup-revocation.asc
+```
+
+`.gitignore` must include:
+
+```gitignore
+/secrets/
+*.kdbx
+*.keyx
+*.env
+```
+
+### 17.6 Script implications
+
+`backup` must import or verify the public key, pin the expected fingerprint, create compressed tar streams, encrypt to the pinned recipient, write checksums for encrypted artifacts, and avoid writing plaintext archives to disk.
+
+`backup_verify` on the Pi must validate manifest, checksums, OpenPGP packet readability, expected encrypted artifacts, backup age, retention, and backup-root size. It must not claim full restore proof without private-key decryption.
+
+`backup_verify --decrypt` or the equivalent WSL/Admin verification path must decrypt each encrypted artifact, decompress it, list the tar members, and reject unsafe archive members.
+
+`restore` must normally run from WSL/Admin, decrypt artifacts locally, and stream restored tar data to the Pi over SSH. Temporary private-key import on the Pi is emergency-only and must be documented in the restore log.
+
+---
+
+## 18. References
 
 - Docker bind mounts: https://docs.docker.com/engine/storage/bind-mounts/
 - Docker Compose environment variable precedence: https://docs.docker.com/compose/how-tos/environment-variables/envvars-precedence/
 - GNU tar option summary: https://www.gnu.org/software/tar/manual/html_node/Option-Summary.html
-- GnuPG symmetric encryption: https://www.gnupg.org/documentation/manuals/gnupg/Operational-GPG-Commands.html
+- GnuPG operational commands: https://www.gnupg.org/documentation/manuals/gnupg/Operational-GPG-Commands.html
+- GnuPG key management: https://www.gnupg.org/documentation/manuals/gnupg/OpenPGP-Key-Management.html
+- KeePassXC documentation: https://keepassxc.org/docs/
