@@ -360,7 +360,7 @@ services:
       - /srv/data/stacks/monitoring/victorialogs:/vlogs
 
   vector:
-    image: timberio/vector:0.58.0-debian
+    image: timberio/vector:0.53.0-debian
     restart: unless-stopped
     command: ["--config", "/etc/vector/vector.yaml"]
     networks:
