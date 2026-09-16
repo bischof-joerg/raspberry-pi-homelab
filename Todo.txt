@@ -94,6 +94,22 @@ GPG_config_for_backup_encryption.md  Mit Schritt 6 weitermachen
 vector update auf version image: timberio/vector:0.58.0-debian mit runtime issues
     reverted to image: timberio/vector:0.53.0-debian
 
+
+# Claud Transition
+Phase 0a liegt bei dir:
+done - Datei nach /home/micro/src/raspberry-pi-homelab/.claude/ClaudeTransition.md kopieren.
+- Branch anlegen - git switch -c chore/claude-transition
+- .venv prüfen.
+- python3 --version und shellcheck --version prüfen.
+
+Phase 0b: CloudTransition.md durchgehen
+
+Phase 1a (Claude Code): Starte Claude Code im Repo-Root, zum Beispiel mit dieser Anweisung:
+Read .claude/ClaudeTransition.md sections 1–5 completely. Then execute Phase 1a only. Present your plan first and wait for my approval.
+
+Phase 1b führst du selbst durch: den Hook prüfen und in settings.json aktivieren.
+    Danach laufen die Live-Negativtests V1.10–V1.16.
+
 _____________________________________________________________________________
 __________________________________ D O N E __________________________________
 _____________________________________________________________________________
