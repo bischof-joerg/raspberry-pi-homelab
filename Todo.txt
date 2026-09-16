@@ -1,0 +1,471 @@
+____ TODO STACK _____
+
+test/-lib/paths.py einführen?
+Wenn du jetzt ohnehin noch etwas strukturieren willst, dann fülle die Datei bewusst, z.B.:
+# tests/_lib/paths.py
+from pathlib import Path
+REPO_ROOT = Path(__file__).resolve().parents[2]
+STACKS_DIR = REPO_ROOT / "stacks"
+MONITORING_DIR = STACKS_DIR / "monitoring"
+COMPOSE_FILE = MONITORING_DIR / "compose" / "docker-compose.yml"
+VMAGENT_CFG = MONITORING_DIR / "vmagent" / "vmagent.yml"
+VMALERT_CFG = MONITORING_DIR / "vmalert" / "vmalert.yml"
+ALERTMANAGER_CFG = MONITORING_DIR / "alertmanager" / "alertmanager.yml"
+Und dann konsequent in Tests verwenden.
+⚠️ Aber:
+Das ist Refactoring, kein Bugfix.
+Ich würde das nach dem ersten sauberen Deploy machen, nicht davor.
+
+
+Thema CI / Update Automation / Renovation angehen. Erkläre mir den Setup, den Workflow danach und das schrittweise umsetzen
+
+Skripte für Backup und Restore erstellen
+Backup: erkennt automatisch alle *.env ohne .example
+Restore-Guard: Warnung, wenn .env.example existiert, aber .env fehlt
+
+Service sauber dokumentieren unter docs/services - erstellen von
+- docs/services/<service>.md
+- docs/services/<service>_dod.md ()
+
+Template für die Services Dokumentation erarbeiten - pro Service ein
+- docs/services/<service>.md
+- docs/services/<service>_dod.md
+Was sollte in die diese beiden Dateien rein?
+- docs/services/<service>.md
+	- Use case
+	- Analyse
+	- State
+	...
+- docs/services/<service>_dod.md
+	- siehe OneNote "Service Classes"
+	- siehe OneNote "DoD Services Template"
+
+
+
+Traefik einführen
+
+Brauche ich eine Domäne? Wenn ja, kann ich eine existierende Domäne auf WebHostOne verwenden?
+
+Traefik mit https und automatischer Cert Rotation in Bezug auf alle Voraussetzungen erklärt bekommen und verstehen.
+
+Baseline Image erstellen: Monitoring Stack ohne Traefik
+Datum:
+Dokumentiere commit zu diesem Stand:
+	-  git log --oneline
+
+Skripte unter host-runtime - insbesondere upgrade-apply.sh und upgrade-plan.sh - auf Umgang mit /boot/firmware als ro mount prüfen:
+admin@rpi-hub:~/iac/raspberry-pi-homelab $ uname -a
+findmnt /boot/firmware
+sudo dpkg --audit
+sudo apt-get check
+Linux rpi-hub 6.18.29+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.29-1+rpt1 (2026-05-12) aarch64 GNU/Linux
+TARGET   SOURCE   FSTYPE OPTIONS
+/boot/firmware
+         /dev/nvme0n1p1
+                  vfat   ro,nosuid,nodev,noexec,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mi
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+
+
+
+5. Verify the Public Key Fingerprint
+Use this check in pre-commit, CI, deploy, and backup scripts:
+expected_fpr="$(tr -d '[:space:]' < config/backup/homelab-backup-recovery-public.fingerprint)"
+actual_fpr="$(
+  gpg --show-keys --with-colons config/backup/homelab-backup-recovery-public.asc \
+    | awk -F: '$1 == "fpr" { print $10; exit }'
+)"
+
+if [ "$actual_fpr" != "$expected_fpr" ]; then
+  echo "ERROR: backup public key fingerprint mismatch" >&2
+  echo "Expected: $expected_fpr" >&2
+  echo "Actual:   $actual_fpr" >&2
+  exit 1
+fi
+Any mismatch is a security failure. It means future backups may be encrypted to the wrong recipient.
+
+
+KeepassXC - Speichern in der in GPG_config_for_backup_encryption.md spezifierten Struktur alle Inhalte überprüfen / hinzufügen.
+
+
+GPG_config_for_backup_encryption.md  Mit Schritt 6 weitermachen
+
+vector update auf version image: timberio/vector:0.58.0-debian mit runtime issues
+    reverted to image: timberio/vector:0.53.0-debian
+
+_____________________________________________________________________________
+__________________________________ D O N E __________________________________
+_____________________________________________________________________________
+
+
+GitHub Access Tokens erneuern
+- docker-ghcr-rpi
+- renovate-wsl
+
+# Nicht geschafft:
+In ~/.config/renovate/renovate.env: Git author richtig setzen
+RENOVATE_GIT_AUTHOR=Joerg Bischof <252226507+bischof-joerg@users.noreply.github.com>
+
+Wenn du willst, kann ich dir als nächsten Schritt einen kleinen postdeploy-test liefern, der automatisiert sicherstellt:
+keine "Type": "volume" Mounts in den Monitoring-Containern,
+und dass alle erwarteten /srv/data/stacks/monitoring/* Verzeichnisse existieren und beschreibbar sind.
+
+Warum ist es bei dir 700 obwohl du (vermutlich) 0750 wolltest? - gefixed und test hinzugefügt
+
+Wenn du named volumes nicht nutzt (z.B. victorialogs-data:), raus damit – oder konsequent verwenden.
+Wozu sind named volumes was sind deren Vorzüge?
+Bei welchen Services sollten named volumes eingeführt werden?
+
+
+Create a tiny tests/postdeploy check that asserts:
+daemon.json matches the repo copy (or at least contains required keys),
+docker metrics endpoint reachable from the host.
+
+
+GitOps Approach for
+etc/docker/dameon.json
+{
+  "default-cgroupns-mode": "host",
+  "metrics-addr": "172.20.0.1:9323",
+  "experimental": true,
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+
+
+Obsolet?: was bedeutet: Log-Rotation erzwingen überall identisch per x-logging YAML-anchor.
+
+
+Verifizieren, dass alle Container json-file nutzen:
+docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Type}}' $(docker ps -q) | sort | uniq -c
+Verifizieren, dass log-opts greifen (ein Container exemplarisch):
+docker inspect -f '{{json .HostConfig.LogConfig}}' homelab-home-prod-mon-vector-1 | jq .
+
+
+Bei welche Services sollen dann noch die logging section im docker-compose.yml stehen bleiben?
+
+2) ss zeigt *:9323 auch auf IPv6 – ist das ein Problem?
+Du lauscht aktuell auf IPv4 und IPv6 (ss -ltnp6 zeigt ebenfalls *:9323). Dein UFW-Allow ist aber IPv4-only (172.20.0.0/16). Ob das riskant ist, hängt davon ab, ob UFW IPv6 aktiv ist und ob du IPv6 inbound wirklich blockst.
+Prüfe das einmal
+sudo ufw status verbose
+cat /etc/default/ufw | grep -E '^IPV6='
+Wenn IPv6: on / IPV6=yes, dann brauchst du auch passende IPv6-Regeln oder du bindest Docker-Metrics IPv4-only an eine konkrete Host-IP.
+Wenn IPv6: off / IPV6=no, dann ist es weniger kritisch, aber ich würde trotzdem sauber “nur dort binden, wo nötig”.
+
+
+
+Welche Variablen  brauche ich im Healtcheck beim curl Aufruf überhaupt?
+"CMD-SHELL", "curl -fsS --max-time 3 http://127.0.0.1:3000/api/health >/dev/null"
+Braucht es mit den zusätzlichen Parametern
+     interval: 30s
+     timeout: 10s
+     retries: 5
+     start_period: 20s
+Konkret wird "--max-time 3" überhaupt benötigt.
+
+Funktioniert der Endpoint bei bei Grafana für den Healtcheck?:
+      test: ["CMD", "wget", "--tries=1", "--spider", "http://127.0.0.1:3000/-/healthy"]
+
+cleanup-network-ufw.sh check mit Gemini - dann testen
+Wäre nicht sinnvoll am Anfang ein Check ob auf dem Pi ausgeführt und sonst abbrechen mit Info
+Aktivieren in make
+
+
+Review von Logging
+
+Checke logs auf Issues
+http://rpi-hub:3000/d/victorialogs-victorialogs-explorer-22759/victorialogs-explorer?orgId=1&from=now-30m&to=now&timezone=browser&var-DS_VICTORIALOGS=victorialogs&var-namespace=prod&var-app=cadvisor&var-container=homelab-home-prod-mon-cadvisor-1&var-query=
+
+
+Wenn du mir den aktuellen vector:-Block (nur group_add: + Umgebung/Volumes) hier reinkopierst, kann ich dir zusätzlich eine härtere Guardrail bauen (z.B. deploy.sh/make doctor prüft: beide GIDs gesetzt und verschieden bzw. dedupliziert), damit das nie wieder erst beim Deploy auffällt.
+
+
+Das dashboard "VictoriaLogs - Internal State " funktioniert
+aber das andere "VictoriaLogs Explorer " meldet:
+Titel: Logs in for
+No data
+Und im mouseover zum roten Ausrufezeichen: error from datasource: cannot parse query [_stream: {kubernetes.container_name=~""} kubernetes.pod_labels.app.kubernetes.io/name:="" AND ( != "" or 1==1)]: missing ':' in front of "!="; see https://docs.victoriametrics.com/victorialogs/logsql/#filters; context: [.pod_labels.app.kubernetes.io/name:="" AND ( != ""]
+
+
+
+Beide VictoriaLogs dashboards zeigen keine Daten und melden mit roten Ausrufezeichen in allen Tiles
+- Datasource victorialogs was not found
+
+Was noch fehlt zum Abschluss ist PR: Grafana VictoriaLogs datasource plugin + provisioned datasource + dashboards”
+Plugin pin auf das neueste Release
+Datasource provisioning
+Dashboard-Import via manifest:
+- Dashboard 24585: Zur Überwachung der VictoriaLogs-Gesundheit (Backend-Sicht).
+- Dashboard 22759: Zur täglichen Arbeit und Fehlersuche in deinen Logs (Frontend-Sicht).
+Stelle sicher, dass du für die Logs-Dashboards die VictoriaLogs Datenquelle korrekt provisioniert ist. Das Dashboard 22759 benötigt diese zwingend, um die LogsQL-Syntax korrekt darzustellen.
+
+
+
+Review und anpassen von
+tests/precommit/test_30_compose_config.py
+
+Feature-Flag VICTORIALOGS_ENABLED in Makefile entfernen und immer auf victorialogs testen.
+
+
+4) Test/Validation
+A) Skript: Drift-Report (DRY-RUN)
+Auf dem Pi (mit env geladen):
+sudo bash -lc '
+  set -euo pipefail
+  set -a
+  source /etc/raspberry-pi-homelab/monitoring.env
+  set +a
+  /home/admin/iac/raspberry-pi-homelab/scripts/cleanup-network-ufw.sh --verbose
+'
+B) Apply
+sudo bash -lc '
+  set -euo pipefail
+  set -a
+  source /etc/raspberry-pi-homelab/monitoring.env
+  set +a
+  /home/admin/iac/raspberry-pi-homelab/scripts/cleanup-network-ufw.sh --apply
+'
+C) Postdeploy: curl auf UI-URL (LAN)
+Von einem LAN-Client (oder vom Pi gegen den LAN-Hostname/IP):
+curl -fsS "$VLOGS_UI_URL" | head
+
+
+PR: “Expose VictoriaLogs UI in LAN voerst ohne Traefik
+Router + middleware + ggf. UFW/entrypoint checks
+Postdeploy: curl auf UI-URL
+
+
+Makefile
+62:VLOGS_CFG := stacks/monitoring/victorialogs/victorialogs.yml
+259:    check_req "$(VLOGS_CFG)" "victorialogs" "config"; \
+
+
+Feature-Flag VICTORIALOGS_ENABLED in Makefile entfernen und immer auf victorialogs testen.
+
+
+Logs werden nicht Verarbeitet: victorialogs einführen. Was ist BestPractice um die Logs zu analysieren? UI? Dashboard?
+Hier meine Festlegung:
+Lass uns die Umsetzung von VictoriaLogs wie folgt angehen
+1. Collector-Auswahl
+	- mit Vector
+	- Journald-Integration: wenn Docker-Logs auf dem Pi via via Journald laufen, soll der Collector direkt das Systemd-Journal lesen (source type: journald)
+	  um doppelte Disk-I/O durch zusätzliche JSON-Log-Files von Docker zu vermeiden.
+	- Backpressure Handling: limitiere den Speicher-Buffer, damit der Collector bei Lastspitzen nicht den RAM des Pi 5 füllt.
+2. Stream-Felder & Kardinalität
+VictoriaLogs unterscheidet strikt zwischen Stream-Feldern (Indizes) und normalen Feldern.
+    - Goldene Regel: Nur Felder mit niedriger Kardinalität in _stream_fields aufnehmen.
+        Gut: host, stack, service, namespace, container_name.
+        Schlecht: ip, user_id, trace_id, timestamp – diese gehören in den Log-Body oder als normale Felder.
+    - Ziel: Die Anzahl der aktiven Streams sollte im Tausenderbereich bleiben, um Suchanfragen performant zu halten.
+3. "System Gesund" Dashboards & Queries (LogsQL)
+	- Logs in den letzten 5 Minuten >0
+	- Error-Logs nach Service aggregierbar
+	- Ingestion Rate: Überwachung, ob überhaupt Daten ankommen: _time:5m | stats count() as logs_count.
+    - Error-Aggregation: Top-Fehlerquellen der letzten Stunde: _time:1h level:error | stats count() by service | sort by count desc.
+    - Volume Spike: Unerwarteter Log-Anstieg (Indiz für Loops): _time:1h | stats count() by service, host.
+    - Internal Health: VictoriaLogs exportiert selbst Metriken unter /metrics. Scrape diese mit deinem bestehenden vmagent, um vm_rows_added_total oder vm_request_errors_total in Grafana zu sehen.
+4. Spezifische Pi 5 / Docker Tipps
+    - Storage-Limitierung: Nutze beim Start von VictoriaLogs das Flag -retention.maxDiskSpaceUsageBytes, um zu verhindern, dass Logs deine Festplatte füllen.
+    - Resource Limits: Limitiere den VL-Container in der docker-compose.yml (z.B. mem_limit: 2GB), da VictoriaLogs bei großen Queries aggressiv RAM cacht.
+
+
+Next commit after this (recommended)
+Idempotent host permission script for journald read access (so Vector never “randomly” breaks after reboot/updates).
+Grafana provisioning for the VictoriaLogs datasource (so it’s present without UI clicks).
+A minimal dashboard JSON (or saved Explore queries) for your “System gesund” checks.
+If you want, I’ll produce the exact provisioning YAML (datasource) and a minimal dashboard aligned with your three baseline queries, both pinned and testable.
+
+
+vector logs testen ob Einträge von
+        "containerd.service",
+        "ufw.service",
+        "systemd-udevd.service",
+
+
+Wenn du willst, kann ich dir auch noch einen kleinen postdeploy-Test liefern, der per Grafana API prüft, dass alerts-metrics existiert (und damit Provisioning + Mounts korrekt sind).
+
+
+Alerts Dashboard zeigt nichts an: Weiter testen.
+
+6) Nächster sinnvoller Repo-Schritt
+yamllint: du hast bereits # yamllint disable-line rule:line-length am uri: — das ist der richtige Ansatz.
+Postdeploy-Test erweitern: ein Test, der via stats_query sicherstellt, dass mind. ein service-Bucket > 0 kommt, ist robust (und weniger flaky als “Grafana muss in 5m loggen”).
+Wenn du willst, gebe ich dir dafür einen konkreten pytest-Test (analog zu deinen bestehenden victorialogs_smoke-Tests), der:
+stats_query aufruft,
+JSON parsed,
+prüft, dass service="vector" oder service="vmagent" o.ä. vorkommt.
+Sag nur, ob du den Test “nur auf target” (POSTDEPLOY_ON_TARGET) oder auch lokal laufen lassen willst.
+POSTDEPLOY_ON_TARGET=1 pytest -q -m postdeploy tests/postdeploy/test_22_victorialogs_stats_query.py
+.
+
+
+Ausprobieren ob in vector die folgenden Einträge benötigt werden: Wird gebraucht!
+    environment:
+      - HOST_NODE_NAME=${HOSTNAME:-rpi-hub}
+      - VECTOR_CONFIG=/etc/vector/vector.yaml
+
+
+einen postdeploy-pytest für Netzwerk + UFW bauen,
+der prüft, dass die UFW-Regel tatsächlich aktiv ist
+
+
+oder ein ADR aus diesem Dokument networking-and-firewall-model ableiten.
+
+On the Pi after deploy:
+# 1) Check both services
+docker ps --format 'table {{.Names}}\t{{.Status}}' | egrep 'victorialogs|vector'
+# 2) VictoriaLogs metrics
+curl -fsS http://localhost:9428/metrics | head
+# 3) Query last 5 minutes
+curl -fsS http://localhost:9428/select/logsql/query -d 'query=_time:5m * | limit 5' | head
+
+
+
+# add later
+# VLOGS_BASE = "http://127.0.0.1:9428"
+
+# later add
+#    ("victorialogs-ready", f"{VLOGS_BASE}/-/ready"),
+#    ("victorialogs-health", f"{VLOGS_BASE}/health"),
+
+
+Wenn du mir sagst, wo das gerenderte alertmanager.yml auf dem Pi landet (Host-Pfad oder Container-Mount), kann ich dir dafür einen kleinen tests/postdeploy/test_*_alertmanager_config_rendered.py liefern, der das deterministisch prüft.
+
+
+Makefile - doctor: block
+Ein kleiner Hinweis (nicht blockierend)
+Die VM-Config-Dateien werden aktuell nur als WARN geprüft, nicht als FAIL. Das ist in Ordnung, solange du die Pfade ggf. noch migrierst. Wenn du später „VM configs müssen existieren“ erzwingen willst, tauschen wir echo "WARN: ..." gegen (echo "FAIL: ..." && exit 2).
+
+
+gebe ich dir dafür einen minimalen Patch. Für echte “ready”-Endpoints (health/targets) ist 404 aber sowieso ein Signal, dass es nicht existiert, daher wäre ein stricter Check besser.
+
+Dein Deploy sagt weiterhin: “Prometheus is still referenced by compose” und zieht prom/prometheus:v3.1.0. Das ist ok als Zwischenstand, aber der nächste echte Migration-Step ist dann: Prometheus-Service aus Compose entfernen + Guard-Test entsprechend.
+
+
+Wie du das zuverlässig testest (Pi / Postdeploy)
+A) Rule-Syntax prüfen (ohne Runtime-Abhängigkeiten)
+vmalert kann Rules im Dry-Run validieren.
+Beispiel (innerhalb des vmalert-Containers, Pfad ggf. anpassen):
+docker exec -it homelab-home-prod-mon-vmalert-1 sh -lc \
+  '/vmalert-prod -rule=/etc/vmalert/rules/basic-alerts.yml -dryRun'
+B) Verifizieren, dass die genutzten vmalert-Metriken existieren
+docker exec -it homelab-home-prod-mon-vmalert-1 sh -lc 'wget -qO- http://127.0.0.1:8880/metrics | egrep "vmalert_alerting_rules_error|vmalert_config_last_reload_errors_total"'
+C) Smoke über VictoriaMetrics-Query (optional)
+Wenn du sicherstellen willst, dass VM die Metriken auch sieht (via vmagent scrape):
+curl -fsS 'http://127.0.0.1:8428/api/v1/query?query=vmalert_config_last_reload_errors_total' | head -c 400; echo
+Wenn du willst, gehe ich als nächstes die restlichen Regeln (CPU/RAM/Disk/cAdvisor) durch auf:
+“noise level” (z. B. Memory > 1.5GB bei Pi5/16GB ok?)
+Label-Cardinality (compose-service Label vs container-name)
+sinnvolle for:-Zeiten für deinen Homelab-Charakter.
+
+
+Funktionieren Alerts
+
+Wenn die folgenden Tests skipped sind einen Kommentar ausgeben, der sagt wie diese alleine aufgerufen werden können
+SKIPPED [1] tests/postdeploy/test_21_vm_queries.py:108: VM_EXPECT_METRICS not set (or disabled)
+SKIPPED [1] tests/postdeploy/test_21_vm_queries.py:153: VM_EXPECT_JOBS not set (or disabled)
+
+
+
+6) Observability sanity: VM + Grafana noch konsistent
+Kurz smoke:
+Grafana Dashboard lädt
+vmagent targets OK
+vmalert rules OK
+Alertmanager ready
+(Deine Postdeploy-Tests decken das bereits gut ab; nur ein manueller Blick in Grafana ist manchmal sinnvoll.)
+
+
+
+5) UFW / Exposed Ports prüfen
+Prometheus war 127.0.0.1:9090 bound – trotzdem einmal sicherstellen, dass nichts mehr lauscht:
+sudo ss -ltnp | rg ':9090' || echo "OK: nothing listening on 9090"
+
+
+4) Docker: alte Volumes/Images (optional)
+Da Prometheus als bind-mount lief, sind Volumes evtl. nicht betroffen. Aber Images/Orphans kannst du optional aufräumen:
+sudo docker ps -a --format '{{.Names}}' | rg -i prometheus || echo "OK: no prometheus containers"
+sudo docker images --format '{{.Repository}}:{{.Tag}}' | rg -i 'prom/prometheus' || true
+Image entfernen (optional):
+sudo docker rmi prom/prometheus:v3.1.0 || true
+
+
+3) Pi: Persistente Daten von Prometheus aufräumen (nur wenn wirklich ungenutzt)
+Da Prometheus früher /srv/data/stacks/monitoring/prometheus benutzt hat, liegt dort sehr wahrscheinlich noch TSDB.
+Sicherheitsregel: erst prüfen, dann löschen.
+sudo du -sh /srv/data/stacks/monitoring/prometheus 2>/dev/null || echo "OK: no prometheus data dir"
+sudo ls -la /srv/data/stacks/monitoring/prometheus 2>/dev/null || true
+Wenn du sicher bist, dass du es nicht mehr brauchst:
+sudo rm -rf /srv/data/stacks/monitoring/prometheus
+
+2) Postdeploy-Tests: Gate-Logik konsolidieren
+Du hast jetzt an mehreren Stellen ein Gate (PROMETHEUS_REMOVED). Das muss überall gleich sein:
+required Prometheus nur wenn Gate nicht gesetzt
+banned Prometheus wenn Gate gesetzt
+Quick-check:
+rg -n "PROMETHEUS_REMOVED|\"prometheus\"" tests/postdeploy -S
+Ziel: keine „hard-coded prometheus“ mehr ohne Gate.
+
+
+Wenn dieses Dashboard wieder Daten zeigt und alle Tests grün sind:
+Guard-Test für Datasource (kein prometheus:9090) finalisieren
+Prometheus aus Compose entfernen
+PROMETHEUS_REMOVED=1 Postdeploy-Test aktivieren (optional, aber sinnvoll)
+Deploy + Tests
+
+
+4) Nächster Schritt (in exakt richtiger Reihenfolge)
+Ändere Grafana Datasource URL (aber UID lassen):
+url: http://victoriametrics:8428
+Commit + Push
+Pi: pull + sudo ./deploy.sh
+Manuell prüfen: Grafana Panels zeigen Daten
+
+
+If you paste your current Grafana provisioning datasources + dashboards folder layout and the actual ports you expose for vmagent/vmalert, I can tighten the runtime tests to match your stack exactly (no placeholders, no “adjust if different”).
+
+admin@rpi-hub:~/iac/raspberry-pi-homelab $ git log -1 --oneline
+ac1c444 (HEAD -> main, origin/main, origin/HEAD) Prometheus removal prep: Guarding tests and postdeploy test introduced
+
+Hinweis zur Test-Scope-Architektur (damit das nicht wiederkommt)
+Dein pre-commit pytest Hook sammelt Tests und importiert Module. Damit das robust ist:
+Alles was unter tests/ liegt, muss importierbar sein im pre-commit env.
+Entweder: additional_dependencies für Hook vollständig machen (mein Vorschlag),
+oder: postdeploy tests in einen Pfad legen, der nicht gesammelt wird (weniger sauber).
+Wenn du mir den relevanten Ausschnitt aus .pre-commit-config.yaml (nur den pytest Hook) hier rein kopierst, gebe ich dir den exakten YAML-Patch für deine Datei (ohne Raten über Hook-Namen/Entry).
+
+
+
+Verifizier Korrektheit von anghängten tests/postdeploy/test_20_monitoring_runtime_smoke.py inkl. Alertmanager-Receiver-Test (PyYAML)
+
+
+Was ich von dir brauche (erneut hochladen)
+Bitte lade diese 4 Dateien nochmal hoch, dann mache ich es konkret (mit finalem Code):
+tests/postdeploy/test_20_endpoints.py
+deploy.sh
+tests/postdeploy/test_30_prometheus_targets.py
+tests/postdeploy/test_35_docker_engine_metrics.py
+Danach bekommst du:
+die angepassten Dateien vollständig
+eine kurze Begründung pro Änderung
+plus einen Mini-Testplan (pytest -k ..., make postdeploy, erwartete Ausgabe)
+
+Aufteilung test_20_endpoints: separater Test z.B. test_21_victoriametrics_queries.py mit query-based assertions (/api/v1/query, Metric-Namen etc.)
+
+deploy.sh nutzt globale Variablen auf PI für den GHCR Zugriff: GHCR_USER und GHCR_PAT.
+Sollten diese nicht besser in einem Secretsfile definiert sein?
+Können diese zum Beispiel in ./monitoring/compose/.env abgelegt und von deploy.sh verwendet werden?
+Wenn ja, müssten auf dem Pi globalen Variablen zuerst ausgelesen und dann entfernt werden?
+
+Kann das Netzwerk compose_default auf dem Pi weg?
+
+tests/postdeploy/test_35_docker_engine_metrics.py final so ausrichten, dass er exakt euren „nachhaltigen“ Netzwerk-/UFW-Stand überprüft – ohne Flakiness durch temporäre Regeln.
+
+Wenn du willst, richte ich als nächstes dein pre-commit.yml so ein, dass:
+shellcheck für *.sh läuft,
+promtool check config (und optional promtool check rules) läuft,
+und deine Python-Checks über das venv laufen (Option A, WSL-only).
