@@ -1,0 +1,107 @@
+Raspberry Pi Homelab - Architecture, IaC & Operating Model (Short)
+
+0. Scope
+- Non-negotiable operating model for a Raspberry Pi homelab using IaC + GitOps + tests.
+- Raspberry Pi is deploy target only (no dev work on Pi).
+
+1. Environment
+- HW: Raspberry Pi 5, 16 GB RAM, active cooling, NVMe SSD (Samsung 980, 1 TB)
+- OS: Pi = Raspberry Pi OS Lite (64-bit); Laptop = Windows ARM64 (Snapdragon X)
+- Dev: WSL2 Ubuntu; Git + VS Code used inside WSL only
+
+2. Core Principles
+- IaC: host config, networks, services defined in code; no manual drift on Pi
+- GitOps: GitHub repo raspberry-pi-homelab is source of truth; Pi only git pull + deploy; rollback via git revert/checkout
+- Idempotency: rerun must not break a working system
+- Test-first: no service/job accepted without tests; validate pre-commit and post-deploy
+- Determinism: pinned image versions (no latest), prefer digests; Renovate proposes controlled updates
+
+3. Repository Policies
+- Repo contains: Compose stacks, configs, scripts, tests, Markdown docs
+- Secrets never in Git (no .env/credentials/tokens)
+  - .env lives only on host FS and is ignored by Git
+  - .env.example documents required vars/structure
+
+4. Naming Conventions (Compose)
+- Project name: <org>-<site>-<env>-<stack>
+  - org=homelab, site=home, env=prod (later stage/dev)
+  - stacks: core, mon, app-specific (e.g. ha, adguard)
+- Set project name via COMPOSE_PROJECT_NAME in per-stack compose/.env or via docker compose -p
+- Example containers:
+  - homelab-home-prod-mon-grafana-1
+  - homelab-home-prod-core-traefik-1
+  - homelab-home-prod-adguard-1
+  - homelab-home-prod-ha-1
+- Use short service names in compose (no prefixes):
+  traefik, victoriametrics, vmagent, vmalert, alertmanager, victorialogs,
+  grafana, node-exporter, cadvisor, homeassistant, adguard, stirling-pdf
+- Apps share an "apps" network (network only, not a stack).
+- Volumes: <service>-data|config|db (example names only; keep consistent).
+
+5. Workflow (Local / WSL)
+- VS Code in WSL; Python venv for tooling/tests, dev dependencies managed via requirements-dev.txt; pre-commit required
+- Only validated commits are pushed; Pi never has uncommitted/experimental changes
+
+6. Validation & Testing via make phases precommit, ci, postdeploy
+- Pre-commit (static, fast):
+  YAML lint/syntax, docker compose config, ShellCheck, no Windows paths/CRLF,
+  no secrets/.env, VictoriaMetrics component config validation (where applicable),
+  Python lint/format with ruff, repo policy checks
+- CI:
+  rerun validations, validate stacks, security scans (repo/images),
+  detect upstream image versions and propose PRs, enforce version pinning
+  CI additionally established as GitHub workflow
+- Post-deploy (Pi):
+  expected containers present; running+healthy; ports reachable; UFW effective;
+  endpoints return meaningful data; metrics reachable; monitoring targets UP;
+  alert pipeline functional
+  Tests: small, focused, clear names, actionable errors, cover all components.
+
+7. Runtime, Networking, Security, Sustainability
+- Docker Compose only; explicit networks; no implicit defaults; least privilege; explicit exposure, only bind mounts (no named volumes)
+- Observability: centralized metrics/logs/alerts via VictoriaMetrics components + Grafana (>= 11),
+  modern dashboards only, hardware + docker behavior monitored
+- Security: prefer non-root, drop caps, read-only where possible, minimal/hardened images,
+  ufw enabled, automatic security updates where possible
+- deploy.sh idempotent, bootstrapping networks, ufw, journald access, permissions for data directories, running post-deploy tests, deterministic config deploy (config hash mechanism)
+- Backups: automated for persistent data; restore documented and tested; updates proposed/reviewed/tested
+
+8. Planned Stacks & Structure
+- Per stack: secrets file on disk (NOT in Git), e.g. stacks/monitoring/compose/.env
+- _shared contains compose fragments (networks/labels/healthchecks), not deployed
+- Monitoring stack: VictoriaMetrics (single-node), vmagent, vmalert, VictoriaLogs,
+  Alertmanager, Grafana (>= 11), Node Exporter, cAdvisor
+- Core stack: Traefik with automated Let's Encrypt
+- Apps (per-app stacks): Home Assistant, Stirling PDF, AdGuard Home
+
+8.1 Target stack layout (abridged)
+stacks/
+  _shared/ (fragments only)
+  core/compose/{docker-compose.yml,.env.example}
+  monitoring/
+    compose/{docker-compose.yml,.env.example}
+    victoriametrics/ victoriametrics.yml
+    vmagent/ vmagent.yml
+    vmalert/ vmalert.yml + rules/
+    victorialogs/ victorialogs.yml
+    alertmanager/ alertmanager.yml
+    exporters/ node-exporter/ cadvisor/
+    grafana/ provisioning/ + dashboards/
+  apps/<app>/compose/{docker-compose.yml,.env.example} + README.md (where relevant)
+
+9. Users & Access
+- Admin + household users + children/partners + guests
+- Network separation and access rules must be explicit and documented
+
+10. Documentation & Language Rules
+- English only for comments/docs/config descriptions; Markdown docs
+- Document best practices, operation, updates, recovery
+
+10.1 Docs layout (abridged)
+docs/
+  architecture/ (overview, network-segmentation, threat-model, ADRs)
+  operations/ (bootstrap, deploy/rollback, backups/restore, updates, incident playbook)
+  monitoring/ (dashboards, alerts, runbooks)
+  services/
+    traefik, victoriametrics, vmagent, vmalert, alertmanager, victorialogs,
+    grafana, node-exporter, cadvisor, homeassistant, adguard, stirling-pdf
