@@ -533,18 +533,18 @@ commits manually. Claude never commits.
 
 ### Phase 0 – Preparation (operator)
 
-- [ ] Work in the WSL checkout, not the Windows copy.
-- [ ] Copy this file into `<wsl-repo>/.claude/ClaudeTransition.md` (LF line endings).
-- [ ] Create the feature branch from current `main` (Q9/IN11): `git switch main && git pull --ff-only && git switch -c chore/r0-claude-transition`.
+- [x] Work in the WSL checkout, not the Windows copy.
+- [x] Copy this file into `<wsl-repo>/.claude/ClaudeTransition.md` (LF line endings).
+- [x] Create the feature branch from current `main` (Q9/IN11): `git switch main && git pull --ff-only && git switch -c chore/r0-claude-transition`.
 - [ ] Optional but recommended: enable branch protection on `main` in GitHub (require status checks `doctor (strict)`, `precommit (hooks + tests/precommit)`, `tests (unit/integration, no postdeploy)` and a pull request before merge).
 - [x] Record `claude --version` here: `2.1.273`.
 - [x] Record WSL checkout path here: `/home/micro/src/raspberry-pi-homelab`.
 - [x] Record Pi FQDN here: `rpi-hub.fritz.box`.
-- [ ] **R0.0 toolchain parity merged and deployed (10.6) – prerequisite for Phase 1a.**
+- [x] **R0.0 toolchain parity merged and deployed (10.6) – prerequisite for Phase 1a.**
 - [x] Ensure `.venv` exists: operator ran `make ci` successfully (creates/updates `.venv`, upgrades pip, installs `requirements-dev.txt`).
-- [ ] Record `.venv` tool versions after R0.0 (commands in 10.5): python `3.12.3`, ruff `0.14.11` expected, shellcheck `0.10.0` expected, yamllint `1.35.1` expected, pytest `____`, pre-commit `____`.
-- [ ] Re-run `.venv/bin/python -m pip check` explicitly with the venv interpreter (first run was probably the system pip: no `(.venv)` prompt); `git status --porcelain` was clean [V, operator output].
-- [ ] Confirm `git status --porcelain` is clean after `make ci` (pre-commit fixers may have modified files).
+- [x] Record `.venv` tool versions after R0.0 (commands in 10.5): python `3.12.3`, ruff `0.14.11` expected, shellcheck `0.10.0` expected, yamllint `1.35.1` expected, pytest `____`, pre-commit `____`.
+- [x] Re-run `.venv/bin/python -m pip check` explicitly with the venv interpreter (first run was probably the system pip: no `(.venv)` prompt); `git status --porcelain` was clean [V, operator output].
+- [x] Confirm `git status --porcelain` is clean after `make ci` (pre-commit fixers may have modified files).
 - [x] Answer open questions Q1–Q6 (section 9).
 - [x] Answer Q7 and Q8 (section 9).
 - [x] Confirm toolchain in WSL: `python3` 3.12.3 (matches CI `python-version: "3.12"`; guard needs >= 3.10); system `shellcheck` 0.9.0 (differs from pre-commit pin, see F21).
