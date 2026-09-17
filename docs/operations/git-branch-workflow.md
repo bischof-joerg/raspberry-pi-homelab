@@ -221,24 +221,97 @@ commit keeps the full branch history with an explicit merge point, squash combin
 into one, and rebase-and-merge rewrites commits with new SHAs:
 https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/about-pull-request-merges
 
-Recommended repository settings (GitHub → Settings → General → Pull Requests): allow merge commits;
-disable squash and rebase merging to enforce the choice; enable *Automatically delete head
-branches*.
+Repository settings that enforce this choice: section 7.1.
 
 ---
 
-## 7. Branch protection for `main` (recommended)
+## 7. Protection of `main` (ruleset `protect-main`)
 
-GitHub → Settings → Branches (or Rulesets) → rule for `main`:
+`main` is protected by a repository ruleset. Rulesets are available for public repositories on
+GitHub Free and for private repositories on GitHub Pro, Team, and Enterprise Cloud:
+https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/managing-rulesets-for-a-repository
 
-- Require a pull request before merging
-- Require status checks to pass: `doctor (strict)`,
-  `precommit (hooks + tests/precommit)`, `tests (unit/integration, no postdeploy)`
-  (job names from `.github/workflows/ci.yml`; see [DevWorkflow.md](DevWorkflow.md) section 5)
-- Require branches to be up to date before merging
-- Block force pushes
-- Restrict deletions
-- Do **not** require linear history (incompatible with merge commits)
+### 7.1 Repository merge settings
+
+GitHub → Settings → General → Pull Requests:
+
+| Setting | Value | Reason |
+|---|---|---|
+| Allow merge commits | on | Chosen merge method (section 6) |
+| Allow squash merging | off | Enforce section 6 |
+| Allow rebase merging | off | Enforce section 6 |
+| Automatically delete head branches | on | Feature branches are short-lived |
+
+### 7.2 Ruleset settings
+
+GitHub → Settings → Rules → Rulesets → `protect-main`:
+
+| Setting | Value | Reason |
+|---|---|---|
+| Ruleset name | `protect-main` | |
+| Enforcement status | **Active** | `Evaluate` only reports and does not block |
+| Bypass list | **empty** | Nobody, including repository admins, can bypass the rules; the operator follows the same path as every change |
+| Target branches | Include default branch (`main`) | |
+| Restrict deletions | on | `main` cannot be deleted |
+| Block force pushes | on | History on `main` is never rewritten (section 1, rule 5) |
+| Require a pull request before merging | on | No direct pushes to `main` |
+| → Required approvals | **0** | Single maintainer: GitHub does not accept approvals from the pull request author, so any value above 0 would block every merge. CI is the gate. |
+| → Dismiss stale approvals, require review from code owners, require approval of the most recent push | off | Not applicable with 0 approvals |
+| → Require conversation resolution before merging | optional | Useful if review comments are used as a checklist |
+| → Allowed merge methods (if offered) | Merge only | Consistent with 7.1 and section 6 |
+| Require status checks to pass | on | CI must be green before merge |
+| → Require branches to be up to date before merging | on | CI result must reflect the latest `main` |
+| → Status checks (source: GitHub Actions) | `doctor (strict)`, `precommit (hooks + tests/precommit)`, `tests (unit/integration, no postdeploy)` | Job names from `.github/workflows/ci.yml` ([DevWorkflow.md](DevWorkflow.md) section 5) |
+| Require linear history | **off** | Incompatible with merge commits (section 6) |
+| Require signed commits, require deployments, code scanning, merge queue | off | Not used in this repository |
+
+Notes:
+
+- If a status check does not appear in the search, CI has not reported it yet. Open a pull request
+  so CI runs once, then add the check.
+- Renaming a CI job changes its check name. Update the ruleset in the same pull request that
+  renames the job, otherwise merges are blocked by a check that never reports.
+- An empty bypass list also blocks emergency fixes directly on `main`. Emergencies use the normal
+  path: branch → pull request → CI → merge (rollback: section 8).
+
+### 7.3 Verification
+
+Run after creating or changing the ruleset. The commands do not touch the current working tree or
+branch (a temporary worktree is used).
+
+Read the active rules for `main` (read-only):
+
+```bash
+gh api repos/{owner}/{repo}/rules/branches/main --jq '.[].type'
+# expected to include: deletion, non_fast_forward, pull_request, required_status_checks
+```
+
+Verify that a direct push to `main` is rejected:
+
+```bash
+git fetch origin
+git worktree add --detach /tmp/protect-main-test origin/main
+cd /tmp/protect-main-test
+git commit --allow-empty --no-verify -m "test: verify protect-main ruleset"
+git push origin HEAD:main            # expected: rejected with a repository rule violation
+cd -
+git worktree remove --force /tmp/protect-main-test
+git worktree list                    # only the main worktree remains
+```
+
+If the push is accepted, the ruleset is not effective: check enforcement status, bypass list, and
+target branch. Remove the empty commit through a revert branch and pull request (section 8.2).
+
+Do not test force pushes or deletion of `main` directly; rely on the rule list above.
+
+Verify with the next real pull request:
+
+| Check | Expected |
+|---|---|
+| Merge while CI is running or red | Merge button blocked |
+| `main` moved after the branch was pushed | GitHub requires the branch to be updated (section 5.5) |
+| Merge options | Only "Create a merge commit" |
+| After merge | Head branch deleted automatically |
 
 ---
 
