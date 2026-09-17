@@ -808,9 +808,9 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
-| R0.0 toolchain parity | | | | | |
-| R0.0b workflow docs merge (`docs/r0-workflow-docs`) | | | | | |
-| R0.1 (Phase 1a) | | | | | |
+| R0.0 toolchain parity | 2026-09-17 | ? | green |  tests: passed, deploy: done | |
+| R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
+| R0.1 (Phase 1a) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR |
 
 ### 10.5 Toolchain record (Phase 0)
 
