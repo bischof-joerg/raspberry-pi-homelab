@@ -536,7 +536,8 @@ commits manually. Claude never commits.
 - [x] Work in the WSL checkout, not the Windows copy.
 - [x] Copy this file into `<wsl-repo>/.claude/ClaudeTransition.md` (LF line endings).
 - [x] Create the feature branch from current `main` (Q9/IN11): `git switch main && git pull --ff-only && git switch -c chore/r0-claude-transition`.
-- [ ] Optional but recommended: enable branch protection on `main` in GitHub (require status checks `doctor (strict)`, `precommit (hooks + tests/precommit)`, `tests (unit/integration, no postdeploy)` and a pull request before merge).
+- [x] Ruleset `protect-main` configured in GitHub per `docs/operations/git-branch-workflow.md` §7.1/§7.2.
+- [x] Verify ruleset effectiveness per `git-branch-workflow.md` §7.3; result: `1a rules listed (deletion, non_fast_forward, pull_request, required_status_checks); 1b direct push to main rejected (error: GH013: Repository rule violations found for refs/heads/main.)`.
 - [x] Record `claude --version` here: `2.1.273`.
 - [x] Record WSL checkout path here: `/home/micro/src/raspberry-pi-homelab`.
 - [x] Record Pi FQDN here: `rpi-hub.fritz.box`.
