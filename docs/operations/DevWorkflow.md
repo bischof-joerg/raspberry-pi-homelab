@@ -4,7 +4,7 @@ End-to-end operating model: environments, change lifecycle, quality gates, CI, d
 failure handling.
 
 Git mechanics (branch names, commit messages, pull requests, merge method, rollback commands,
-Git troubleshooting) are defined **only** in [git-branch-workflow.md](git-branch-workflow.md).
+Git troubleshooting) are defined **only** in [git-branch-workflow.md](../git-branch-workflow.md).
 
 ------------------------------------------------------------------------
 
@@ -43,7 +43,7 @@ GitHub: pull request → CI green → merge into main
 Pi: git pull --ff-only → sudo ./deploy.sh (runs postdeploy)
 ```
 
-Commands for each Git step: [git-branch-workflow.md](git-branch-workflow.md) section 5.
+Commands for each Git step: [git-branch-workflow.md](../git-branch-workflow.md) section 5.
 
 ------------------------------------------------------------------------
 
@@ -159,7 +159,7 @@ All jobs:
 - precommit job additionally caches `~/.cache/pre-commit`
 
 This keeps WSL and GitHub CI on the same Make targets. These job checks are the required status
-checks for `main` ([git-branch-workflow.md](git-branch-workflow.md) section 7).
+checks for `main` ([git-branch-workflow.md](../git-branch-workflow.md) section 7).
 
 ------------------------------------------------------------------------
 
@@ -260,7 +260,7 @@ Then either:
 
 - **fix forward**: new increment on a branch → PR → merge → deploy, or
 - **roll back**: create the revert in WSL, never on the Pi
-  ([git-branch-workflow.md](git-branch-workflow.md) section 8), then pull and deploy on the Pi.
+  ([git-branch-workflow.md](../git-branch-workflow.md) section 8), then pull and deploy on the Pi.
 
 Never commit, revert, rebase or edit files on the Pi.
 
