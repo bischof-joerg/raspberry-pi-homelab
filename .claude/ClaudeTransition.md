@@ -54,7 +54,7 @@ Translated from the original German bootstrap instructions in `.claude/CLAUDE.md
 | Q8 | Unclassified Bash commands | **Option A:** guard exits 0; deny rules and plan-mode approval decide | Guard blocks only classified violations and fail-closed cases (H2). |
 | D1 | Delivery model | One feature at a time, delivered in small increments, each with matching tests. Operator commits every change personally, pulls on the Pi (`git pull`) and deploys manually (`sudo ./deploy.sh`). | Section 10.1; rule `incremental-delivery.md`; skill `increment-plan` |
 | D2 | Roadmap | R0 transition → R1 review → R2 backup → R3 core stack (Traefik + Let's Encrypt) → R4 app stacks (Stirling PDF, AdGuard Home, Home Assistant) | Section 10.3; transition Phase 8 moves into R0 because R1 fixes and R2 need writes outside `.claude/` |
-| Q9 | Git flow per increment | **Option A:** short-lived feature branch per feature; increments are commits on it; push → CI on pull request → operator merges to `main` → Pi pulls `main` | IN11–IN13 (10.1); Phase 0 branch `chore/claude-transition`; Pi only ever pulls `main` |
+| Q9 | Git flow per increment | **Option A:** short-lived feature branch per feature; increments are commits on it; push → CI on pull request → operator merges to `main` → Pi pulls `main` | IN11–IN13 (10.1); Phase 0 branch `chore/r0-claude-transition`; Pi only ever pulls `main` |
 | Q6 | WSL checkout path | `/home/micro/src/raspberry-pi-homelab` (given as `home\micro\src\raspberry-pi-homelab`; Linux form assumed) | Used as expected project root in hook tests; hook itself resolves the root dynamically. |
 
 ---
@@ -160,7 +160,7 @@ verification in WSL or on the Pi by the operator.
 | F11 | `.gitattributes` enforces LF for sh/yml/yaml/json/toml but not `*.md`, `*.py`, `Makefile`, `*.json5`. | `.gitattributes` [V] |
 | F12 | `.env.example` lists `DOCKER_GID`/`SYSTEMD_JOURNAL_GID` twice and contains host-derived values, contradicting ADR-0007 §4. | `.env.example` [V] |
 | F13 | compose mounts `../alertmanager/templates`, which does not exist in the repo; Docker may create it on the Pi as root. | compose + listing [I] |
-| F14 | `docs/DevWorkflow.md` §4 commits before `make ci`; `ChatGPTHint.txt` §5 says only validated commits. | DevWorkflow [V] |
+| F14 | `docs/DevWorkflow.md` §4 commits before `make ci`; `ChatGPTHint.txt` §5 says only validated commits. | DevWorkflow [V] Addressed by increment R0.x docs merge (DevWorkflow.md + git-branch-workflow.md), pending merge. |
 | F15 | UFW is not reconciled on deploy; `cleanup-ufw.sh` is manual and has no make target (`Todo.txt` notes "Aktivieren in make"). Hint §7 expects UFW bootstrap in `deploy.sh`. | `deploy.sh`, `Makefile` [V] |
 | F16 | `bootstrap-networks.sh` runs without subnet/bridge env in deploy; on a fresh host `monitoring` would be created without `br-monitoring`/`172.20.0.0/16`, while `cleanup-ufw.sh`, `daemon.json` (`metrics-addr 172.20.0.1:9323`) and `test_35` depend on exactly these values. | `deploy.sh`, scripts [V]; fresh-host effect [I] |
 | F17 | Order in `deploy.sh`: `daemon.json` (with `metrics-addr` on the monitoring gateway IP) is applied and Docker restarted **before** networks are bootstrapped; on a fresh host the metrics address may not exist yet. | `deploy.sh` main [V]; Docker behaviour [I] |
@@ -169,6 +169,7 @@ verification in WSL or on the Pi by the operator.
 | F21 | Toolchain version drift between local tools and pre-commit/CI: pre-commit pins `shellcheck-py v0.10.0.1`, `ruff-pre-commit v0.14.11`, `yamllint v1.35.1`, while `requirements-dev.txt` uses ranges (`ruff>=0.9,<1.0`, `yamllint>=1.35,<2.0`) and the system ShellCheck in WSL is 0.9.0. `make venv` also upgrades pip unpinned. Results of the read-only gate and of pre-commit can differ. | `.pre-commit-config.yaml`, `requirements-dev.txt`, operator output [V] |
 | F22 | Second, diverging source of dev dependencies: `pyproject.toml` `[project.optional-dependencies].dev` (`ruff>=0.14.11`, `pytest>=8`, `typeguard>=4`, …) and the `pytest-precommit` hook's `additional_dependencies` duplicate `requirements-dev.txt`. `make venv` uses `requirements-dev.txt` only. | `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml` [V] |
 | F23 | `tests/precommit/test_15_json_valid.py` is marked `lint`, not `precommit`; `make precommit` runs `pytest tests/precommit -m precommit`, so this test is likely deselected in precommit, and `make test` ignores `tests/precommit`. Other files not yet checked. | test file + `Makefile` [V]; effect [I] |
+| F24 | `scripts/renovate/validate-config.sh` (pre-commit hook) runs `renovate/renovate:43` by tag only, while the Makefile pins the same image by digest; the hook needs Docker and a registry pull, contradicting the old DevWorkflow claim "no Docker runtime, no network". | script, `Makefile`, `.pre-commit-config.yaml` [V] |
 | F20 | `ensure-journald-read.sh` defaults to `TARGET_USER=vector` (no such host user expected) while `deploy.sh` passes `admin`; the container runs as uid 65532 and gets the GID via `group_add`, so group membership of `admin` is likely irrelevant for Vector. | scripts + compose [V]; relevance [I] |
 
 ### 3.7 Security-relevant facts for Claude's boundaries [V]
@@ -534,7 +535,7 @@ commits manually. Claude never commits.
 
 - [ ] Work in the WSL checkout, not the Windows copy.
 - [ ] Copy this file into `<wsl-repo>/.claude/ClaudeTransition.md` (LF line endings).
-- [ ] Create the feature branch from current `main` (Q9/IN11): `git switch main && git pull --ff-only && git switch -c chore/claude-transition`.
+- [ ] Create the feature branch from current `main` (Q9/IN11): `git switch main && git pull --ff-only && git switch -c chore/r0-claude-transition`.
 - [ ] Optional but recommended: enable branch protection on `main` in GitHub (require status checks `doctor (strict)`, `precommit (hooks + tests/precommit)`, `tests (unit/integration, no postdeploy)` and a pull request before merge).
 - [x] Record `claude --version` here: `2.1.273`.
 - [x] Record WSL checkout path here: `/home/micro/src/raspberry-pi-homelab`.
@@ -655,7 +656,7 @@ Verification:
 
 - [ ] `readme_claude.md`: purpose of each artefact, how to start a session, what Claude will refuse
       and why, how to verify the safety set-up (V1.x), how to update artefacts.
-- [ ] `reports/repo-findings.md`: F1–F23 with evidence, impact, proposed fix, suggested test.
+- [ ] `reports/repo-findings.md`: F1–F24 with evidence, impact, proposed fix, suggested test.
 
 Verification:
 - V6.1 Operator can follow `readme_claude.md` from a fresh shell without extra knowledge.
@@ -726,7 +727,7 @@ Verification:
 - `settings.local.json` provably ignored.
 - Guard test matrix green (V1.9) and live hook tests passed (V1.10–V1.15) on the installed Claude Code version.
 - Operator-run `make ci` and GitHub CI green.
-- Findings F1–F23 handed over as proposals.
+- Findings F1–F24 handed over as proposals.
 - Phase 8 is tracked separately and not part of the transition's definition of done.
 
 ---
@@ -787,7 +788,7 @@ stage are **increments** `R<stage>.<n>`.
 | Stage | Feature | Entry criteria | Exit criteria |
 |---|---|---|---|
 | **R0** | Claude transition: Phases 0–7 of this document, then Phase 8 (retire C1/C2) | This plan approved | All transition verifications recorded; guard in `operate` mode; operator-confirmed edit scope |
-| **R1** | Review of the existing implementation, including host/runtime/network reconciliation (3.8) | R0 done | Findings F1–F23 re-verified and extended; decision (ADR) on which host state `deploy.sh` reconciles vs. which stays manual (UFW, network attributes, daemon.json restart policy); prioritised backlog; each accepted finding scheduled as its own increment |
+| **R1** | Review of the existing implementation, including host/runtime/network reconciliation (3.8) | R0 done | Findings F1–F24 re-verified and extended; decision (ADR) on which host state `deploy.sh` reconciles vs. which stays manual (UFW, network attributes, daemon.json restart policy); prioritised backlog; each accepted finding scheduled as its own increment |
 | **R2** | Backup: finish implementation and tests (ADR-009) | R1 done or at least R1 findings affecting backup fixed | `make backup`, `make backup_verify` on the Pi green; fixture tests from ADR-009 §14.2 green in CI; restore dry-run and one non-critical live restore proven (§14.3); open GPG steps (doc step 6 ff.) completed |
 | **R3** | Core stack: Traefik with automated Let's Encrypt | R2 done (backup covers new state) | `stacks/core/compose/` deployed; valid LE certificates with automatic renewal; existing LAN UIs routed via Traefik; postdeploy tests for routing, TLS, redirects, and cert expiry; backup inventory extended |
 | **R4.1** | App stack: Stirling PDF | R3 done | Per-app stack under `stacks/apps/stirling-pdf/`, behind Traefik, tests, docs, Renovate rule enabled |
@@ -807,6 +808,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
 | R0.0 toolchain parity | | | | | |
+| R0.0b workflow docs merge (`docs/r0-workflow-docs`) | | | | | |
 | R0.1 (Phase 1a) | | | | | |
 
 ### 10.5 Toolchain record (Phase 0)
@@ -833,7 +835,7 @@ below were prepared outside the repo and tested (see verification evidence).
 
 - **Feature:** toolchain parity between `.venv` and pre-commit (fixes F21 for ruff, ShellCheck, yamllint)
 - **Goal:** tools in `.venv` have exactly the versions pinned in `.pre-commit-config.yaml`, enforced by a test.
-- **Branch:** `chore/toolchain-parity`
+- **Branch:** `chore/r0-toolchain-parity`
 - **Scope:**
   - `requirements-dev.txt`: `ruff==0.14.11`, `shellcheck-py==0.10.0.1`, `yamllint==1.35.1` (exact pins, values taken from existing hook `rev`s; no version upgrade)
   - `tests/precommit/test_50_toolchain_version_parity.py` (new, marker `precommit`)
@@ -842,7 +844,7 @@ below were prepared outside the repo and tested (see verification evidence).
   - `test_parity_map_repos_exist_in_pre_commit_config`: every mapped hook repo still exists
   - `test_requirements_dev_pins_match_pre_commit_rev[...]`: exact `==` pin equals hook `rev` without leading `v`, per tool
 - **Implementation steps (operator, WSL):**
-  1. `git switch main && git pull --ff-only && git switch -c chore/toolchain-parity`
+  1. `git switch main && git pull --ff-only && git switch -c chore/r0-toolchain-parity`
   2. Copy the prepared test file and apply the three pins in `requirements-dev.txt`
   3. `make venv` (installs pins; on aarch64 `shellcheck-py` builds from sdist and downloads the ShellCheck binary from GitHub with checksum verification, because PyPI has no Linux aarch64 wheel for 0.10.0.1 [V, PyPI file list + sdist `setup.cfg`])
   4. `.venv/bin/ruff --version`, `.venv/bin/shellcheck --version`, `.venv/bin/yamllint --version` → 0.14.11 / 0.10.0 / 1.35.1
