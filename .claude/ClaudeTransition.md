@@ -1,6 +1,6 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** READY FOR PHASE 0/1a (v0.7) – Q1–Q9 answered; host/runtime/network reconciliation analysed (3.8)
+- **Status:** READY FOR PHASE 0/1a (v0.9) – Q1–Q9 answered; R0.0 toolchain parity defined as first increment (10.6)
 - **Created:** 2026-09-16
 - **Scope:** Transform the existing ChatGPT-based working model (`ChatGPTHint.txt`) and the
   implemented repository conventions into Claude Code artefacts under `.claude/`.
@@ -166,6 +166,9 @@ verification in WSL or on the Pi by the operator.
 | F17 | Order in `deploy.sh`: `daemon.json` (with `metrics-addr` on the monitoring gateway IP) is applied and Docker restarted **before** networks are bootstrapped; on a fresh host the metrics address may not exist yet. | `deploy.sh` main [V]; Docker behaviour [I] |
 | F18 | `ensure-docker-daemon-json.sh` restarts Docker on any content change during deploy → full stack restart without a separate maintenance window or backup step. | script [V] |
 | F19 | Host-specific literals in reconciliation scripts: `cleanup-ufw.sh` usage path `/home/admin/iac/...`, stale bridge names `br-abe` and `br-bd2` in a regex; fixed temp file `/tmp/bootstrap-networks.overlap`. | scripts [V] |
+| F21 | Toolchain version drift between local tools and pre-commit/CI: pre-commit pins `shellcheck-py v0.10.0.1`, `ruff-pre-commit v0.14.11`, `yamllint v1.35.1`, while `requirements-dev.txt` uses ranges (`ruff>=0.9,<1.0`, `yamllint>=1.35,<2.0`) and the system ShellCheck in WSL is 0.9.0. `make venv` also upgrades pip unpinned. Results of the read-only gate and of pre-commit can differ. | `.pre-commit-config.yaml`, `requirements-dev.txt`, operator output [V] |
+| F22 | Second, diverging source of dev dependencies: `pyproject.toml` `[project.optional-dependencies].dev` (`ruff>=0.14.11`, `pytest>=8`, `typeguard>=4`, …) and the `pytest-precommit` hook's `additional_dependencies` duplicate `requirements-dev.txt`. `make venv` uses `requirements-dev.txt` only. | `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml` [V] |
+| F23 | `tests/precommit/test_15_json_valid.py` is marked `lint`, not `precommit`; `make precommit` runs `pytest tests/precommit -m precommit`, so this test is likely deselected in precommit, and `make test` ignores `tests/precommit`. Other files not yet checked. | test file + `Makefile` [V]; effect [I] |
 | F20 | `ensure-journald-read.sh` defaults to `TARGET_USER=vector` (no such host user expected) while `deploy.sh` passes `admin`; the container runs as uid 65532 and gets the GID via `group_add`, so group membership of `admin` is likely irrelevant for Vector. | scripts + compose [V]; relevance [I] |
 
 ### 3.7 Security-relevant facts for Claude's boundaries [V]
@@ -366,7 +369,8 @@ git status --porcelain --ignored > /tmp/claude-gate-before.txt
 .venv/bin/ruff check --no-fix --no-cache .
 .venv/bin/ruff format --check --no-cache .
 .venv/bin/yamllint -s .
-git ls-files '*.sh' | xargs -r shellcheck -x          # only if shellcheck is installed
+# ShellCheck from .venv (pinned via R0.0, identical to pre-commit). Never use system shellcheck.
+git ls-files '*.sh' | xargs -r .venv/bin/shellcheck -x
 .venv/bin/python -m pytest -p no:cacheprovider --strict-markers -q tests/precommit -m precommit
 .venv/bin/python -m pytest -p no:cacheprovider --strict-markers -q tests \
   -m "not postdeploy" --ignore=tests/postdeploy --ignore=tests/precommit
@@ -535,10 +539,14 @@ commits manually. Claude never commits.
 - [x] Record `claude --version` here: `2.1.273`.
 - [x] Record WSL checkout path here: `/home/micro/src/raspberry-pi-homelab`.
 - [x] Record Pi FQDN here: `rpi-hub.fritz.box`.
-- [ ] Ensure `.venv` exists (`make venv`, run by the operator).
+- [ ] **R0.0 toolchain parity merged and deployed (10.6) – prerequisite for Phase 1a.**
+- [x] Ensure `.venv` exists: operator ran `make ci` successfully (creates/updates `.venv`, upgrades pip, installs `requirements-dev.txt`).
+- [ ] Record `.venv` tool versions after R0.0 (commands in 10.5): python `3.12.3`, ruff `0.14.11` expected, shellcheck `0.10.0` expected, yamllint `1.35.1` expected, pytest `____`, pre-commit `____`.
+- [ ] Re-run `.venv/bin/python -m pip check` explicitly with the venv interpreter (first run was probably the system pip: no `(.venv)` prompt); `git status --porcelain` was clean [V, operator output].
+- [ ] Confirm `git status --porcelain` is clean after `make ci` (pre-commit fixers may have modified files).
 - [x] Answer open questions Q1–Q6 (section 9).
 - [x] Answer Q7 and Q8 (section 9).
-- [ ] Confirm `python3 --version` (>= 3.10 recommended for the guard) and `shellcheck --version` in WSL.
+- [x] Confirm toolchain in WSL: `python3` 3.12.3 (matches CI `python-version: "3.12"`; guard needs >= 3.10); system `shellcheck` 0.9.0 (differs from pre-commit pin, see F21).
 
 Acceptance: branch exists, Claude Code version recorded, questions answered.
 
@@ -647,7 +655,7 @@ Verification:
 
 - [ ] `readme_claude.md`: purpose of each artefact, how to start a session, what Claude will refuse
       and why, how to verify the safety set-up (V1.x), how to update artefacts.
-- [ ] `reports/repo-findings.md`: F1–F20 with evidence, impact, proposed fix, suggested test.
+- [ ] `reports/repo-findings.md`: F1–F23 with evidence, impact, proposed fix, suggested test.
 
 Verification:
 - V6.1 Operator can follow `readme_claude.md` from a fresh shell without extra knowledge.
@@ -718,7 +726,7 @@ Verification:
 - `settings.local.json` provably ignored.
 - Guard test matrix green (V1.9) and live hook tests passed (V1.10–V1.15) on the installed Claude Code version.
 - Operator-run `make ci` and GitHub CI green.
-- Findings F1–F20 handed over as proposals.
+- Findings F1–F23 handed over as proposals.
 - Phase 8 is tracked separately and not part of the transition's definition of done.
 
 ---
@@ -779,7 +787,7 @@ stage are **increments** `R<stage>.<n>`.
 | Stage | Feature | Entry criteria | Exit criteria |
 |---|---|---|---|
 | **R0** | Claude transition: Phases 0–7 of this document, then Phase 8 (retire C1/C2) | This plan approved | All transition verifications recorded; guard in `operate` mode; operator-confirmed edit scope |
-| **R1** | Review of the existing implementation, including host/runtime/network reconciliation (3.8) | R0 done | Findings F1–F20 re-verified and extended; decision (ADR) on which host state `deploy.sh` reconciles vs. which stays manual (UFW, network attributes, daemon.json restart policy); prioritised backlog; each accepted finding scheduled as its own increment |
+| **R1** | Review of the existing implementation, including host/runtime/network reconciliation (3.8) | R0 done | Findings F1–F23 re-verified and extended; decision (ADR) on which host state `deploy.sh` reconciles vs. which stays manual (UFW, network attributes, daemon.json restart policy); prioritised backlog; each accepted finding scheduled as its own increment |
 | **R2** | Backup: finish implementation and tests (ADR-009) | R1 done or at least R1 findings affecting backup fixed | `make backup`, `make backup_verify` on the Pi green; fixture tests from ADR-009 §14.2 green in CI; restore dry-run and one non-critical live restore proven (§14.3); open GPG steps (doc step 6 ff.) completed |
 | **R3** | Core stack: Traefik with automated Let's Encrypt | R2 done (backup covers new state) | `stacks/core/compose/` deployed; valid LE certificates with automatic renewal; existing LAN UIs routed via Traefik; postdeploy tests for routing, TLS, redirects, and cert expiry; backup inventory extended |
 | **R4.1** | App stack: Stirling PDF | R3 done | Per-app stack under `stacks/apps/stirling-pdf/`, behind Traefik, tests, docs, Renovate rule enabled |
@@ -798,7 +806,54 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
+| R0.0 toolchain parity | | | | | |
 | R0.1 (Phase 1a) | | | | | |
+
+### 10.5 Toolchain record (Phase 0)
+
+Run once in WSL from the repo root (read-only, no side effects):
+
+```bash
+.venv/bin/python --version
+.venv/bin/python -m pip check
+.venv/bin/ruff --version
+.venv/bin/yamllint --version
+.venv/bin/python -m pytest --version -p no:cacheprovider
+.venv/bin/pre-commit --version
+.venv/bin/shellcheck --version | head -2   # after R0.0
+git status --porcelain
+```
+
+Record the values in Phase 0. After R0.0 the versions must equal the pre-commit pins (F21).
+
+### 10.6 R0.0 – Toolchain parity (first increment, executed manually by the operator)
+
+Reason for manual execution: C1 still applies; Claude may not write outside `.claude/`. The files
+below were prepared outside the repo and tested (see verification evidence).
+
+- **Feature:** toolchain parity between `.venv` and pre-commit (fixes F21 for ruff, ShellCheck, yamllint)
+- **Goal:** tools in `.venv` have exactly the versions pinned in `.pre-commit-config.yaml`, enforced by a test.
+- **Branch:** `chore/toolchain-parity`
+- **Scope:**
+  - `requirements-dev.txt`: `ruff==0.14.11`, `shellcheck-py==0.10.0.1`, `yamllint==1.35.1` (exact pins, values taken from existing hook `rev`s; no version upgrade)
+  - `tests/precommit/test_50_toolchain_version_parity.py` (new, marker `precommit`)
+- **Out of scope:** upgrading any tool; `pyproject.toml` dev extras (F22); pip pinning in `make venv`; Renovate coverage for pre-commit/pip (F4); `ci.yml`.
+- **Tests first:** `test_50_toolchain_version_parity.py`
+  - `test_parity_map_repos_exist_in_pre_commit_config`: every mapped hook repo still exists
+  - `test_requirements_dev_pins_match_pre_commit_rev[...]`: exact `==` pin equals hook `rev` without leading `v`, per tool
+- **Implementation steps (operator, WSL):**
+  1. `git switch main && git pull --ff-only && git switch -c chore/toolchain-parity`
+  2. Copy the prepared test file and apply the three pins in `requirements-dev.txt`
+  3. `make venv` (installs pins; on aarch64 `shellcheck-py` builds from sdist and downloads the ShellCheck binary from GitHub with checksum verification, because PyPI has no Linux aarch64 wheel for 0.10.0.1 [V, PyPI file list + sdist `setup.cfg`])
+  4. `.venv/bin/ruff --version`, `.venv/bin/shellcheck --version`, `.venv/bin/yamllint --version` → 0.14.11 / 0.10.0 / 1.35.1
+  5. `make ci`
+- **Proposed commit message:** `chore(tooling): pin ruff, shellcheck-py and yamllint to pre-commit revs`
+- **Proposed PR description:** Aligns `.venv` tool versions with `.pre-commit-config.yaml` and adds a precommit test that fails on future drift. No tool upgrade; no runtime change on the Pi.
+- **Pi steps (after merge):** `git pull --ff-only`; `sudo ./deploy.sh` (regression check only)
+- **Acceptance:** CI green on PR; `make ci` green locally; negative check: temporarily set `ruff>=0.9,<1.0` → test fails with actionable message; revert.
+- **Rollback:** `git revert` via fix branch + PR → pull + deploy
+- **Backup/docs/Renovate impact (IN9):** none; future bumps must change `.pre-commit-config.yaml` and `requirements-dev.txt` in the same commit (enforced by the test)
+- **Verification evidence (prepared in isolation, Python 3.12, ruff 0.14.11):** 4 passed; negative cases range pin, missing package, rev bump, removed hook repo → each fails with its message; `ruff check` and `ruff format --check` clean on the test file.
 
 ---
 
