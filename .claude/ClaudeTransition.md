@@ -299,7 +299,7 @@ approval for the rest.
     "defaultMode": "plan",
     "deny": [
       // C1/C2: no writes outside .claude (anchor form verified in Phase 1, see V1.3)
-      "Edit(./.github/**)", "Edit(./docs/**)", "Edit(./scripts/**)", "Edit(./stacks/**)",
+      "Edit(/.claude/.gitignore)", "Edit(./.github/**)", "Edit(./docs/**)", "Edit(./scripts/**)", "Edit(./stacks/**)",
       "Edit(./tests/**)", "Edit(./config/**)", "Edit(./secrets/**)", "Edit(./logs/**)",
       "Edit(./.vscode/**)", "Edit(./Makefile)", "Edit(./deploy.sh)", "Edit(./README.md)",
       "Edit(./Todo.txt)", "Edit(./ChatGPTHint.txt)", "Edit(./pyproject.toml)",
@@ -490,6 +490,7 @@ unit, and the current names of file-editing tools in 2.1.273.
 2. Resolve relative to `cwd`, then `os.path.realpath` (follows symlinks and `..`).
 3. Allow only if the resolved path is inside `<root>/.claude/`.
 4. Block even inside `.claude/` for: `hooks/**`, `settings.json`, `settings.local.json` (self-protection, active from Phase 1b via config flag `self_protect: true`).
+5. File `.claude/.gitignore` is protected against edit
 
 #### 5.4.4 Read tools (Read, Grep, Glob)
 
@@ -597,6 +598,8 @@ pointing to a temporary fixture repo (`tmp_path`), so no real repo file is touch
 | T40 | Bash `dd if=/dev/zero of=.claude/scratch/d.bin`; `… of=README.md` | exit 0; exit 2 |
 | T41 | Bash `sed -i s/a/b/ .claude/hooks/guard.py` with `self_protect: true` | exit 2, reason mentions self-protection |
 | T42 | Bash `gh pr create` | exit 2, reason C4 |
+| T43 | echo x > .claude/.gitignore | reason self_protect: true |
+
 ---
 
 ## 6. Implementation phases
@@ -630,17 +633,17 @@ Acceptance: branch exists, Claude Code version recorded, questions answered.
 Deliverables: `.claude/.gitignore`, `.claude/hooks/guard.py`, `.claude/hooks/guard-config.json`,
 `.claude/hooks/tests/test_guard.py`, draft `.claude/settings.json` **without** the `hooks` block.
 
-- [ ] Re-read hooks docs (5.4) and record doc date and any contract differences here.
+- [x] Re-read hooks docs (5.4) and record doc date and any contract differences here.
       *Done 2026-09-18, recorded in 5.4; permissions docs re-read as well, recorded in 5.2.1.*
-- [ ] Write `.claude/.gitignore`: `settings.local.json`, `scratch/`, `logs/`.
+- [x] Write `.claude/.gitignore`: `settings.local.json`, `scratch/`, `logs/`.
       *Done. `logs/` is redundant with the root `.gitignore` rule but kept explicit (K5).*
-- [ ] Write `settings.json` from 5.2 (strict JSON), `self_protect: false` in guard config.
+- [x] Write `settings.json` from 5.2 (strict JSON), `self_protect: false` in guard config.
       *Done with deviations D-a, D-b, D-f (5.2.1). No `hooks` block, no self-protection denies —
       both are Phase 1b and operator-applied.*
-- [ ] Write `guard.py`, `guard-config.json`, tests T01–T35.
+- [x] Write `guard.py`, `guard-config.json`, tests T01–T35.
       *Done. `guard.py` ≈ 600 lines, stdlib only; policy data entirely in `guard-config.json` (H5);
       35 test functions, one per matrix row (T18 and T19 assert both sub-cases).*
-- [ ] Restart Claude Code; run `/status`, `/permissions`.
+- [x] Restart Claude Code; run `/status`, `/permissions`.
       *Operator step. Note: `settings.json` was already live without a restart.*
 
 Verification (Claude-run results recorded 2026-09-18 on Claude Code 2.1.276; the live checks
@@ -677,8 +680,9 @@ V1.2–V1.8 need the operator, because plan mode and the permission dialog are n
 
 ### Phase 1b – Activate the hook (operator applies, Claude verifies)
 
-- [ ] Operator reviews `guard.py` line by line (it is the enforcement boundary).
-- [ ] Operator adds the `hooks` block (5.4.1) and self-protection denies (5.2) to `settings.json`
+- [x] Operator reviews `guard.py` line by line (it is the enforcement boundary).
+      *Done 2026-09-18, reviewed and made some changes with help of Claude, commit hash 117d092f528494786b66ff4bb166075ed86e7344, message: fix(claude-guard): classify write targets separately from sources...*
+- [x] Operator adds the `hooks` block (5.4.1) and self-protection denies (5.2) to `settings.json`
       and sets `self_protect: true`. From here on, only the operator changes hook/settings files.
 - [ ] Restart Claude Code; `/hooks` shows the PreToolUse entry.
 

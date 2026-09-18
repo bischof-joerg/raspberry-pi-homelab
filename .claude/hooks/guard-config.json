@@ -1,9 +1,9 @@
 {
   "mode": "transition",
-  "self_protect": false,
+  "self_protect": true,
   "max_nesting_depth": 5,
   "write_dir": ".claude",
-  "self_protected_paths": ["hooks", "settings.json", "settings.local.json"],
+  "self_protected_paths": ["hooks", "settings.json", "settings.local.json", ".gitignore"],
   "allowed_temp_prefixes": ["/tmp/claude-"],
   "null_targets": ["/dev/null"],
   "pi_identifiers": ["rpi-hub", "rpi-hub.fritz.box", "192.168.178.29"],

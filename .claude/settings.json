@@ -5,6 +5,7 @@
     "disableBypassPermissionsMode": "disable",
     "disableAutoMode": "disable",
     "deny": [
+      "Edit(/.claude/.gitignore)",
       "Edit(/.github/**)",
       "Edit(/docs/**)",
       "Edit(/scripts/**)",
@@ -106,6 +107,20 @@
       "Bash(git rev-parse*)",
       "Bash(make doctor)",
       "Bash(make doctor-strict)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard.py\"",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
