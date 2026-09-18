@@ -361,27 +361,58 @@ def check_pi_script(ctx: Context, token: str) -> None:
         raise Blocked(f"C5: Pi-only script must not be executed here: {token}")
 
 
-def check_write_operands(ctx: Context, words: list[str], head: str) -> None:
+def operands(ctx: Context, words: list[str], head: str) -> list[str]:
+    """Return the positional operands of `words`, without flags and their values."""
+    result: list[str] = []
     skip_next = False
     for word in words[1:]:
         if skip_next:
             skip_next = False
             continue
         if word.startswith("-"):
-            if head in ("install", "chmod", "chown") and word in ("-m", "-o", "-g"):
+            if head in ("install", "chmod", "chown", "chgrp") and word in ("-m", "-o", "-g"):
                 skip_next = True
             continue
-        target = word
-        if "=" in word:
+        if "=" in word and head == "dd":
             key, value = word.split("=", 1)
-            if key in ("of", "if"):
-                target = value
-            else:
-                continue
+            if key == "of":
+                result.append(value)
+            continue
         if head in ctx.names("mode_operand_heads") and (
-            FILE_MODE.match(target) or (":" in target and OWNER_SPEC.match(target))
+            FILE_MODE.match(word) or (":" in word and OWNER_SPEC.match(word))
         ):
             continue
+        result.append(word)
+    return result
+
+
+def write_targets(ctx: Context, words: list[str], head: str) -> list[str]:
+    """Operands that the command would write to (5.4.5, C1 row).
+
+    `cp`, `mv`, `ln` and `install` write only to their last operand; the preceding
+    operands are sources and are checked for secrets, not for write permission.
+    `sed -i` takes a script as its first operand unless `-e`/`-f` is given.
+    """
+    values = operands(ctx, words, head)
+    if not values:
+        return []
+    if head == "dd":
+        return values
+    if head in ctx.names("target_last_operand_heads"):
+        return values[-1:]
+    if head == "sed":
+        if any(word.startswith(("-e", "-f", "--expression", "--file")) for word in words[1:]):
+            return values
+        return values[1:]
+    return values
+
+
+def check_write_operands(ctx: Context, words: list[str], head: str) -> None:
+    for target in write_targets(ctx, words, head):
+        if target == "{}":
+            raise Blocked(f"C1: `{head}` would write to the files matched by `find`")
+        if is_self_protected(ctx, resolve(ctx, target)):
+            raise Blocked(f"self-protection: only the operator edits {target}")
         if not is_write_allowed(ctx, target):
             raise Blocked(f"C1: `{head}` would write outside .claude/: {target}")
 
@@ -390,6 +421,8 @@ def check_secret_operands(ctx: Context, words: list[str], head: str) -> None:
     for word in words[1:]:
         if word.startswith("-"):
             continue
+        if "=" in word and head == "dd":
+            word = word.split("=", 1)[1]
         if is_secret(ctx, word):
             raise Blocked(f"C3: `{head}` would read secret material: {word}")
 
@@ -461,6 +494,9 @@ def analyse_segment(ctx: Context, tokens: list[str], depth: int) -> None:
             check_write_operands(ctx, words, base)
         return
 
+    if base in ctx.names("operator_only_heads"):
+        raise Blocked(f"C4: `{base}` changes repository state and is reserved for the operator")
+
     if base in ctx.names("remote_heads"):
         raise Blocked(f"C5: remote access tool is denied: {base}")
 
@@ -490,13 +526,21 @@ def analyse_segment(ctx: Context, tokens: list[str], depth: int) -> None:
 
     if base == "sed" and any(word.startswith("-i") for word in words[1:]):
         check_write_operands(ctx, words, base)
+        check_secret_operands(ctx, words, base)
         return
 
     if base in ctx.names("write_heads"):
         check_write_operands(ctx, words, base)
+        if base == "dd":
+            check_secret_operands(ctx, words, base)
 
     if base in ctx.names("secret_read_heads"):
         check_secret_operands(ctx, words, base)
+
+    if base in ctx.names("target_last_operand_heads"):
+        for source in operands(ctx, words, base)[:-1]:
+            if is_secret(ctx, source):
+                raise Blocked(f"C3: `{base}` would copy secret material: {source}")
 
 
 def analyse_nested(ctx: Context, base: str, words: list[str], depth: int) -> None:

@@ -509,28 +509,43 @@ The guard builds a list of *command segments* and inspects each one:
    `command`, `builtin`, `exec`, `nohup`, `nice`, `ionice`, `timeout <n>`, `time`, `stdbuf …`,
    `setsid`, `unbuffer`.
 4. **Normalise the head** to its basename (`/usr/bin/ssh` → `ssh`).
-5. **Heredocs and stdin scripts**: `bash <<…`, `sh -s`, `python3 -`, `| bash`, `| sh` → block
-   during transition (code body is not reliably inspectable).
+5. **Shell invocations whose code is not a `-c` argument** → block during transition. This covers
+   heredocs (`bash <<…`), stdin scripts (`sh -s`, `python3 -`), pipes into a shell (`| bash`,
+   `| sh`) and script arguments (`bash <script>`), because the executed body is not reliably
+   inspectable. A script path given this way is still checked against the Pi-script list first,
+   so the reported reason names the actual violation (C5 instead of C1).
 6. **Inline interpreter code**: `python3 -c`, `perl -e/-i`, `ruby -e`, `node -e` → block during
-   transition. `python -m pytest` and `.venv/bin/python -m pytest` stay allowed.
+   transition. The flags are matched anywhere in the segment, which also blocks unrelated uses of
+   the same flags (for example `python3 -m pytest -c pytest.ini`); accepted as a false positive.
+   `python -m pytest` and `.venv/bin/python -m pytest` without such a flag stay allowed.
 7. **Raw scan** of the full original string (after un-escaping) for Pi identifiers
    (`rpi-hub`, `rpi-hub.fritz.box`, `192.168.178.29`) → block. Catches quoting tricks that the
-   parser resolves differently.
+   parser resolves differently, and also blocks read-only commands that merely mention an
+   identifier (for example `grep -rn rpi-hub docs/`); accepted as a false positive.
 
 **Block list per segment (transition mode):**
 
 | Category | Heads / patterns |
 |---|---|
-| C4 Git | `git` with `commit`, `push`, `tag`, `merge`, `rebase`, `reset`, `checkout`, `switch`, `stash`, `add`, `rm`, `am`, `cherry-pick`, `revert`, `clean`, `config`, `gh` (all) |
-| C5 Remote / Pi | `ssh`, `scp`, `sftp`, `rsync`, `ansible*`, `mosh`, `nc`, `ncat`, `socat`, `telnet`; `curl`, `wget`, `ping`, `nmap` with any Pi identifier; `./deploy.sh`, `deploy.sh`, `sudo`, `su`, `doas`; any execution of `scripts/host/*`, `scripts/host-runtime/*`, `scripts/network/*`, `init-permissions.sh` (also via `bash <script>`); `ufw`, `systemctl`, `usermod`, `groupadd`, `docker network create`/`rm` |
-| C2 Mutating tools | `make` targets except `doctor`, `doctor-strict`, `help`; `pre-commit`; `pip`/`pip3 install`, `uninstall`; `ruff` without `--check`/`check --no-fix`; `ruff format` without `--check`; `gpg`; `docker` except `compose config`, `version`, `info`, `ps`, `images` |
-| C1 File writes | `rm`, `mv`, `cp`, `ln`, `touch`, `mkdir`, `rmdir`, `chmod`, `chown`, `truncate`, `install`, `dd`, `tee`, `patch`, `sed -i`, `git apply` → allowed only if **all** path operands resolve inside `<root>/.claude/` or an allowed temp dir (`/tmp/claude-*`) |
-| C1 Redirections | `>`, `>>`, `>` with clobber, `&>`, `2>` targets outside `.claude/`, `/tmp/claude-*`, or `/dev/null` |
-| C3 Secret reads | `cat`, `less`, `more`, `head`, `tail`, `grep`, `rg`, `awk`, `sed`, `source`, `.`, `base64`, `xxd`, `strings` on secret patterns (5.4.4) |
+| C4 Git / repository state | `git` with `commit`, `push`, `tag`, `merge`, `rebase`, `reset`, `checkout`, `switch`, `stash`, `add`, `rm`, `am`, `cherry-pick`, `revert`, `clean`, `config`; `gh` (all subcommands, reported as C4 because it creates commits, branches and pull requests) |
+| C5 Remote / Pi | `ssh`, `scp`, `sftp`, `rsync`, `ansible*`, `mosh`, `nc`, `ncat`, `socat`, `telnet`; any command containing a Pi identifier (step 7), which covers `curl`, `wget`, `ping`, `nmap`; `./deploy.sh`, `deploy.sh`, `sudo`, `su`, `doas`; any execution of `scripts/host/*`, `scripts/host-runtime/*`, `scripts/network/*`, `init-permissions.sh` (also via `bash <script>`); `ufw`, `systemctl`, `systemd-run`, `usermod`, `useradd`, `groupadd`, `groupmod`, `apt`, `apt-get`, `rpi-eeprom-update`, `rpi-update`; `docker network create`/`rm` (covered by the docker allowlist below) |
+| C2 Mutating tools | `make` targets except `doctor`, `doctor-strict`, `help` (a bare `make` is blocked too); `pre-commit`; `gpg`, `gpg2`; `pip`/`pip3` except `list`, `show`, `check`, `freeze`; `ruff` except `check --no-fix` and `format --check|--diff`; `docker` except `version`, `info`, `ps`, `images` and `docker compose config` |
+| C1 File writes | `rm`, `mv`, `cp`, `ln`, `touch`, `mkdir`, `rmdir`, `chmod`, `chown`, `chgrp`, `truncate`, `install`, `dd`, `tee`, `patch`, `shred`, `sed -i`, `git apply`. Every **write target** must resolve inside `<root>/.claude/` or an allowed temp dir (`/tmp/claude-*`). Which operands are targets: for `cp`, `mv`, `ln`, `install` (config key `target_last_operand_heads`) only the **last** operand; for `sed -i` all operands except the leading script (unless `-e`/`-f` is given); for `dd` only `of=`; for every other head all positional operands. Mode and owner operands of `chmod`, `chown`, `chgrp`, `install` are ignored. A `{}` placeholder from `find -exec` blocks with its own reason. `find -delete` is blocked. |
+| C1 Redirections | `>`, `>>`, `>` with clobber, `&>`, `2>` targets outside `.claude/`, `/tmp/claude-*`, or `/dev/null`; here-documents (`<<`, `<<<`) block per step 5; `<` targets are checked against the secret patterns |
+| C3 Secret reads | `cat`, `less`, `more`, `head`, `tail`, `grep`, `rg`, `egrep`, `fgrep`, `awk`, `sed`, `source`, `.`, `base64`, `xxd`, `od`, `strings`, `tar`, `zip` on secret patterns (5.4.4); additionally the **source** operands of `cp`, `mv`, `ln`, `install` and the `if=` operand of `dd`, so relaxing the target rule above cannot exfiltrate secrets into `.claude/` |
+| Self-protection | With `self_protect: true`, any write target inside `.claude/hooks/**`, `.claude/settings.json` or `.claude/settings.local.json` blocks with a self-protection reason, in `transition` and in `operate` mode alike |
 
 Anything the parser cannot classify is **not** blocked by the guard (exit 0, decision Q8) and falls through to
 the deny rules and the plan-mode approval prompt. This keeps normal read-only work usable; the
 operator remains the final gate.
+
+The head lists above are policy data in `guard-config.json` (H5), not literals in `guard.py`:
+`shell_heads`, `interpreter_heads`, `interpreter_inline_flags`, `denied_git_subcommands`,
+`write_git_subcommands`, `operator_only_heads`, `remote_heads`, `host_mutation_heads`,
+`denied_heads`, `write_heads`, `target_last_operand_heads`, `mode_operand_heads`,
+`secret_read_heads`, `nested_exec_heads`, `allowed_make_targets`, `allowed_docker_subcommands`,
+`allowed_docker_compose_subcommands`, `allowed_pip_subcommands`, `pi_script_fragments`,
+`pi_script_basenames`, `allowed_temp_prefixes`, `null_targets`.
 
 #### 5.4.6 Test matrix (`.claude/hooks/tests/test_guard.py`)
 
@@ -575,7 +590,13 @@ pointing to a temporary fixture repo (`tmp_path`), so no real repo file is touch
 | T33 | Bash `bash scripts/network/cleanup-ufw.sh --verbose` (dry-run mode) | exit 2 |
 | T34 | Bash `DRY_RUN=1 ./scripts/network/bootstrap-networks.sh` | exit 2 |
 | T35 | Read `scripts/network/cleanup-ufw.sh` | exit 0 |
-
+| T36 | Bash `cp README.md .claude/scratch/copy.md` | exit 0 (source may be outside) |
+| T37 | Bash `cp .claude/scratch/a.md docs/copy.md` | exit 2 (target outside) |
+| T38 | Bash `cp secrets/backup/gpg/key.asc .claude/scratch/k` | exit 2 (C3 source) |
+| T39 | Bash `sed -i s/a/b/ .claude/scratch/a.md`; Bash `sed -i s/a/b/ README.md` | exit 0; exit 2 |
+| T40 | Bash `dd if=/dev/zero of=.claude/scratch/d.bin`; `… of=README.md` | exit 0; exit 2 |
+| T41 | Bash `sed -i s/a/b/ .claude/hooks/guard.py` with `self_protect: true` | exit 2, reason mentions self-protection |
+| T42 | Bash `gh pr create` | exit 2, reason C4 |
 ---
 
 ## 6. Implementation phases

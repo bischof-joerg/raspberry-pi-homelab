@@ -55,9 +55,9 @@
     "socat",
     "telnet",
     "ansible",
-    "ansible-playbook",
-    "gh"
+    "ansible-playbook"
   ],
+  "operator_only_heads": ["gh"],
   "host_mutation_heads": [
     "sudo",
     "su",
@@ -93,6 +93,7 @@
     "patch",
     "shred"
   ],
+  "target_last_operand_heads": ["cp", "mv", "ln", "install"],
   "mode_operand_heads": ["chmod", "chown", "chgrp", "install"],
   "secret_read_heads": [
     "cat",
