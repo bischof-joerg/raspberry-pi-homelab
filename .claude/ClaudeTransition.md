@@ -1,6 +1,7 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** READY FOR PHASE 0/1a (v0.9) – Q1–Q9 answered; R0.0 toolchain parity defined as first increment (10.6)
+- **Status:** PHASE 1a BUILT, AWAITING OPERATOR VERIFICATION (v1.0) – artefacts written, guard
+  matrix green (V1.9); live checks V1.2–V1.8 and all of Phase 1b are operator steps
 - **Created:** 2026-09-16
 - **Scope:** Transform the existing ChatGPT-based working model (`ChatGPTHint.txt`) and the
   implemented repository conventions into Claude Code artefacts under `.claude/`.
@@ -47,7 +48,7 @@ Translated from the original German bootstrap instructions in `.claude/CLAUDE.md
 | E8 | Implementation state | Monitoring stack implemented; backup in progress; see `Todo.txt` | Section 3 |
 | Q1 | Scope of C1 (write only in `.claude/`) | **Transition only.** Afterwards Claude edits repository files. | C1/C2 live in a separate "Transition constraints" section and a separate deny block; Phase 8 retires both. C3–C6 stay permanent. |
 | Q2 | Pi identifiers | Deny host name `rpi-hub`, IP `192.168.178.29`, and the Pi FQDN (value pending, section 9). Calls to Pi services are denied now and allowed selectively later. | Broad deny patterns must be replaced by narrow ones in Phase 8, because deny always wins over allow. |
-| Q3 | Claude Code version (WSL) | `2.1.273` | Newer than all version notes cited from the settings docs (v2.1.211, v2.1.257, v2.1.267), so current docs apply. WSL checkout path still pending. |
+| Q3 | Claude Code version (WSL) | Phase 0: `2.1.273`; **at Phase 1a (2026-09-18): `2.1.276`** | Newer than all version notes cited from the settings and hooks docs (v2.1.211, v2.1.257, v2.1.267, v2.1.269), so current docs apply. The CLI updated itself between Phase 0 and Phase 1a, so the live hook tests V1.10–V1.16 must run on 2.1.276 (risk table: re-run after every update). |
 | Q4 | `make doctor` | Allowed (`make doctor`, `make doctor-strict`) | Added to allow list; covered by the before/after side-effect check. |
 | Q5 | Pi FQDN | `rpi-hub.fritz.box` (LAN only) | Added to deny list and hook config. `*rpi-hub*` already matches it; explicit entries kept for clarity and for WebFetch domain rules. |
 | Q7 | Guard implementation language | **Option A:** Python 3 standard library, tokenising exclusively with `shlex` | No third-party shell parser (e.g. `bashlex`). See H1/H8. |
@@ -170,6 +171,7 @@ verification in WSL or on the Pi by the operator.
 | F22 | Second, diverging source of dev dependencies: `pyproject.toml` `[project.optional-dependencies].dev` (`ruff>=0.14.11`, `pytest>=8`, `typeguard>=4`, …) and the `pytest-precommit` hook's `additional_dependencies` duplicate `requirements-dev.txt`. `make venv` uses `requirements-dev.txt` only. | `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml` [V] |
 | F23 | `tests/precommit/test_15_json_valid.py` is marked `lint`, not `precommit`; `make precommit` runs `pytest tests/precommit -m precommit`, so this test is likely deselected in precommit, and `make test` ignores `tests/precommit`. Other files not yet checked. | test file + `Makefile` [V]; effect [I] |
 | F24 | `scripts/renovate/validate-config.sh` (pre-commit hook) runs `renovate/renovate:43` by tag only, while the Makefile pins the same image by digest; the hook needs Docker and a registry pull, contradicting the old DevWorkflow claim "no Docker runtime, no network". | script, `Makefile`, `.pre-commit-config.yaml` [V] |
+| F25 | `tests/precommit/test_15_json_valid.py` rglobs **every** `*.json`, including git-ignored ones, and fails on `.vscode/settings.json` (JSONC with a trailing comma, ignored via `.gitignore:21:.vscode/*`). The failure is invisible in practice because the test is marked `lint`, so `make precommit` and CI deselect it (F23). Found while validating the new `.claude/*.json` files, which parse clean. | test run 2026-09-18: `1 failed, 3 passed, 8 deselected`, only hit `.vscode/settings.json` [V] |
 | F20 | `ensure-journald-read.sh` defaults to `TARGET_USER=vector` (no such host user expected) while `deploy.sh` passes `admin`; the container runs as uid 65532 and gets the GID via `group_add`, so group membership of `admin` is likely irrelevant for Vector. | scripts + compose [V]; relevance [I] |
 
 ### 3.7 Security-relevant facts for Claude's boundaries [V]
@@ -356,8 +358,42 @@ Notes:
   equivalent is in 5.3.
 - `"Bash(*rpi-hub*)"` also blocks harmless local strings containing `rpi-hub`; accepted.
 - IP-based Pi access cannot be fully covered by patterns (K3). Confirm the Pi IP in Q2.
-- The exact semantics of `./` vs `/` anchors in project settings must be confirmed against the
-  permissions docs and by negative test V1.3 before the file is considered final.
+- The `./` anchors in the draft above are **superseded**; the as-built file uses `/` anchors.
+  See 5.2.1 for the resolved anchor question and every other deviation.
+
+### 5.2.1 As-built deviations from the 5.2 draft (Phase 1a, verified 2026-09-18)
+
+Source: https://code.claude.com/docs/en/permissions, retrieved 2026-09-18 (no publication date on
+the page; newest version notes cited there are v2.1.268/v2.1.269).
+
+| ID | Draft | As built | Reason |
+|---|---|---|---|
+| D-a | `Edit(./docs/**)`, `Edit(./Makefile)`, … | `Edit(/docs/**)`, `Edit(/Makefile)`, … | The docs define four pattern types: `path` and `./path` anchor at the **current directory**, `/path` at the **settings source** (= primary working directory for project settings), `//path` at the filesystem root, `~/path` at `$HOME`. `/` is cwd-independent and therefore the correct anchor for repo-root paths. This answers the open V1.3 question. |
+| D-b | – | added `"disableBypassPermissionsMode": "disable"` and `"disableAutoMode": "disable"` | Documented `permissions` keys. `defaultMode: plan` only sets the *starting* mode; these two keys prevent a session from being started in or switched to `auto`/`bypassPermissions`, which closes the remaining part of K8. |
+| D-c | `Read(**/.env)`, `Read(**/*.env)` | unchanged | Confirmed: bare/single-segment **deny** patterns match at any depth, and `Read(.env)` ≡ `Read(**/.env)`. `.env.example` does not end in `.env`, so it stays readable (T07). |
+| D-d | – | no path rules for `Write(...)`, `MultiEdit(...)`, `NotebookEdit(...)`, `Glob(...)` | Documented (v2.1.210+): Claude Code checks file permissions against `Edit(path)` and `Read(path)` rules **only**. A path rule on the other tool names is accepted but never consulted and warns at startup. `Edit(path)` governs Write/MultiEdit/NotebookEdit; `Read(path)` governs Glob. The draft already complied; recorded so it is not "fixed" later. |
+| D-e | `Bash(*rpi-hub*)` etc. | unchanged | Confirmed stronger than assumed: deny rules apply when **any** subcommand matches, including inside a subshell, a command substitution or a loop body, and they match past leading variable assignments. Wrappers `timeout`, `time`, `nice`, `nohup`, `stdbuf`, `command`, `builtin` and bare `xargs` are stripped before matching. Still **not** matched: the same program by absolute path (`/usr/bin/ssh`), inside `sh -c '…'`, or `git -C . push` → K3 stands, and closing exactly this gap is the guard's job (T10, T11, T14). |
+| D-f | – | `Edit(**)` + `Edit(!.claude/**)` **rejected** | See V1.3b below. |
+
+**V1.3b (optional catch-all experiment, operator-approved, result: negative).** Instead of
+enumerating known top-level paths, `deny: ["Edit(**)", "Edit(!.claude/**)"]` was tried, using the
+documented gitignore negation ("a deny pattern starting with `!` carves the paths it matches out of
+the `path` or `./path` rules listed before it"). Result on 2.1.276: **all** `Edit`/`Write` calls were
+denied, `.claude/` included — `File is in a directory that is denied by your permission settings.`
+The carve-out is ineffective here, matching the documented limit *"a carve-out can't reopen a file
+inside a directory that a rule blocks as a whole"*. Both entries were removed by the operator.
+
+Consequences to keep in mind:
+
+- The enumeration in 5.2 is the only workable deny form, so it covers **known** top-level paths
+  only. A newly created top-level file or directory is not denied by `settings.json`.
+- That residual gap is covered by the guard's path check (5.4.3), which allows nothing outside
+  `<root>/.claude/` regardless of the path's name (T02, T03, T04, T16).
+- `settings.json` takes effect **without restarting Claude Code** (observed: Bash allow/deny and the
+  Edit denies were live immediately after the file was written).
+- A deny rule cannot be approved interactively — deny always wins. A mistake in the deny list can
+  therefore lock Claude out of `.claude/` itself, and only the operator can undo it. Treat edits to
+  the deny list as operator-only from Phase 1b on (self-protection).
 
 ### 5.3 Read-only validation gate (skill `readonly-gate`)
 
@@ -388,6 +424,22 @@ of `docker compose config` or gitleaks) is checked by the same diff.
 
 Primary sources to re-check in Phase 1a (behaviour is version-dependent):
 https://code.claude.com/docs/en/hooks-guide and https://code.claude.com/docs/en/hooks.
+
+**Re-check performed 2026-09-18 on Claude Code 2.1.276.** The hooks reference carries no
+publication date; its newest version note is v2.1.267, so the installed CLI is at or past the
+documented state. Result: the contract in this section **holds unchanged**. Confirmed in detail:
+
+| Item | Documented behaviour (2026-09-18) | Effect on 5.4 |
+|---|---|---|
+| stdin payload | `session_id`, `transcript_path`, `cwd`, `tool_name`, `tool_input`, `hook_event_name`, `tool_use_id`, plus `permission_mode`, `prompt_id`, `scratchpad_dir` | H4 unchanged; the guard uses `tool_name`, `tool_input`, `cwd` only. The extra fields are available if a later phase needs them. |
+| exit 0 | "no decision", the normal permission flow still applies | Q8 unchanged: unclassified commands exit 0. |
+| exit 2 | blocks the call; stderr becomes the reason shown to Claude; a JSON `permissionDecision: "allow"` cannot override it | H3 unchanged. |
+| other exit codes | **1 and 3–255 do not block** | Confirms H2: the guard must use exactly 0 or 2, and every fail-closed path must exit 2. |
+| stdout JSON | optional `hookSpecificOutput.permissionDecision` = `allow`/`deny`/`ask` with `permissionDecisionReason` | Not used (H3). Exit 2 + stderr is sufficient and depends on fewer output-format details. |
+| `timeout` | unit is **seconds**, default 600 for `command` hooks | The planned `"timeout": 10` means 10 s, as intended. |
+| `${CLAUDE_PROJECT_DIR}` | substituted in `command` and also exported into the hook process environment | H4 works in both forms. |
+| matcher | exact name, `|`/`,`-separated list, or an **unanchored** JavaScript regex | `Edit` alone would already match `MultiEdit`/`NotebookEdit`; 5.4.1 keeps the explicit list for readability. The guard additionally treats any unknown edit-shaped tool defensively. |
+| tool names | `Bash`, `Edit`, `Write`, `Read`, `Grep`, `Glob`, `WebFetch` are listed explicitly; `MultiEdit`/`NotebookEdit` appear only contextually | No change; the guard classifies by tool name and falls through to exit 0 for anything it does not know. |
 
 **Documented contract used by the guard [V, hooks guide]:** the hook receives event JSON on stdin
 (including `tool_name`, `tool_input`, `cwd`); exit code `2` blocks the tool call and stderr is fed
@@ -558,16 +610,30 @@ Deliverables: `.claude/.gitignore`, `.claude/hooks/guard.py`, `.claude/hooks/gua
 `.claude/hooks/tests/test_guard.py`, draft `.claude/settings.json` **without** the `hooks` block.
 
 - [ ] Re-read hooks docs (5.4) and record doc date and any contract differences here.
+      *Done 2026-09-18, recorded in 5.4; permissions docs re-read as well, recorded in 5.2.1.*
 - [ ] Write `.claude/.gitignore`: `settings.local.json`, `scratch/`, `logs/`.
+      *Done. `logs/` is redundant with the root `.gitignore` rule but kept explicit (K5).*
 - [ ] Write `settings.json` from 5.2 (strict JSON), `self_protect: false` in guard config.
+      *Done with deviations D-a, D-b, D-f (5.2.1). No `hooks` block, no self-protection denies —
+      both are Phase 1b and operator-applied.*
 - [ ] Write `guard.py`, `guard-config.json`, tests T01–T35.
+      *Done. `guard.py` ≈ 600 lines, stdlib only; policy data entirely in `guard-config.json` (H5);
+      35 test functions, one per matrix row (T18 and T19 assert both sub-cases).*
 - [ ] Restart Claude Code; run `/status`, `/permissions`.
+      *Operator step. Note: `settings.json` was already live without a restart.*
 
-Verification:
+Verification (Claude-run results recorded 2026-09-18 on Claude Code 2.1.276; the live checks
+V1.2–V1.8 need the operator, because plan mode and the permission dialog are not scriptable):
 - V1.1 `git check-ignore -v .claude/settings.local.json .claude/logs/guard.log .claude/scratch/x` → all matched by `.claude/.gitignore`.
+  **PASSED:** `.claude/.gitignore:6:settings.local.json`, `.claude/.gitignore:12:logs/`,
+  `.claude/.gitignore:9:scratch/` → K5 closed. Before the file existed, only `guard.log` was
+  ignored (by the root rule `logs/`); `settings.local.json` and `scratch/` were not ignored at all.
 - V1.2 `/status` lists "Shared project settings"; mode shows plan.
 - V1.3 Negative test: ask Claude to append a line to `README.md` → denied without prompt. If not,
-  switch the anchor form per the permissions docs and re-test. Working form: `__________`.
+  switch the anchor form per the permissions docs and re-test. Working form: `Edit(/README.md)`
+  (`/`-anchored, D-a; still to be confirmed live by the operator).
+- V1.3b Catch-all experiment `Edit(**)` + `Edit(!.claude/**)` → **FAILED, entries removed.**
+  Full result in 5.2.1 (D-f).
 - V1.4 Negative tests: `git commit --allow-empty -m test`, `ssh rpi-hub true`, `make precommit`,
   reading a file under `secrets/` → all denied.
 - V1.5 Positive test: edit a file under `.claude/scratch/` → allowed after approval.
@@ -577,6 +643,16 @@ Verification:
   `ping -c1 rpi-hub.fritz.box`, WebFetch `http://rpi-hub:3000` → all denied.
 - V1.9 `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .claude/hooks/tests` → 35 passed;
   `.venv/bin/ruff check --no-fix --no-cache .claude/hooks` and `ruff format --check` clean.
+  **PASSED:** `35 passed in 0.97s`; ruff check → `All checks passed!`; ruff format --check →
+  `2 files already formatted`.
+- V1.9b (added) K9 line endings: `grep -rl $'\r' .claude` → no output.
+- V1.9c (added) C1/C2 side-effect proof: `git status --porcelain --ignored` captured before and
+  after the full test run → `OK: no side effects`. `git diff --stat -- . ':!.claude'` shows only
+  `Todo.txt`, which was already modified before the session started.
+- V1.9d (added) Repository static tests with the new artefacts present, run read-only from `.venv`:
+  `tests/precommit -m precommit` → 8 passed, 4 deselected; `tests/guards` + `tests/doctor`
+  (`-m "not postdeploy"`) → 7 passed, 1 skipped. `tests/precommit -m lint` → 1 failed, 3 passed;
+  the failure is pre-existing and unrelated to `.claude/` (new finding F25).
 
 ### Phase 1b – Activate the hook (operator applies, Claude verifies)
 
@@ -810,7 +886,8 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 |---|---|---|---|---|---|
 | R0.0 toolchain parity | 2026-09-17 | ? | green |  tests: passed, deploy: done | |
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
-| R0.1 (Phase 1a) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR |
+| R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
+| R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
 
 ### 10.5 Toolchain record (Phase 0)
 
