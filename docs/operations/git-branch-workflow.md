@@ -341,6 +341,15 @@ git push -u origin revert/r2-single-increment
 
 Never use `git reset --hard` or force pushes on `main` for rollback; history must stay intact for GitOps.
 
+### 8.3 Background knowledge on sha values
+
+In general the short sha value with 8 characters is sufficient. In huge repositories it might be not unique. However, git would tell. And only in these rare cases the long, 40 character sha is needed.
+
+There are multiple ways to retrieve the sha value of a commit:
+- Command `git log --oneline --graph --all` displays the tree structures of commits
+- Command `git log --merges --oneline` logs only merge commits of the current branch
+- For easily retrieving a long sha: In Visual Studio in the Source Control tree, right click on any commit and choose 'Copy Commit Hash' for getting the hash into the clipboard.
+
 ---
 
 ## 9. Troubleshooting
