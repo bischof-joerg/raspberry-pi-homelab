@@ -1,7 +1,8 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 1a BUILT, AWAITING OPERATOR VERIFICATION (v1.0) – artefacts written, guard
-  matrix green (V1.9); live checks V1.2–V1.8 and all of Phase 1b are operator steps
+- **Status:** PHASE 1b IN PROGRESS (v1.1, 2026-09-18) – hook registered and **proven to enforce**
+  (V1.13 live); V1.10–V1.12 and V1.14–V1.16 still open, 4 guard patches pending. Resume at
+  "Phase 1b – session state 2026-09-18 (handover)" in section 6. Phase 2 is blocked until V1.16.
 - **Created:** 2026-09-16
 - **Scope:** Transform the existing ChatGPT-based working model (`ChatGPTHint.txt`) and the
   implemented repository conventions into Claude Code artefacts under `.claude/`.
@@ -608,6 +609,7 @@ The matrix spans two files since Phase 1b:
 | T43 | Bash `echo x > .claude/.gitignore` with `self_protect: true` | exit 2, reason mentions self-protection (redirection into a self-protected path) |
 | T44 | Bash `ls > /dev/null 2>&1`; Bash `ls 2>&1 \| tail -3` (fd duplication) | exit 0; exit 0 |
 | T45 | Bash `echo x &> README.md` | exit 2 |
+| T46 | Write `~/.claude/plans/x.md` (plan-mode plan file) | pending decision: exit 0 once the plan-mode fix is accepted (Phase 1b open item 4), exit 2 if it is not |
 
 ---
 
@@ -731,8 +733,8 @@ observed incidentally while adapting the tests, before the planned restart:
    `C1: redirection would write outside .claude/: .claude/.gitignore`. The path is plainly *inside*
    `.claude/`, so the message misdirects; the actual cause is self-protection.
    `check_redirections` is the only write path that still lacks the self-protection branch that
-   `check_write_operands` and `check_file_tool` already have. Patch in `.claude/scratch/` and in the
-   handover notes; T43 is the regression test for it.
+   `check_write_operands` and `check_file_tool` already have. Fix: patches **P1** (guard) and **P2**
+   (test) below; T43 is the regression test for it.
 3. **`2>&1` is falsely blocked (found by using the guard, not by the matrix).** `split_segments`
    treats every bare `&` as a control operator, so it splits inside the fd-duplication forms `>&`
    and `&>`. Probed against the live guard:
@@ -747,11 +749,240 @@ observed incidentally while adapting the tests, before the planned restart:
    Impact: this is a false positive on an extremely common shell idiom, so it blocks routine
    read-only work and pushes the operator towards workarounds — the "guard bug blocks legitimate
    work" risk in section 7, now realised. The read-only gate in 5.3 is unaffected because it uses
-   no `2>&1`. New matrix rows T44/T45 are the regression tests; patch in `.claude/scratch/`.
+   no `2>&1`. Fix: patches **P3** (guard) and **P4** (tests) below; T44/T45 are the regression rows.
 
-**Process observation.** All three items were found by *using* the guard for ordinary work, not by
-the T01–T35 matrix, which only covers cases the design anticipated. Worth carrying into Phase 2+:
+4. **The guard makes plan mode unusable (structural, not a parser bug).** C1 permits writes only
+   under the *project's* `.claude/`, but Claude Code's plan mode writes its plan file to the
+   *user's home* `.claude/plans/`. Observed 2026-09-18:
+
+   ```text
+   guard: C1: writes are restricted to .claude/ during the transition:
+     /home/micro/.claude/plans/bash-c-git-commit-lively-boole.md
+   ```
+
+   `ExitPlanMode` reads the plan from that file, so with the guard active the plan-mode workflow
+   cannot be completed at all — neither writing the plan nor exiting it. Decision E2 makes plan mode
+   the default working mode, so this blocks the intended way of working.
+   Proposed fix (operator, `guard-config.json` is self-protected): add a dedicated
+   `allowed_write_prefixes` entry for `~/.claude/plans/`, kept separate from
+   `allowed_temp_prefixes` so the intent stays readable. `guard.py` already expands `~` in
+   `is_write_allowed`, but `check_file_tool` does **not** consult the prefix list — it only allows
+   `<root>/.claude/`, so the fix needs a small change there too, plus a test row (T46).
+   Interim workaround: work without plan mode, as in this session.
+
+**Process observation.** All four items were found by *using* the guard for ordinary work, not by
+the T01–T45 matrix, which only covers cases the design anticipated. Worth carrying into Phase 2+:
 the matrix proves the design, day-to-day use finds the parser's blind spots.
+
+#### Phase 1b – session state 2026-09-18 (handover, verifications incomplete)
+
+**Status: Phase 1b is NOT done.** The hook is registered and enforcing, but the verification
+sequence V1.10–V1.16 was not completed. Nothing is broken; the boundary holds. Resume here.
+
+Done and evidenced:
+
+- Hook registered in `.claude/settings.json` (matcher `Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash|WebFetch`, `python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/guard.py"`, `timeout: 10`).
+- `self_protect: true`; `self_protected_paths` = `hooks`, `settings.json`, `settings.local.json`, `.gitignore`.
+- Operator review of `guard.py` done, with fixes: write targets classified separately from sources
+  (`target_last_operand_heads`), `gh` moved to `operator_only_heads`, `.gitignore` protected.
+  Commit `117d092f528494786b66ff4bb166075ed86e7344`.
+- Test matrix extended to two files, **65 passed** (35 + 30), ruff clean, no side effects.
+- **V1.13 passed live** (self-protection on `Edit .claude/hooks/guard.py`).
+- Hook wiring proven live for both tools: `Bash` blocked twice on the `2>&1` defect and once on
+  `python3 -c`; `Edit` blocked on V1.13. This already answers the #37210/#43407 risk for 2.1.276 —
+  PreToolUse deny is **not** ignored on this version.
+- `.claude/logs/guard.log` is being written (9,133 bytes at handover) → H6 works, V1.15 has data.
+
+Open, in the order to do them next session:
+
+| # | Item | Who | Notes |
+|---|---|---|---|
+| 1 | Apply patches **P1–P4** | operator | Diffs in "Phase 1b – pending guard patches P1–P5" below. **P3 (`2>&1`) first** — it is a false positive on routine commands. Expected after all four: **71 passed**. |
+| 2 | Apply patch **P5**: the two missing self-protection denies | operator | `Edit(/.claude/settings.json)`, `Edit(/.claude/hooks/**)` in `settings.json`; `Edit(/.claude/.gitignore)` is already there. |
+| 3 | Decide on the plan-mode fix (item 4 above) | operator | Needs a `guard.py` change plus T46, or accept working without plan mode. |
+| 4 | Run V1.10–V1.16 and record verbatim | operator runs, Claude records | Command block below. Operator chose to run these personally. |
+| 5 | Tick the Phase 1a/1b checkboxes | operator | Claude records results but never ticks. |
+| 6 | Then Phase 2 (`CLAUDE.md` restructuring) | Claude | Blocked until V1.16 says "proceed". |
+
+Why V1.10 must not be run as a plain shell command: a PreToolUse hook fires only on *Claude's*
+tool calls. Typed into the operator's own shell, `bash -c "git commit --allow-empty -m test"` does
+not reach the guard and simply creates an empty commit. The form below invokes the guard directly —
+it only evaluates, never executes — and with `CLAUDE_PROJECT_DIR` unset it also exercises the H4
+fallback via `git rev-parse --show-toplevel`.
+
+```bash
+cd /home/micro/src/raspberry-pi-homelab
+R=/home/micro/src/raspberry-pi-homelab
+
+# V1.10  balanced -- expect exit 2, reason names C4/git
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"bash -c \"git commit --allow-empty -m test\""},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.10 exit=$?"
+# V1.10b unbalanced quote -- expect exit 2, fail-closed (T23), NOT a C4 reason
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"bash -c \"git commit --allow-empty -m test"},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.10b exit=$?"
+# V1.11  expect exit 2, reason names C5
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"sh -c \"true && ssh rpi-hub.fritz.box true\""},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.11 exit=$?"
+# V1.12  expect exit 2, reason names C1
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"echo test > README.md"},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.12 exit=$?"
+# V1.13  expect exit 2, reason names self-protection
+printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":".claude/hooks/guard.py"},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.13 exit=$?"
+# V1.14  fail-closed while the config is missing
+mv .claude/hooks/guard-config.json .claude/hooks/guard-config.json.bak
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"ls"},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.14 exit=$?"
+mv .claude/hooks/guard-config.json.bak .claude/hooks/guard-config.json
+# V1.15  one JSON line per decision above
+tail -8 .claude/logs/guard.log
+```
+
+Additionally worth one live Claude tool call next session, because only that exercises the hook
+end-to-end rather than the guard in isolation: ask Claude to run `bash -c "git commit --allow-empty
+-m test"`. Expected: blocked by the hook, and `git log -1` unchanged.
+
+#### Phase 1b – pending guard patches P1–P5 (verbatim, operator applies)
+
+These live here rather than in `.claude/scratch/` because `scratch/` is git-ignored: a copy there
+survives on disk but not in a commit or a fresh clone. This subsection is the canonical version.
+
+Claude cannot apply P1–P4 itself: `self_protect: true` covers `.claude/hooks/**`, which is the
+intended boundary. All findings below were verified against the live guard on 2026-09-18,
+Claude Code 2.1.276. Apply **P3 first** — it is a false positive that blocks routine commands.
+
+##### P1 – `guard.py`, in `check_redirections`: report self-protection (T43)
+
+Symptom:
+
+```text
+$ printf '%s' '{"tool_name":"Bash","tool_input":{"command":"echo x > .claude/.gitignore"},"cwd":"/home/micro/src/raspberry-pi-homelab"}' | python3 .claude/hooks/guard.py
+guard: C1: redirection would write outside .claude/: .claude/.gitignore
+exit=2
+```
+
+The call is blocked, so the boundary holds, but the reason is wrong: `.claude/.gitignore` is
+*inside* `.claude/`. The cause is self-protection. Same for `echo x > .claude/settings.json`.
+Root cause: `check_redirections` calls `is_write_allowed`, which returns `False` for a
+self-protected path without saying why. `check_write_operands` and `check_file_tool` already have
+the explicit self-protection branch; the redirection path does not.
+
+```diff
+             if token.endswith("<"):
+                 if is_secret(ctx, target):
+                     raise Blocked(f"C3: input redirection reads secret material: {target}")
+                 continue
++            if is_self_protected(ctx, resolve(ctx, target)):
++                raise Blocked(f"self-protection: only the operator edits {target}")
+             if not is_write_allowed(ctx, target):
+                 raise Blocked(f"C1: redirection would write outside .claude/: {target}")
+```
+
+Mirrors the existing branch in `check_write_operands`; no new imports, and no behaviour change for
+paths that are not self-protected — they still report C1.
+
+##### P2 – `test_guard_operands.py`: T43 regression test
+
+Add to the existing `test_self_protection_reports_itself` parametrize list, which already asserts
+`"self-protection" in reason` and builds a config with `self_protect=True`:
+
+```diff
+ @pytest.mark.parametrize(
+     "command",
+     [
+         "sed -i s/a/b/ .claude/hooks/guard.py",
+         "cp /tmp/x .claude/settings.json",
+         "rm .claude/hooks/guard-config.json",
++        # T43: redirection into a self-protected path must report self-protection, not C1
++        "echo x > .claude/.gitignore",
++        "echo x > .claude/settings.json",
+     ],
+ )
+```
+
+The second added line is not a matrix row, but it is the same defect through the same code path and
+costs nothing to cover.
+
+##### P3 – `guard.py`, in `split_segments`: stop splitting fd duplication (T44/T45)
+
+Separate defect, found by running an ordinary command. Every bare `&` is treated as a control
+operator, so the fd-duplication forms `>&` and `&>` are split apart:
+
+```text
+$ ls 2>&1                 -> exit 2, "C1: redirection without a target"
+$ ls > /dev/null 2>&1     -> exit 2, same
+$ ls 2>&1 | tail -3       -> exit 2, same
+$ ls &> /dev/null         -> exit 0, but only because the leftover "> /dev/null" was allowed
+```
+
+`ls 2>&1` becomes the segments `ls 2>` and `1`; the first ends in a redirect operator with nothing
+after it, so the fail-closed branch fires. Add the two exceptions before the separator test:
+
+```diff
+         if not in_single and not in_double:
+             if text[i : i + 2] in ("&&", "||", "|&", ";;"):
+                 segments.append("".join(current))
+                 current = []
+                 i += 2
+                 continue
++            # `>&` / `<&` / `&>`: part of a redirection, not a control operator
++            if ch == "&" and (
++                "".join(current).rstrip()[-1:] in ("<", ">") or text[i + 1 : i + 2] == ">"
++            ):
++                current.append(ch)
++                i += 1
++                continue
+             if ch in ";|&\n":
+```
+
+`check_redirections` already handles the resulting tokens correctly: `>&` ends in `&` and is skipped
+as fd duplication, `&>` is treated as an output redirect and its target is checked. Real
+backgrounding (`sleep 5 &`, `a & b`) still splits, because neither exception applies.
+
+##### P4 – `test_guard_operands.py`: T44/T45 regression tests
+
+Add to the `test_write_targets` parametrize list:
+
+```diff
++        # T44: fd duplication is not a redirect target
++        ("ls > /dev/null 2>&1", PASS),
++        ("ls 2>&1 | tail -3", PASS),
++        # T45: &> is an output redirect and its target is checked
++        ("echo x &> README.md", BLOCK),
++        ("echo x &> .claude/scratch/out.txt", PASS),
+```
+
+##### P5 – `settings.json`: complete the self-protection denies
+
+The deny list has `Edit(/.claude/.gitignore)` but is missing the other two denies that 5.2 requires
+from Phase 1b on:
+
+```diff
+       "Edit(/.claude/.gitignore)",
++      "Edit(/.claude/settings.json)",
++      "Edit(/.claude/hooks/**)",
+```
+
+The guard already blocks all three via `self_protect: true`, so this is defence in depth, not a
+hole. Without it the boundary rests on one layer instead of the intended two.
+
+##### Not included as a patch: the plan-mode fix
+
+Open item 4 above (plan mode cannot write `~/.claude/plans/`) needs a design decision first —
+allow the home plans directory, or accept working without plan mode — so no diff is proposed here.
+If it is allowed, the change is in `check_file_tool`, not only in `guard-config.json`, plus row T46.
+
+##### Acceptance for P1–P5
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .claude/hooks/tests
+.venv/bin/ruff check --no-fix --no-cache .claude/hooks
+.venv/bin/ruff format --check --no-cache .claude/hooks
+```
+
+Measured **before** the patches: 65 passed in 1.70 s (35 in `test_guard.py`, 30 in
+`test_guard_operands.py`), ruff clean, `3 files already formatted`.
+Expected **after** P1–P4: **71 passed** (65 + 2 from P2 + 4 from P4), ruff clean.
+
+Then re-probe the fixed false positive — it must run instead of being blocked:
+
+```bash
+ls > /dev/null 2>&1; echo "exit=$?"
+```
 
 ### Phase 2 – `CLAUDE.md` restructuring
 
@@ -969,6 +1200,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
+| R0.3 (Phase 1b, **open**) | 2026-09-18 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered, `self_protect: true`, operand classification patched, matrix at 65 passed. V1.13 passed live; V1.10–V1.12, V1.14–V1.16 open; 4 patches and 2 settings denies pending. Not an increment per IN7 until the verifications are recorded. |
 
 ### 10.5 Toolchain record (Phase 0)
 
