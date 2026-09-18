@@ -548,11 +548,18 @@ The head lists above are policy data in `guard-config.json` (H5), not literals i
 `allowed_docker_compose_subcommands`, `allowed_pip_subcommands`, `pi_script_fragments`,
 `pi_script_basenames`, `allowed_temp_prefixes`, `null_targets`.
 
-#### 5.4.6 Test matrix (`.claude/hooks/tests/test_guard.py`)
+#### 5.4.6 Test matrix (`.claude/hooks/tests/`)
 
 Run: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .claude/hooks/tests`
 The tests invoke `guard.py` as a subprocess with crafted stdin JSON and `CLAUDE_PROJECT_DIR`
 pointing to a temporary fixture repo (`tmp_path`), so no real repo file is touched.
+
+The matrix spans two files since Phase 1b:
+
+- `test_guard.py` – **T01–T35**, one test function per row (T18 and T19 assert both sub-cases).
+- `test_guard_operands.py` – **T36–T43**, the operand-classification patch: which operand of a
+  command is a write *target* versus a *source*, and which violations must report self-protection
+  rather than a plain C1 breach.
 
 | Case | Input | Expected |
 |---|---|---|
@@ -598,7 +605,9 @@ pointing to a temporary fixture repo (`tmp_path`), so no real repo file is touch
 | T40 | Bash `dd if=/dev/zero of=.claude/scratch/d.bin`; `… of=README.md` | exit 0; exit 2 |
 | T41 | Bash `sed -i s/a/b/ .claude/hooks/guard.py` with `self_protect: true` | exit 2, reason mentions self-protection |
 | T42 | Bash `gh pr create` | exit 2, reason C4 |
-| T43 | echo x > .claude/.gitignore | reason self_protect: true |
+| T43 | Bash `echo x > .claude/.gitignore` with `self_protect: true` | exit 2, reason mentions self-protection (redirection into a self-protected path) |
+| T44 | Bash `ls > /dev/null 2>&1`; Bash `ls 2>&1 \| tail -3` (fd duplication) | exit 0; exit 0 |
+| T45 | Bash `echo x &> README.md` | exit 2 |
 
 ---
 
@@ -696,6 +705,53 @@ do **not** match them; a block therefore proves the hook works:
 - V1.15 `.claude/logs/guard.log` contains one JSON line per V1.10–V1.13 decision.
 - V1.16 If any of V1.10–V1.13 is **not** blocked: stop, record Claude Code version and case,
   treat the hook as non-enforcing (see risk table), and escalate before Phase 2.
+
+**Live evidence collected so far (2026-09-18, Claude Code 2.1.276, hook registered).** These were
+observed incidentally while adapting the tests, before the planned restart:
+
+- **V1.13 PASSED.** `Edit .claude/hooks/guard.py` →
+  `PreToolUse:Edit hook error: […] guard: self-protection: only the operator edits
+  /home/micro/src/raspberry-pi-homelab/.claude/hooks/guard.py`. The edit did not happen.
+- **Bonus (5.4.5 step 6) PASSED.** A `Bash` call containing `python3 -c …` →
+  `PreToolUse:Bash hook error: […] guard: C1: inline interpreter code is not inspectable: python`.
+- Both blocks prove the hook **is enforcing** on 2.1.276 for the `Edit` and `Bash` tools, which is
+  the failure mode reported in issues #37210/#43407 for earlier versions. V1.10–V1.12 and V1.14–V1.15
+  still need to be run explicitly after the restart; the risk-table rule (re-run after every Claude
+  Code update) stays in force.
+
+**Open items found while adapting the tests (operator action, both inside self-protected files):**
+
+1. **Self-protection denies are incomplete in `settings.json`.** The deny list contains
+   `Edit(/.claude/.gitignore)` but **not** `Edit(/.claude/hooks/**)` and
+   `Edit(/.claude/settings.json)`, which 5.2 requires from Phase 1b on. The guard covers all three
+   via `self_protect: true`, so the boundary holds today, but it rests on a single layer instead of
+   the intended two. Adding them restores defence in depth.
+2. **T43 blocks with the wrong reason.** Verified against the live guard:
+   `echo x > .claude/.gitignore` → exit 2 with
+   `C1: redirection would write outside .claude/: .claude/.gitignore`. The path is plainly *inside*
+   `.claude/`, so the message misdirects; the actual cause is self-protection.
+   `check_redirections` is the only write path that still lacks the self-protection branch that
+   `check_write_operands` and `check_file_tool` already have. Patch in `.claude/scratch/` and in the
+   handover notes; T43 is the regression test for it.
+3. **`2>&1` is falsely blocked (found by using the guard, not by the matrix).** `split_segments`
+   treats every bare `&` as a control operator, so it splits inside the fd-duplication forms `>&`
+   and `&>`. Probed against the live guard:
+
+   | Command | Result |
+   |---|---|
+   | `ls 2>&1` | exit 2, `C1: redirection without a target` |
+   | `ls 2>&1 \| tail -3` | exit 2, same |
+   | `ls > /dev/null 2>&1` | exit 2, same |
+   | `ls &> /dev/null` | exit 0, but only by accident: the `&` was read as backgrounding and the leftover `> /dev/null` happened to be allowed |
+
+   Impact: this is a false positive on an extremely common shell idiom, so it blocks routine
+   read-only work and pushes the operator towards workarounds — the "guard bug blocks legitimate
+   work" risk in section 7, now realised. The read-only gate in 5.3 is unaffected because it uses
+   no `2>&1`. New matrix rows T44/T45 are the regression tests; patch in `.claude/scratch/`.
+
+**Process observation.** All three items were found by *using* the guard for ordinary work, not by
+the T01–T35 matrix, which only covers cases the design anticipated. Worth carrying into Phase 2+:
+the matrix proves the design, day-to-day use finds the parser's blind spots.
 
 ### Phase 2 – `CLAUDE.md` restructuring
 
