@@ -39,7 +39,11 @@ missing tests (F9) are a debt to close, not a precedent to extend.
 - **Keep the fixture overrides working.** The scripts must be testable from WSL without touching
   real Pi paths: `BACKUP_ROOT`, `DATA_ROOT`, `HOST_SECRETS_DIR`, `SECRETS_FILE`,
   `HOMELAB_ALLOW_NON_PI=1`. Production execution still requires the Pi unless explicitly overridden.
-- **Public-key GPG only.** The Pi encrypts with the public key; it never holds the private key.
+- **Public-key GPG only.** The Pi encrypts to the `Homelab Backup Recovery` public key and holds
+  only a public keyring under `GPG_HOME`. Full decrypt/list verification happens on WSL/Admin,
+  where the private key lives. ADR-009 allows exactly one exception — a temporary import on the Pi
+  as an **emergency**, which must be followed by deleting the secret key and the temporary GnuPG
+  home. Anything beyond that emergency path is a violation, not a shortcut.
   The private key lives in the WSL working tree under git-ignored `secrets/backup/gpg/` — **never
   read it** (C3), never print a passphrase, never add key material to a test fixture.
 - **Update the artifact inventory** (ADR-009 §4/§5) whenever an increment adds persistent data,

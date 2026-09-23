@@ -14,7 +14,12 @@ filesystem, never in Git, and never in the repository working tree.**
 
 - Runtime secrets live in `/etc/raspberry-pi-homelab/monitoring.env`, owned `root:root`, mode `600`.
 - `deploy.sh` loads them with `docker compose --env-file`. Nothing else reads them.
-- A repo-root `.env` is **refused** by `deploy.sh` — it is not a fallback, it is an error.
+- A repo-root `.env` is **refused** by `deploy.sh` — it is not a fallback, it is an error
+  (`deploy.sh:109`, `die "Refusing repo-root .env …"`).
+- A `.env` **in a stack's compose directory is allowed** (ADR-0007 §2), but only to make
+  `docker compose ps|logs|config` run without interpolation warnings outside `deploy.sh`. It must be
+  non-secret, gitignored, and labelled local-only. Passwords, tokens, credentials, API keys and
+  anything belonging in `/etc/…/monitoring.env` are explicitly disallowed there.
 - `.env.example` documents the required variable names and structure, with **no real values**.
 - Host-derived values such as `DOCKER_GID` and `SYSTEMD_JOURNAL_GID` are computed in `deploy.sh`
   at deploy time. They do not belong in `.env.example` — `.env.example` currently lists them twice

@@ -1,10 +1,9 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 3 WRITTEN (v1.7, 2026-09-23) – Phases 1a/1b/2 complete. `.claude/rules/` holds
-  **eight path-scoped rules** (none always-loaded); **V3.1 and V3.2 passed** — V3.2 with hard
-  evidence that only 5 of 8 rules loaded on demand. V3.3 still needs an operator review.
-  The V3.2 review produced F30–F42 and corrected three of Claude's own artefacts (3.3).
-  Next: Phase 4 (skills).
+- **Status:** PHASE 3 COMPLETE (v1.8, 2026-09-23) – Phases 1a/1b/2 complete. `.claude/rules/` holds **eight path-scoped
+  rules** (none always-loaded); **V3.1, V3.2 and V3.3 all passed**. V3.2 proved on-demand loading
+  with hard evidence (only 5 of 8 rules loaded). The reviews produced F30–F43 and corrected five of
+  Claude's own artefacts (3.3). Next: Phase 4 (skills).
 - **Created:** 2026-09-16
 - **Scope:** Transform the existing ChatGPT-based working model (`ChatGPTHint.txt`) and the
   implemented repository conventions into Claude Code artefacts under `.claude/`.
@@ -191,6 +190,7 @@ verification in WSL or on the Pi by the operator.
 | F40 | Rule/reality mismatch: CLAUDE.md §4 and `rules/compose-stacks.md` require host paths `<service>-data\|config\|db`, but the real paths are `/srv/data/stacks/monitoring/<service>` (+ `alertmanager-config`). Fix the rule rather than migrate data. | compose lines 17, 19, 146, 260, 360, 387 [V] |
 | F41 | No static guard for the compose hardening contract. `tests/guards/test_10_monitoring_compose_contract.py` checks service presence only, and `vector` is missing from `REQUIRED_SERVICES`. | test file lines 12–21 [V] |
 | F42 | LAN ports `3000` and `9428` are called deliberate in `rules/compose-stacks.md`, but `ADR-0001-networking-and-firewall.md` does not mention either port. | grep `3000\|9428` on ADR-0001, no match [V]; other docs not checked |
+| F43 | **An ADR promises a guarantee the deploy path does not deliver.** ADR-0001 Decision 2 states that `bootstrap-networks.sh` is "guarded against subnet overlap" and that "network creation and validation happen before any container deployment". In fact the script validates subnet, gateway and bridge **only** when `MONITORING_SUBNET`, `…_BRIDGE_NAME` etc. are present in the environment — and `deploy.sh` does not export them (F16). So on the deploy path no subnet validation happens at all. Correct the **ADR**, not `rules/host-runtime.md`, which describes reality accurately. Found by V3.3. | ADR-0001 lines 37–41, `deploy.sh`, `scripts/network/bootstrap-networks.sh` [V] |
 | F25 | `tests/precommit/test_15_json_valid.py` rglobs **every** `*.json`, including git-ignored ones, and fails on `.vscode/settings.json` (JSONC with a trailing comma, ignored via `.gitignore:21:.vscode/*`). The failure is invisible in practice because the test is marked `lint`, so `make precommit` and CI deselect it (F23). Found while validating the new `.claude/*.json` files, which parse clean. | test run 2026-09-18: `1 failed, 3 passed, 8 deselected`, only hit `.vscode/settings.json` [V] |
 | F20 | `ensure-journald-read.sh` defaults to `TARGET_USER=vector` (no such host user expected) while `deploy.sh` passes `admin`; the container runs as uid 65532 and gets the GID via `group_add`, so group membership of `admin` is likely irrelevant for Vector. | scripts + compose [V]; relevance [I] |
 
@@ -1416,13 +1416,28 @@ claiming to.
 `CLAUDE.local.md`; whether lazily loaded path-scoped rules appear there is **unverified**. Do not
 read an absence there as evidence.
 - V3.3 No rule contradicts an accepted ADR (manual review by operator).
-  **OPEN — operator step.** Rules cite ADR-0001, ADR-0007, ADR-0008 and ADR-009 by path.
+  **PASSED 2026-09-23.** All four ADRs checked against all eight rules. **No rule contradicts an
+  ADR.** Three rule statements were verified against the source rather than trusted:
 
-Verification:
-- V3.1 Each rule cites at least one repo source file.
-- V3.2 In a new session, open `stacks/monitoring/compose/docker-compose.yml` and ask for a
-  compliance review → answer references `compose-stacks.md` content (naming, pinning, bind mounts).
-- V3.3 No rule contradicts an accepted ADR (manual review by operator).
+  | Rule statement | Source | Result |
+  |---|---|---|
+  | `deploy.sh` refuses a repo-root `.env` (`secrets.md`) | `deploy.sh:109-110`, `die "Refusing repo-root .env …"` | correct |
+  | host data under `/srv/data/stacks/<stack>/<service>/` (`compose-stacks.md`) | ADR-0008 Decision, verbatim | correct — retroactively confirms the F40 fix |
+  | exit codes, DD-012, DD-013, public-key model (`backup-restore.md`) | ADR-009 §2.3 and lines 174/681/698 | correct |
+
+  ADR-0001 mentions neither port 3000 nor 9428, which confirms the F42 correction.
+
+  Two rules were **imprecise rather than wrong**, both fixed:
+  - `secrets.md` never mentioned that ADR-0007 §2 **allows** a compose-directory `.env` for local
+    CLI use (non-secret, gitignored, local-only). The rule is scoped to exactly that directory, so
+    the omission misleads inside its own scope. Same class of defect as F40/F42.
+  - `backup-restore.md` claimed the Pi holds the private key "never". ADR-009 line 875 permits a
+    documented emergency import followed by mandatory cleanup. A rule that hides a documented
+    exception gets bypassed in an emergency instead of followed.
+
+  One **ADR** turned out to be wrong — recorded as F43. V3.3 was expected to be a formality
+  checking rules against ADRs; the only real defect sits in an ADR, and it surfaced only because
+  both were checked against the code rather than against each other.
 
 ### Phase 4 – Skills
 
