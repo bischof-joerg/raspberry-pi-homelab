@@ -1667,6 +1667,19 @@ Verification:
   `.claude/scratch/check_agents.py` (now in `tools/`), 0 failures — after Phase 3 and 4 this class of check is no
   longer done by eye.
 
+**Correction 2026-09-23 (Phase 6, V6.1).** Two statements in this subsection do not hold against
+the sub-agents docs:
+- **"`/agents` lists all four"**: `/agents` has not listed agents since v2.1.198, well before 2.1.276.
+  Whatever the evidence for V5.1 was, it cannot have been `/agents` output. The reported form
+  `Tools: Read, Grep, Glob` matches the agent list Claude receives in its own tool context, which is
+  the likely source [I]. The *registration* result is not in doubt: the four agents are available
+  and read-only, re-confirmed from Claude's tool context on 2.1.280.
+- **"The agent registry is read at startup"**: the docs say agent files are hot-reloaded, with no
+  restart. A restart is needed for the **first** file in a new `agents/` directory — exactly the
+  Phase 5 situation, since `.claude/agents/` did not exist before. The observation was right, the
+  generalisation was wrong. The closing sentence below ("each has its own loading moment, and the
+  only reliable way to know is to try it") stands, and it should have included reading the docs.
+
 **Newly measured asymmetry, worth remembering.** Skills written during a session became available
 **in that same session** (that is how V4.1–V4.5 could be run immediately). Agents written during a
 session do **not** — the agent registry is read at startup. The statement "no restart needed",
@@ -1676,12 +1689,12 @@ try it.
 
 ### Phase 6 – Human documentation and findings report
 
-- [ ] `readme_claude.md`: purpose of each artefact, how to start a session, what Claude will refuse
+- [x] `readme_claude.md`: purpose of each artefact, how to start a session, what Claude will refuse
       and why, how to verify the safety set-up (V1.x), how to update artefacts.
       **WRITTEN 2026-09-23.** Seven sections: inventory, session start, refusals, the two layers
       (with the deny list grouped into self-protection / transition / permanent, which 5.2
       promised and nothing had delivered), verification, updating, Phase 8 preview.
-- [ ] `reports/repo-findings.md`: F1–F24 with evidence, impact, proposed fix, suggested test.
+- [x] `reports/repo-findings.md`: F1–F46 with evidence, impact, proposed fix, suggested test.
       **WRITTEN 2026-09-23 — scope F1–F46 plus F26b (47 entries), not F1–F24**, because the backlog
       had grown by 23 findings since this line was written. Each entry: Evidence, Impact, Proposed
       fix, Test, Acceptance; plus severity, status and a suggested R1 increment grouping (a–i).
@@ -1727,7 +1740,23 @@ Accepted like the other false positives in 5.4.5 and listed in the readme.
 
 Verification:
 - V6.1 Operator can follow `readme_claude.md` from a fresh shell without extra knowledge.
-  **OPEN — operator step.** Claude ran every read-only command of readme §5 it is allowed to:
+  **IN PROGRESS — operator step.**
+  **V6.1 finding #1 (2026-09-23, 2.1.280):** readme §2 told the operator to run `/agents`, which
+  prints `The /agents wizard has been removed. Ask Claude to create or update subagents for you
+  … or edit the files directly`. The sub-agents docs (fetched 2026-09-23) say `/agents` stopped
+  listing agents **as of v2.1.198**, and name no replacement listing command. Readme §2 now uses
+  the `@` typeahead and asks Claude directly. §6.4 and the inventory row were also corrected, see
+  the note under 5.1 below. The readme was wrong because Claude wrote it from this document rather
+  than from the current docs — the same class of error as F40/F42/F46.
+  **V6.1 finding #2 (2026-09-23, 2.1.280, operator):** readme §2 expected the typeahead to list
+  `agent-compose-reviewer` and gave `@agent-security-reviewer` as the invocation. The typeahead
+  shows the **plain name** (`compose-reviewer`). Per the sub-agents docs, picking it inserts
+  `@"<name> (agent)"`, and the typed form `@agent-<name>` still resolves on submit, but while it is
+  typed the typeahead shows files, not agents. Both forms are valid, and the readme now describes
+  the picker as primary. Section 5.0's "`@agent-<name>`" is correct but incomplete. **V6.1 finding #3 (2026-09-23, 2.1.280, operator):** a hand-typed `@compose-reviewer`, without
+  the picker, also resolves to the agent. This was measured, not documented: the sub-agents docs
+  name only the picker and `@agent-<name>`. Three working forms on 2.1.280.
+  Before these findings: Claude ran every read-only command of readme §5 it is allowed to:
   §5.1, §5.2 (77 passed), §5.5 and §5.6 (all four checkers `0 failure(s)`). §5.3 is blocked for
   Claude by design (raw Pi-identifier scan), §5.4 needs live tool calls.
 - V6.2 Each finding has evidence path and a testable acceptance criterion.

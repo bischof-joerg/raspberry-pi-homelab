@@ -30,7 +30,7 @@ Claude Code **2.1.280** installed (live hook tests last run on 2.1.276 — see �
 | `hooks/tests/` | Guard test matrix T01–T46 (77 cases) | – | **operator only** (self-protected) | §5.2 |
 | `rules/*.md` (8) | Topic rules, each path-scoped via `paths` | when Claude **reads** a matching file | Claude, operator reviews | `tools/check_rules.py` |
 | `skills/*/SKILL.md` (8) | Invokable procedures | description every turn, body on invocation | Claude, operator reviews | `tools/check_skills.py` |
-| `agents/*.md` (4) | Read-only subagents (`tools: Read, Grep, Glob`) | registry read **at startup** | Claude, operator reviews | `tools/check_agents.py` |
+| `agents/*.md` (4) | Read-only subagents (`tools: Read, Grep, Glob`) | description at startup; edits hot-reloaded | Claude, operator reviews | `tools/check_agents.py` |
 | `tools/*.py` (4) | Verifiers for rules, skills, agents, findings | run by hand | Claude, operator reviews | `ruff check` |
 | `reports/repo-findings.md` | Findings F1–F46 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
 | `ClaudeTransition.md` | Transition plan, decision log, verification records | only when read | Claude, operator reviews | – |
@@ -56,14 +56,18 @@ test -x .venv/bin/python && echo "venv ok"   # Claude never creates the venv; `m
 claude
 ```
 
-Inside Claude Code, check once per session (or after any change to `settings.json` or `agents/`):
+Inside Claude Code, check once per session (or after any change to `settings.json`, `skills/` or `agents/`):
 
 | Command | Expected |
 |---|---|
 | `/status` | Settings sources include the shared project settings; permission mode **plan** |
 | `/hooks` | `PreToolUse` → `python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/guard.py"`; `InstructionsLoaded` → append to `logs/instructions.log` |
 | `/skills` | the eight skills above |
-| `/agents` | the four agents, each listed with `Tools: Read, Grep, Glob` |
+| type `@` in the prompt | the typeahead lists `compose-reviewer`, `security-reviewer`, `test-author`, `docs-steward` (plain names, marked as agents) |
+| ask *"Which subagent types can you use, and with which tools?"* | the four agents, each with `Tools: Read, Grep, Glob` (Claude reads this from its own tool context, no file access needed) |
+
+`/agents` no longer lists anything. Since v2.1.198 it only prints a pointer to `.claude/agents/`,
+and there is no listing command. The static check is `tools/check_agents.py` (§5.6).
 
 `auto` and `bypassPermissions` modes are disabled by `settings.json`; the session starts in plan
 mode. Plan mode writes its plan to `~/.claude/plans/` — the guard allows exactly that directory
@@ -73,8 +77,15 @@ mode. Plan mode writes its plan to `~/.claude/plans/` — the guard allows exact
 
 - Skills: `/readonly-gate`, `/increment-plan <feature>`, `/change-review`, … or let Claude pick one
   from its description.
-- Agents: `@agent-security-reviewer review stacks/monitoring/compose/docker-compose.yml`. The
-  `@`-mention guarantees that agent runs; otherwise Claude may delegate automatically.
+- Agents: `@security-reviewer review stacks/monitoring/compose/docker-compose.yml`. Three forms
+  work on 2.1.280:
+  - the plain name `@security-reviewer`, typed by hand (measured 2026-09-23; the docs do not
+    mention it);
+  - picked from the `@` typeahead, which inserts `@"security-reviewer (agent)"`;
+  - `@agent-security-reviewer`, which is documented but shows files in the typeahead while you
+    type; it resolves on submit.
+
+  An `@`-mention guarantees that agent runs; without one, Claude may delegate automatically.
 - Rules are never invoked. They load by themselves when Claude reads a file in their scope.
 
 **Working loop** (`CLAUDE.md` §8): one feature per branch, which you create. Claude:
@@ -306,8 +317,10 @@ reporting it. Every checker in `tools/` exists because of one of these.
 - `tools` must be **present**. An absent `tools` does not mean "no tools", it means **every** tool,
   including Edit, Write and Bash (D5-a).
 - Bodies carry procedure and report format only. Agents inherit `CLAUDE.md` and `rules/` (D5-b).
-- The agent registry is read **at startup**: restart Claude Code after any change, then check
-  `/agents`.
+- Adding or editing an agent file takes effect within seconds, with no restart. A restart is needed
+  only for the **first** file in a new `agents/` directory, for directories added with `--add-dir`,
+  and in sessions started with `--disable-slash-commands`. Check with the `@` typeahead or by asking
+  Claude, as in §2. `/agents` no longer lists agents.
 - Run `tools/check_agents.py`.
 
 ### 6.5 Self-protected files (guard, config, tests, `settings.json`, `.gitignore`)
