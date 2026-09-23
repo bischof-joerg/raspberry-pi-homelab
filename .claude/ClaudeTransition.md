@@ -233,7 +233,8 @@ deploy. `ChatGPTHint.txt` §7 expects `deploy.sh` to bootstrap UFW → deviation
 ├── hooks/
 │   ├── guard.py               # PreToolUse guard (Python 3 stdlib only), fail-closed
 │   ├── guard-config.json      # policy data: pi identifiers, secret patterns, mode (transition|operate)
-│   └── tests/test_guard.py    # pytest matrix for the guard (run from .venv, no repo side effects)
+│   └── tests/                 # test_guard.py (T01–T35) + test_guard_operands.py (T36–T46)
+│                              # InstructionsLoaded logging is a command in settings.json, no script (3.2)
 ├── readme_claude.md           # human-facing: how to work with Claude in this repo, verification
 ├── ClaudeTransition.md        # this plan (living document, decision log)
 ├── rules/                     # topic/path-scoped instructions (verify `paths` frontmatter support in Phase 3)
@@ -1284,6 +1285,82 @@ Verification:
   compliance review → answer references `compose-stacks.md` content (naming, pinning, bind mounts).
   **OPEN — operator step**, needs a fresh session. This is the real test: it proves path-scoped
   loading actually fires, which nothing here can prove from inside the session that wrote the rules.
+  Procedure in 3.2 below.
+
+#### 3.2 How to run V3.2 (and repeat it after every Claude Code update)
+
+"Open the file" does not mean opening it in an editor. The trigger is **Claude reading it**: a
+path-scoped rule loads "when Claude reads files matching the pattern, not on every tool use".
+
+**Setup — the `InstructionsLoaded` hook (operator applies; `settings.json` is self-protected).**
+Documented event: fires when a `CLAUDE.md` or `.claude/rules/*.md` file is loaded into context, at
+session start **and on lazy loading during a session**. Its matcher selects the load *reason*:
+`session_start`, `nested_traversal`, `path_glob_match`, `include`, `compact`. It is observational
+only — it cannot block, and exit code 2 has no effect. Add to `.claude/settings.json` inside
+`"hooks"`, alongside `PreToolUse`:
+
+```json
+"InstructionsLoaded": [
+  {
+    "matcher": "session_start|nested_traversal|path_glob_match|include|compact",
+    "hooks": [
+      {
+        "type": "command",
+        "command": "cat >> \"$CLAUDE_PROJECT_DIR/.claude/logs/instructions.log\"; echo >> \"$CLAUDE_PROJECT_DIR/.claude/logs/instructions.log\""
+      }
+    ]
+  }
+]
+```
+
+No script file is needed — the event JSON arrives on stdin. `.claude/logs/` is already git-ignored.
+All five reasons are captured on purpose: `session_start` answers "what loads in every session",
+which is the question D3-a is about, and `path_glob_match` answers V3.2.
+
+**Step 1 — positive case.** Fresh session, then:
+
+```text
+Review stacks/monitoring/compose/docker-compose.yml gegen unsere Regeln.
+```
+
+Claude must **not** read `deploy.sh` or `ClaudeTransition.md` in that session, otherwise the source
+of any repo-specific knowledge is ambiguous. Check afterwards which files it read.
+
+**Step 2 — hard evidence.**
+
+```bash
+grep path_glob_match .claude/logs/instructions.log
+```
+
+An entry naming `compose-stacks.md` proves V3.2 regardless of what the answer said. This is the only
+check that does not rest on interpretation.
+
+**Step 3 — content canary, if the hook is not in place.** Measured 2026-09-23, so the canary is
+chosen rather than guessed:
+
+| Fact | In `CLAUDE.md` (always loaded)? | In `compose-stacks.md`? | Usable as proof |
+|---|---|---|---|
+| F1, F3, F9, F25 | **yes** | partly | **no** |
+| F2, F7, F8 | no | yes | yes |
+| "config hash covers only four files" | no (0 matches) | yes | **best** |
+
+The config-hash statement derives from `deploy.sh`, is absent from `CLAUDE.md`, and cannot be
+inferred from the compose file alone. If the review raises it **unprompted**, the knowledge can only
+have come from the rule. Do not ask for it — a leading question invalidates the test.
+
+**Step 4 — negative control.** A second fresh session, touching no file under `stacks/`:
+
+```text
+Was sind unsere Regeln für Compose-Stacks?
+```
+
+The canary must be **absent** here. Present in step 1 and absent in step 4 proves not just that the
+rule works, but that it loads **on demand** — i.e. that D3-a actually saves context rather than only
+claiming to.
+
+`/context` lists **Memory files**, but the documentation describes that list for `CLAUDE.md` and
+`CLAUDE.local.md`; whether lazily loaded path-scoped rules appear there is **unverified**. Do not
+read an absence there as evidence.
 - V3.3 No rule contradicts an accepted ADR (manual review by operator).
   **OPEN — operator step.** Rules cite ADR-0001, ADR-0007, ADR-0008 and ADR-009 by path.
 

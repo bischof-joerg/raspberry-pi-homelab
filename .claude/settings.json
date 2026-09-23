@@ -123,6 +123,17 @@
           }
         ]
       }
+    ],
+    "InstructionsLoaded": [
+      {
+        "matcher": "session_start|nested_traversal|path_glob_match|include|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat >> \"$CLAUDE_PROJECT_DIR/.claude/logs/instructions.log\"; echo >> \"$CLAUDE_PROJECT_DIR/.claude/logs/instructions.log\""
+          }
+        ]
+      }
     ]
   }
 }
