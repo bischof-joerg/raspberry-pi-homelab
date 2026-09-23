@@ -96,8 +96,9 @@ vector update auf version image: timberio/vector:0.58.0-debian mit runtime issue
 
 
 # Claud Transition
-claude --resume 7d4e8f1f-16db-49c7-bfcd-bb7b70564a10
-Phase 1b: Verifikationen V1.10–V1.16. sind noch durchzuführen und das ganze zu dokumentieren.
+
+Danach wäre Phase 3 dran: zehn Regeldateien unter .claude/rules/. Dort kommt zuerst eine Doku-Prüfung — der Plan verlangt, den Rules-Mechanismus und das paths-Frontmatter gegen die offizielle Doku zu verifizieren, bevor ich schreibe, weil .claude/rules/ in aktuellen Claude-Code-Versionen nicht zwingend automatisch geladen wird.
+
 
 
 _____________________________________________________________________________
@@ -107,6 +108,28 @@ _____________________________________________________________________________
 
 
 # Claud Transition
+
+docs(claude): restructure CLAUDE.md as English project memory (phase 2)
+
+German bootstrap instructions -> 170-line project memory in ten
+sections, per the phase 2 target structure.
+
+- C1-C8 split into transition-only (2.1) and permanent (2.2) so
+  phase 8 can delete a whole section instead of editing inside one
+- repo map records the actual layout and names the deviations from
+  ChatGPTHint.txt, which is now marked historical (C7)
+- read-only command gate embedded verbatim, operator-only list explicit
+- all 12 referenced paths verified to exist
+
+V2.1 170 lines, V2.2 all constraints present; V2.3 needs a new session.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+V2.3 solltest du vor dem Commit machen: neue Sitzung öffnen, fragen „Was darfst du in diesem Repo nicht?" — die Antwort muss C1–C5 korrekt nennen. Das ist der eigentliche Test, ob die Datei als Gedächtnis funktioniert; Zeilenzählen sagt darüber nichts.
+
+claude --resume 7d4e8f1f-16db-49c7-bfcd-bb7b70564a10
+Phase 1b: Verifikationen V1.10–V1.16. sind noch durchzuführen und das ganze zu dokumentieren.
+
 Phase 1b führst du selbst durch: den Hook prüfen und in settings.json aktivieren.
     Danach laufen die Live-Negativtests V1.10–V1.16.
 Claude hat die Findings in ClaudeTransition.md eingefügt

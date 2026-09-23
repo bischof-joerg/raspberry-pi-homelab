@@ -1,8 +1,8 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 1b COMPLETE (v1.4, 2026-09-23) – V1.10–V1.16 all passed on Claude Code 2.1.276,
-  patches **P1–P6 applied**, guard matrix at **77 passed**, `self_protect` back to `true`.
-  Next: Phase 2 (`CLAUDE.md` restructuring), after the operator commits.
+- **Status:** PHASE 2 COMPLETE (v1.6, 2026-09-23) – Phase 1b complete (V1.10–V1.16 passed, P1–P6
+  applied, matrix **77 passed**). `CLAUDE.md` restructured to **170 lines**, **V2.1–V2.3 all
+  passed**, V2.3 confirmed live in a fresh session. Next: Phase 3 (rules).
 - **Created:** 2026-09-16
 - **Scope:** Transform the existing ChatGPT-based working model (`ChatGPTHint.txt`) and the
   implemented repository conventions into Claude Code artefacts under `.claude/`.
@@ -1028,6 +1028,11 @@ from Phase 1b on:
 The guard already blocks all three via `self_protect: true`, so this is defence in depth, not a
 hole. Without it the boundary rests on one layer instead of the intended two.
 
+Measured afterwards during V1.14: a Bash `mv` targeting `.claude/hooks/guard-config.json` was
+blocked by the **hook**, not by this rule — deny rules check redirect and `tee` targets against
+`Edit` rules but not arbitrary command operands. So P5 and the guard genuinely cover different
+surfaces, and P5 is not redundant.
+
 ##### P6 – the plan-mode fix (open item 4, decided and applied 2026-09-23)
 
 Decision: **allow the plan directory**. E2 makes plan mode the default working mode, and the
@@ -1074,6 +1079,11 @@ reopened by a prefix:
 The allowance is deliberately narrow, and tested to stay narrow (T46): the trailing slash matters,
 so `~/.claude/plans-evil/x.md` is **not** covered, and neither are `~/.claude/settings.json` or
 `~/.ssh/id_rsa`. Four test cases cover this — one positive, three negative.
+
+**Confirmed in production 2026-09-23.** During the V2.3 session, plan mode was active and Claude
+wrote its plan file to `~/.claude/plans/` successfully, then completed the plan/approve cycle via
+`ExitPlanMode`. That exact write was the deadlock before P6: plan mode permits only the plan file,
+and the guard forbade precisely that file. The workflow decided in E2 is usable again.
 
 ##### Pre-validation of P1 and P3 (2026-09-23, done before applying)
 
@@ -1153,8 +1163,48 @@ Target structure (English):
 
 Verification:
 - V2.1 Line count ≤ ~200 (`wc -l .claude/CLAUDE.md`).
+  **PASSED: 170 lines.**
 - V2.2 Every C1–C8 constraint present (manual check against section 1).
+  **PASSED:** each of C1–C8 appears exactly once, checked mechanically against the table rows.
 - V2.3 New session: ask "What may you not do in this repo?" → answer lists C1–C5 correctly.
+  **PASSED 2026-09-23** in a fresh session, question asked in German. The answer listed C1 and C2 as
+  transition-only and C3–C6 as permanent, with the concrete secret paths, the `git` verbs covered by
+  C4, and the Pi identifiers covered by C5. It also named the operator-only commands, the
+  `.venv` rule, the self-protected files, and the two enforcement layers — none of which the
+  question asked for, so the file transports more than the constraint list.
+  **Decisive detail: the answer was produced without a single file access.** It came from the loaded
+  project memory alone, which is what V2.3 is actually testing. V2.1 (line count) and V2.2 (presence
+  of the constraints) only prove the file is well-formed; V2.3 proves it is *loaded and usable*.
+
+**RESULTS — written 2026-09-23.** All ten target sections are present, in order. Two structural
+decisions were taken while writing; both are choices, not transcription, so they are recorded here.
+
+**D2-a — C1–C8 split into two subsections.** The target structure asks for one separate constraints
+section, while Q1/K2 require that only C1/C2 retire in Phase 8 and C3–C6 stay permanent. A single
+block would have forced Phase 8 to edit *inside* a section rather than delete one. `CLAUDE.md` §2 is
+therefore split: **§2.1 Transition-only** (C1, C2, plus C7/C8, which describe the transition work
+itself) and **§2.2 Permanent** (C3–C6). Phase 8 deletes §2.1 whole and leaves §2.2 untouched.
+
+**D2-b — division of labour between `CLAUDE.md` and this document.** `CLAUDE.md` is loaded into
+every session and `ClaudeTransition.md` (1300+ lines) is not, so the split is by *audience*, not by
+topic: `CLAUDE.md` carries only what is needed to act correctly in an arbitrary session — rules,
+commands, the repo map, where to look things up. Everything historical or evidential — decisions
+E1–E9/Q1–Q9, findings F1–F25, guard design, test matrix, verification records — stays here and is
+reached through the pointer table in `CLAUDE.md` §9. Rule of thumb for later edits: if it answers
+"what do I do now", it belongs in `CLAUDE.md`; if it answers "why is it like this", it belongs here.
+
+Content notes:
+
+- The German bootstrap text was translated, not paraphrased; C1–C8 keep their original meaning (K4).
+- §5 records the **actual** layout and names the deviations from `ChatGPTHint.txt` §8.1 explicitly
+  (`_shared/` and `victorialogs/victorialogs.yml` do not exist, `vector/` was added), so the map
+  cannot be mistaken for the hint's target state.
+- §7 embeds the read-only gate from 5.3 verbatim, including the side-effect check.
+- `ChatGPTHint.txt` is listed in §9 as **historical, superseded by `CLAUDE.md` where they differ**.
+  This is the point where C7 takes effect: the hint is no longer the operating model.
+- Every path referenced in `CLAUDE.md` was checked to exist (12 of 12). One error was caught this
+  way: `DevWorkflow.md` lives in `docs/operations/`, not `docs/` — section 3.2 of this document
+  lists it in a way that reads as top-level, which is what caused it.
 
 ### Phase 3 – Rules
 
@@ -1353,6 +1403,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
+| R0.4 (Phase 2, **complete**) | 2026-09-23 | ? | ? | n/a | `CLAUDE.md` restructured: German bootstrap (25 lines) → English project memory, 170 lines, ten sections. **V2.1–V2.3 all passed**; V2.3 verified live in a fresh session, answered from loaded memory with no file access. Decisions D2-a (C1–C8 split for a clean Phase 8 cut) and D2-b (CLAUDE.md vs ClaudeTransition.md by audience) recorded. |
 | R0.3 (Phase 1b, **complete**) | 2026-09-18 … 2026-09-23 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered and **proven to enforce**. **V1.10–V1.16 all passed 2026-09-23**, V1.16 = proceed (HEAD `e7580bb` unchanged, `README.md` untouched). **Patches P1–P6 applied**, matrix 65 → **77 passed**, ruff clean. T43 re-probe and hook-level V1.14 done; `self_protect` back to `true`. |
 
 ### 10.5 Toolchain record (Phase 0)
