@@ -1,9 +1,10 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 5 WRITTEN (v2.1, 2026-09-23) – Phases 1a/1b/2/3/4 complete. `.claude/agents/`
-  holds **four read-only subagents** (703 chars of always-loaded descriptions); **V5.3 passed** in
-  the corrected form from D5-a. V5.1/V5.2 need a **session restart** — agents, unlike skills, are
-  not hot-loaded. Next: Phase 6 (human docs and findings report).
+- **Status:** PHASE 5 COMPLETE (v2.2, 2026-09-23) – Phases 1a–5 complete. `.claude/agents/` holds
+  **four read-only subagents**; **V5.1–V5.3 all passed**. V5.2 produced **F45** (UFW likely does not
+  govern the published ports) and **F46** (cadvisor's privileged mode is undocumented and the docs
+  claim the opposite), extended F26 and closed F42's open caveat. Findings now run F1–F46.
+  Next: Phase 6 (human docs and findings report).
 - **Earlier:** PHASE 3 COMPLETE (v1.8, 2026-09-23) – `.claude/rules/` holds **eight path-scoped
   rules** (none always-loaded); **V3.1, V3.2 and V3.3 all passed**. V3.2 proved on-demand loading
   with hard evidence (only 5 of 8 rules loaded). The reviews produced F30–F43 and corrected five of
@@ -177,6 +178,7 @@ verification in WSL or on the Pi by the operator.
 | F22 | Second, diverging source of dev dependencies: `pyproject.toml` `[project.optional-dependencies].dev` (`ruff>=0.14.11`, `pytest>=8`, `typeguard>=4`, …) and the `pytest-precommit` hook's `additional_dependencies` duplicate `requirements-dev.txt`. `make venv` uses `requirements-dev.txt` only. | `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml` [V] |
 | F23 | `tests/precommit/test_15_json_valid.py` is marked `lint`, not `precommit`; `make precommit` runs `pytest tests/precommit -m precommit`, so this test is likely deselected in precommit, and `make test` ignores `tests/precommit`. Other files not yet checked. | test file + `Makefile` [V]; effect [I] |
 | F24 | `scripts/renovate/validate-config.sh` (pre-commit hook) runs `renovate/renovate:43` by tag only, while the Makefile pins the same image by digest; the hook needs Docker and a registry pull, contradicting the old DevWorkflow claim "no Docker runtime, no network". | script, `Makefile`, `.pre-commit-config.yaml` [V] |
+| F26b | **Extension of F26, found during V5.2:** the credential has a **second resting place**. `scripts/backup/backup.sh:383-385` explicitly archives `${STACK_DATA_ROOT}/alertmanager-config`, so every retained backup contains the plaintext password. The archive is GPG-encrypted, so at rest that is acceptable — but **rotating the SMTP password is not complete until retention has aged out**, and a restore re-materialises the file at `0644`. Also: `stacks/monitoring/compose/init-permissions.sh:112,146` reconciles the containing directory to `0:0` mode `0755`, so the path is traversable by everyone. The smallest fix must change both: `chmod 0640` at compose:117 **and** the directory to `0750`, with a group Alertmanager can read (it runs as `nobody` per `init-permissions.sh:111`). Mitigating default: the credential is only written when `ALERT_EMAIL_ENABLED=1` (compose:76); the disabled branch at :106 writes none. | `scripts/backup/backup.sh:383-385` [V]; `init-permissions.sh:111,112,146` [V] |
 | F26 | **Credentials land world-readable on disk.** The renderer writes `/out/alertmanager.yml` and sets `chmod 0644` (compose line 117). With `ALERT_EMAIL_ENABLED=1` that file contains `auth_password` in clear text (line 100). On the Pi it is `/srv/data/stacks/monitoring/alertmanager-config/alertmanager.yml`, readable by every local user — leaving the `root:root 600` regime ADR-0007 defines for secrets. Severest of the four; `0640` plus a matching group is the minimum. | `stacks/monitoring/compose/docker-compose.yml` lines 94–117, `docs/architecture/adr/ADR-0007-secrets-and-env-files.md` [V] |
 | F27 | `user:` is pinned only on `node-exporter` (65534) and `vector` (65532). For the other eight services the image default decides the uid — unverified, and silently changeable by an image bump, which is exactly the drift pinning prevents everywhere else. | compose, all service blocks [V]; actual uid per image [I] |
 | F28 | `cadvisor` mounts `/var/run/docker.sock` as **`:rw`** (line 319) in an already `privileged` container — effectively host root. `vector` mounts the same socket `:ro` (line 392). The `privileged` exception is documented; the writable socket is not. Whether `:ro` suffices for cadvisor must be tested, not assumed. **Correction 2026-09-23:** vector's `:ro` is not the safe variant — see F30. | compose lines 300–336 vs. 386–393 [V]; cadvisor's need for `:rw` [I] |
@@ -194,6 +196,8 @@ verification in WSL or on the Pi by the operator.
 | F40 | Rule/reality mismatch: CLAUDE.md §4 and `rules/compose-stacks.md` require host paths `<service>-data\|config\|db`, but the real paths are `/srv/data/stacks/monitoring/<service>` (+ `alertmanager-config`). Fix the rule rather than migrate data. | compose lines 17, 19, 146, 260, 360, 387 [V] |
 | F41 | No static guard for the compose hardening contract. `tests/guards/test_10_monitoring_compose_contract.py` checks service presence only, and `vector` is missing from `REQUIRED_SERVICES`. | test file lines 12–21 [V] |
 | F42 | LAN ports `3000` and `9428` are called deliberate in `rules/compose-stacks.md`, but `ADR-0001-networking-and-firewall.md` does not mention either port. | grep `3000\|9428` on ADR-0001, no match [V]; other docs not checked |
+| F45 | **UFW very likely does not govern the two published ports at all.** `3000` (compose:243) and `9428` (compose:347) are published by Docker on every interface. The rules meant to restrict them are plain INPUT-chain rules — `cleanup-ufw.sh:446` `ufw allow from "$cidr" …`, `:474` `ufw deny "${port}/tcp"`. There is **no** `ufw route` rule and **no** `DOCKER-USER` rule anywhere in `scripts/`, `docs/` or `stacks/`, and `daemon.json` does not set `"iptables": false` [V, all four confirmed by Claude]. Docker's published-port traffic is DNAT'd and traverses `FORWARD`, not `INPUT`, so those rules are inert for these ports and both are reachable from anything that can route to the Pi [I — cannot be tested from here, C5]. `tests/postdeploy/test_35_network_and_ufw.py:327-342` asserts rule **presence**, never blocking; its one genuine negative test (`:210-244`) targets `9323`, a host daemon port on the real INPUT path, so it passes for a reason that does not generalise. The exposure contract is weaker than the test suite implies. Fix: bind both to the LAN address, or add `ufw route`/`DOCKER-USER` rules — plus a negative postdeploy check from a non-`LAN_CIDR` source, so the contract is measured rather than asserted. Found by `security-reviewer` during V5.2. | compose:243,347; `scripts/network/cleanup-ufw.sh:446,474`; `stacks/core/docker/daemon.json`; `tests/postdeploy/test_35_network_and_ufw.py:210-244,327-342` |
+| F46 | **cadvisor's privileged mode is undocumented, and the docs claim the opposite.** compose:304-306 sets `user: root` + `privileged: true`, plus `pid: host` (:311), `/dev/kmsg` (:313), `/:/rootfs:ro` (:318) and `/var/run/docker.sock:rw` (:319). `docs/monitoring.md:29` states "No privileged containers" and `:197` "cAdvisor is intentionally isolated and run with minimal privileges"; no ADR mentions cadvisor [V]. Consequently `.claude/CLAUDE.md` §4 and `.claude/rules/compose-stacks.md` both pointed at documentation that does not exist — **corrected 2026-09-23**, see 5.2. The compose comment claims necessity without evidence, while `--docker_only=true` (:329) and the explicit cgroup mount (:317) are the flags that usually remove the need for `privileged`. Order of fixes: `:319` to `:ro` first (cadvisor only reads), then correct `docs/monitoring.md`, then write the ADR that `docs-adr.md` already requires. Dropping `privileged` is a separate, testable increment — do not treat "non-negotiable" as verified. | compose:304-336; `docs/monitoring.md:29,190,197` [V] |
 | F44 | A documentation example carries a stale image tag that no manager will ever update: `stacks/core/docker/docker-daemon-json-handling.md:93` shows `image: grafana/grafana:11.0.0`, while the deployed version is `11.6.16`. Renovate runs `enabledManagers: ["docker-compose"]`, which reads compose files only, so a version inside a Markdown file drifts permanently. Same class as F5 (stale README). Found by `image-pin-audit` during V4.3. | `stacks/core/docker/docker-daemon-json-handling.md:93`, `renovate.json5`, compose line 239 [V] |
 | F43 | **An ADR promises a guarantee the deploy path does not deliver.** ADR-0001 Decision 2 states that `bootstrap-networks.sh` is "guarded against subnet overlap" and that "network creation and validation happen before any container deployment". In fact the script validates subnet, gateway and bridge **only** when `MONITORING_SUBNET`, `…_BRIDGE_NAME` etc. are present in the environment — and `deploy.sh` does not export them (F16). So on the deploy path no subnet validation happens at all. Correct the **ADR**, not `rules/host-runtime.md`, which describes reality accurately. Found by V3.3. | ADR-0001 lines 37–41, `deploy.sh`, `scripts/network/bootstrap-networks.sh` [V] |
 | F25 | `tests/precommit/test_15_json_valid.py` rglobs **every** `*.json`, including git-ignored ones, and fails on `.vscode/settings.json` (JSONC with a trailing comma, ignored via `.gitignore:21:.vscode/*`). The failure is invisible in practice because the test is marked `lint`, so `make precommit` and CI deselect it (F23). Found while validating the new `.claude/*.json` files, which parse clean. | test run 2026-09-18: `1 failed, 3 passed, 8 deselected`, only hit `.vscode/settings.json` [V] |
@@ -1585,6 +1589,24 @@ what the rules do not: the review *procedure*, the list of known findings to con
 rather than re-investigate, and the report format. Repeating the rules would cost context twice and
 risk the contradiction the memory docs warn about.
 
+#### 5.2 Third correction of the same class (2026-09-23)
+
+V5.2 exposed the **third** instance of a Claude artefact asserting documentation that does not
+exist. The first two were F42 (the rule called the LAN ports a "documented decision"; no ADR
+mentions them). The third is F46: both `CLAUDE.md` §4 and `rules/compose-stacks.md` called cadvisor's
+privileged mode a documented exception, while `docs/monitoring.md:29` says "No privileged
+containers" and `:197` says it runs "with minimal privileges".
+
+Both were corrected to state that the exception exists, is claimed in an inline comment only, and is
+contradicted where documentation should live. `compose-stacks.md` additionally now forbids citing it
+as precedent for a second privileged container.
+
+The pattern is now unmistakable and worth carrying into Phase 6: **Claude's artefacts inherited the
+word "documented" from the hint and from each other, without anyone checking the referenced
+document.** V3.1's mechanical check proves a cited *file exists*; it cannot prove the file *says what
+the citation claims*. Only reading the source catches it, and in all three cases a review did —
+never a test.
+
 #### 5.1 What was written
 
 | Agent | Tools | Focus | desc | body |
@@ -1601,12 +1623,34 @@ spends its output on what is new rather than re-deriving F5, F8, F13, F26, F28, 
 
 Verification:
 - V5.1 `/agents` lists all four.
-  **OPEN — needs a session restart.** Measured 2026-09-23: invoking `security-reviewer` right after
-  writing the files failed with `Agent type 'security-reviewer' not found. Available agents: claude,
-  claude-code-guide, Explore, general-purpose, Plan, statusline-setup`.
+  **PASSED 2026-09-23** after an operator restart. All four are registered and each is listed with
+  `Tools: Read, Grep, Glob` — which confirms D5-a from the outside: the allowlist took effect, and
+  the agents did **not** silently inherit every tool.
+  Before the restart the same invocation failed with `Agent type 'security-reviewer' not found.
+  Available agents: claude, claude-code-guide, Explore, general-purpose, Plan, statusline-setup`,
+  which is what established the skills/agents asymmetry recorded below.
 - V5.2 `security-reviewer` on the compose file flags cadvisor `privileged: true` and LAN ports
   3000/9428 with the documented justification.
-  **OPEN — blocked by V5.1**, same reason.
+  **PASSED 2026-09-23.** Both were flagged explicitly — and the agent **disproved the premise of
+  this verification**. V5.2 was written assuming a "documented justification" exists. It does not:
+  - cadvisor: the only document that discusses it says the **opposite**, twice —
+    `docs/monitoring.md:29` "No privileged containers" and `:197` "cAdvisor is intentionally
+    isolated and run with minimal privileges", under a heading "Required mounts (read-only)" that
+    does not list the Docker socket at all. No ADR mentions cadvisor. The sole record is an inline
+    compose comment asserting necessity without evidence. → **F46**
+  - ports 3000/9428: deliberate (named in `cleanup-ufw.sh`, `.env.example`, and encoded as a
+    contract in `test_35_network_and_ufw.py`) but recorded in **no** document. The agent's grep over
+    all of `docs/` returned six hits, every one a timestamp or an in-container curl example. This
+    **closes F42's open caveat** "other docs not checked".
+
+  Claude spot-checked the load-bearing `[V]` claims before recording: `docs/monitoring.md:26/29/197`
+  verbatim, absence of `ufw route`/`DOCKER-USER` anywhere in `scripts/`, `docs/`, `stacks/`, absence
+  of `"iptables": false` in `daemon.json`, and `scripts/backup/backup.sh:383-385`. All held.
+
+  The report also produced two findings not in F1–F44 (**F45**, **F46**), extended F26 and sharpened
+  F4 — from a context that knew nothing of this session, deriving everything from `CLAUDE.md`, the
+  inherited rules and the files. The `[V]`/`[I]` discipline and the one-line confirmations of known
+  findings were followed as specified, so the agent definition needs no correction.
 - V5.3 Agent definitions contain no Edit/Write tools.
   **PASSED 2026-09-23**, and checked in the corrected form from D5-a: `tools` is **present** in all
   four files and equals exactly `Read, Grep, Glob`. Verified mechanically by
@@ -1779,7 +1823,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
-| R0.7 (Phase 5) | 2026-09-23 | ? | ? | n/a | `.claude/agents/`: four read-only subagents, `tools: Read, Grep, Glob` each, 703 chars of always-loaded descriptions. D5-a (an absent `tools` grants everything — V5.3 inverted accordingly) and D5-b (bodies must not restate the inherited rules) recorded. V5.3 passed via `check_agents.py`; V5.1/V5.2 need a session restart, since agents are not hot-loaded the way skills are. |
+| R0.7 (Phase 5) | 2026-09-23 | ? | ? | n/a | `.claude/agents/`: four read-only subagents, `tools: Read, Grep, Glob` each, 703 chars of always-loaded descriptions. D5-a (an absent `tools` grants everything — V5.3 inverted accordingly) and D5-b (bodies must not restate the inherited rules) recorded. **V5.1–V5.3 all passed** (V5.1/V5.2 after the operator restart — agents are not hot-loaded the way skills are). V5.2 produced F45 and F46, extended F26, closed F42's caveat, and forced the third correction of a Claude artefact claiming documentation that does not exist. |
 | R0.6 (Phase 4) | 2026-09-23 | ? | ? | n/a | `.claude/skills/`: eight skills, always-loaded description cost 1,236 chars total (cap is 1,536 per skill). D4-a (descriptions are the budget), D4-b (`allowed-tools` only on `readonly-gate`) and D4-c (no `paths` on skills) recorded. **V4.1–V4.6 all passed.** Invoking the skills produced F44 and showed that five of seven ADR-009 backup requirements are already implemented — F9 had made that invisible. |
 | R0.5 (Phase 3) | 2026-09-23 | ? | ? | n/a | `.claude/rules/`: eight path-scoped rule files, 468 lines, none always-loaded. D3-a (path scoping is mandatory, not optional) and D3-b (eight rules, not ten) recorded. V3.1 passed incl. a mechanical cited-path check; V3.2/V3.3 open. |
 | R0.4 (Phase 2, **complete**) | 2026-09-23 | ? | ? | n/a | `CLAUDE.md` restructured: German bootstrap (25 lines) → English project memory, 170 lines, ten sections. **V2.1–V2.3 all passed**; V2.3 verified live in a fresh session, answered from loaded memory with no file access. Decisions D2-a (C1–C8 split for a clean Phase 8 cut) and D2-b (CLAUDE.md vs ClaudeTransition.md by audience) recorded. |

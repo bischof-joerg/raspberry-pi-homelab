@@ -46,7 +46,10 @@ implementation; a new stack copies its shape, not its service list.
 
 ## Documented exceptions — do not "fix" these
 
-- `cadvisor` runs `privileged: true` as root. This is a Pi 5 necessity and is documented.
+- `cadvisor` runs `privileged: true` as root, plus `pid: host` and a **writable** Docker socket.
+  An inline compose comment calls this a Pi 5 necessity, but **no document records the exception and
+  `docs/monitoring.md` claims the opposite** (F46). Treat it as existing practice under review, not
+  as a settled decision, and do not cite it to justify a second privileged container.
 - `alertmanager-config-render` is a one-shot `alpine` renderer. It runs `apk add gettext` at
   runtime, which is a network dependency and non-deterministic (F8) — a known defect, not a
   pattern to copy.

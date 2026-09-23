@@ -57,7 +57,8 @@ Both files plus `.claude/.gitignore` are self-protected: **only the operator cha
 - **Explicit runtime** — Docker Compose only, explicit networks, bind mounts only (no named
   volumes, ADR-0008), explicit port exposure, least privilege.
 - **Hardening** — non-root, `cap_drop`, read-only filesystems where possible, healthchecks.
-  Documented exception: cadvisor runs privileged (Pi 5 necessity).
+  Known exception: cadvisor runs privileged as root. It is claimed to be a Pi 5 necessity in an
+  inline comment, but **no document records it and `docs/monitoring.md` states the opposite** (F46).
 - **Secrets** — host-only `/etc/raspberry-pi-homelab/monitoring.env` (`root:root 600`), loaded via
   `docker compose --env-file` in `deploy.sh`. A repo-root `.env` is refused (ADR-0007).
 - **Naming** — compose project `<org>-<site>-<env>-<stack>`, e.g. `homelab-home-prod-mon`;
