@@ -1,6 +1,10 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 3 COMPLETE (v1.8, 2026-09-23) – Phases 1a/1b/2 complete. `.claude/rules/` holds **eight path-scoped
+- **Status:** PHASE 4 COMPLETE (v2.0, 2026-09-23) – Phases 1a/1b/2/3/4 complete. `.claude/skills/`
+  holds **eight skills**, always-loaded cost 1,236 characters in total. **V4.1–V4.6 all passed**,
+  nothing open. Running the skills produced F44 and corrected the picture F9 gave of the backup
+  state. Next: Phase 5 (subagents).
+- **Earlier:** PHASE 3 COMPLETE (v1.8, 2026-09-23) – `.claude/rules/` holds **eight path-scoped
   rules** (none always-loaded); **V3.1, V3.2 and V3.3 all passed**. V3.2 proved on-demand loading
   with hard evidence (only 5 of 8 rules loaded). The reviews produced F30–F43 and corrected five of
   Claude's own artefacts (3.3). Next: Phase 4 (skills).
@@ -190,6 +194,7 @@ verification in WSL or on the Pi by the operator.
 | F40 | Rule/reality mismatch: CLAUDE.md §4 and `rules/compose-stacks.md` require host paths `<service>-data\|config\|db`, but the real paths are `/srv/data/stacks/monitoring/<service>` (+ `alertmanager-config`). Fix the rule rather than migrate data. | compose lines 17, 19, 146, 260, 360, 387 [V] |
 | F41 | No static guard for the compose hardening contract. `tests/guards/test_10_monitoring_compose_contract.py` checks service presence only, and `vector` is missing from `REQUIRED_SERVICES`. | test file lines 12–21 [V] |
 | F42 | LAN ports `3000` and `9428` are called deliberate in `rules/compose-stacks.md`, but `ADR-0001-networking-and-firewall.md` does not mention either port. | grep `3000\|9428` on ADR-0001, no match [V]; other docs not checked |
+| F44 | A documentation example carries a stale image tag that no manager will ever update: `stacks/core/docker/docker-daemon-json-handling.md:93` shows `image: grafana/grafana:11.0.0`, while the deployed version is `11.6.16`. Renovate runs `enabledManagers: ["docker-compose"]`, which reads compose files only, so a version inside a Markdown file drifts permanently. Same class as F5 (stale README). Found by `image-pin-audit` during V4.3. | `stacks/core/docker/docker-daemon-json-handling.md:93`, `renovate.json5`, compose line 239 [V] |
 | F43 | **An ADR promises a guarantee the deploy path does not deliver.** ADR-0001 Decision 2 states that `bootstrap-networks.sh` is "guarded against subnet overlap" and that "network creation and validation happen before any container deployment". In fact the script validates subnet, gateway and bridge **only** when `MONITORING_SUBNET`, `…_BRIDGE_NAME` etc. are present in the environment — and `deploy.sh` does not export them (F16). So on the deploy path no subnet validation happens at all. Correct the **ADR**, not `rules/host-runtime.md`, which describes reality accurately. Found by V3.3. | ADR-0001 lines 37–41, `deploy.sh`, `scripts/network/bootstrap-networks.sh` [V] |
 | F25 | `tests/precommit/test_15_json_valid.py` rglobs **every** `*.json`, including git-ignored ones, and fails on `.vscode/settings.json` (JSONC with a trailing comma, ignored via `.gitignore:21:.vscode/*`). The failure is invisible in practice because the test is marked `lint`, so `make precommit` and CI deselect it (F23). Found while validating the new `.claude/*.json` files, which parse clean. | test run 2026-09-18: `1 failed, 3 passed, 8 deselected`, only hit `.vscode/settings.json` [V] |
 | F20 | `ensure-journald-read.sh` defaults to `TARGET_USER=vector` (no such host user expected) while `deploy.sh` passes `admin`; the container runs as uid 65532 and gets the GID via `group_add`, so group membership of `admin` is likely irrelevant for Vector. | scripts + compose [V]; relevance [I] |
@@ -1228,7 +1233,7 @@ Content notes:
 
 ### Phase 3 – Rules
 
-- [ ] Verify current rules mechanism and `paths` frontmatter in official docs before writing;
+- [x] Verify current rules mechanism and `paths` frontmatter in official docs before writing;
       record the doc URL and date here.
       **DONE 2026-09-23**, https://code.claude.com/docs/en/memory (no publication date on the page).
       Result below — the mechanism exists, but it changes the design of section 5.
@@ -1441,17 +1446,109 @@ read an absence there as evidence.
 
 ### Phase 4 – Skills
 
-- [ ] Verify SKILL.md frontmatter fields against current docs; record URL/date.
-- [ ] Write the eight skills. Skills that would produce repo changes output **proposals** into
+- [x] Verify SKILL.md frontmatter fields against current docs; record URL/date.
+      **DONE 2026-09-23**, https://code.claude.com/docs/en/skills (no publication date on the page;
+      newest version note v2.1.273). Result below.
+
+#### 4.0 Skills mechanism as documented (verified 2026-09-23, Claude Code 2.1.276)
+
+| Fact | Consequence for this phase |
+|---|---|
+| Layout `.claude/skills/<name>/SKILL.md`; subdirectories and supporting files allowed and encouraged | Matches section 5 |
+| **All frontmatter fields are optional**; only `description` is recommended | No required boilerplate |
+| **`description` (plus `when_to_use`) is loaded into context on every turn**, the two combined capped at 1,536 characters per skill | The always-loaded cost of Phase 4 is the sum of eight descriptions. This is the same trap as D3-a, in a different place |
+| The **full body loads only on invocation** and then stays for the session | Body length is cheap until used; description length is not |
+| Invocation: automatic by description match, `/skill-name`, or the Skill tool | A wrong description means the skill is either never found or fires constantly |
+| `disable-model-invocation: true` prevents automatic invocation (user-only) | Intended for side-effect operations such as `/deploy` |
+| `allowed-tools` / `disallowed-tools` pre-approve or remove tools **for the current turn**, expiring on the next user message; supports Bash rules such as `Bash(git add *)` | A third permission mechanism next to `settings.json` and the guard — see D4-b |
+| `paths` also exists for skills, gating them to matching files | Considered and rejected — see D4-c |
+| `context: fork` + `agent` run a skill in an isolated subagent | Not used; these skills are short and their output belongs in the main transcript |
+| Guidance: keep `SKILL.md` under 500 lines, move reference material to linked files | All eight stay far below |
+
+**D4-a — descriptions are the budget, not the bodies.** Eight skills with careless descriptions
+would cost up to 8 × 1,536 ≈ 12,000 characters of always-loaded context, which would quietly undo
+what V2.1 and D3-a protect. Each description is therefore held to roughly one line: what it does
+and when to reach for it, nothing else. The detail goes in the body, which costs nothing until the
+skill is invoked.
+
+**D4-c — no `paths` on skills.** Rules are *standing constraints* and benefit from path scoping;
+skills are *procedures the operator asks for*. `backup-progress` must be findable when someone asks
+"how far is the backup", not only while a file under `scripts/backup/` happens to be open. Short
+descriptions solve the budget problem without making a skill invisible when it is wanted.
+- [x] Write the eight skills. Skills that would produce repo changes output **proposals** into
       `.claude/scratch/` or into chat, never into other paths (C1).
-- [ ] `readonly-gate` embeds 5.3 including the before/after comparison.
+      **DONE 2026-09-23** — all eight written, none writing outside `.claude/`.
+- [x] `readonly-gate` embeds 5.3 including the before/after comparison.
+      **DONE** — verbatim, including the acceptance rule that any diff is a C2 violation.
+
+#### 4.1 What was written
+
+| Skill | Purpose | Description cost | Body |
+|---|---|---:|---:|
+| `readonly-gate` | run the 5.3 gate, prove no side effects | 140 | 47 |
+| `increment-plan` | feature → increments, template from 10.2 | 176 | 59 |
+| `image-pin-audit` | pin quality and Renovate coverage | 176 | 45 |
+| `backup-progress` | ADR-009 contract vs. implementation | 164 | 50 |
+| `change-review` | diff against the rules, checklist and verdict | 146 | 50 |
+| `new-stack-proposal` | full stack scaffold as a proposal | 163 | 54 |
+| `postdeploy-test-design` | runtime checks with actionable failures | 148 | 45 |
+| `adr-draft` | ADR draft into `.claude/scratch/` | 123 | 61 |
+
+**Always-loaded cost: 1,236 characters across all eight** — less than the 1,536 cap that applies to
+a *single* skill. D4-a held.
+
+**D4-b — `allowed-tools` only on `readonly-gate`** (operator decision, 2026-09-23). It lists the
+eight exact read-only commands, all of which `CLAUDE.md` §7 already permits but `settings.json`
+does not pre-approve, so without the grant the gate prompts on every increment — and IN4 runs it
+before every commit. Deny rules still win over allow and the PreToolUse guard fires regardless, so
+the grant cannot widen the boundary. The other seven skills carry no tool grant.
+
+The rejected option matters more than the chosen one: granting tools in all four Bash-using skills
+would have spread permissions across four files that have nothing to do with permissions — and
+**skills are not self-protected**, so that would have been the first place where Claude can extend
+its own rights. Keeping grants to one file, with exact commands, keeps that door shut.
 
 Verification:
 - V4.1 `/skills` lists all eight.
+  **PASSED 2026-09-23**, operator ran `/skills`. No restart was needed: all eight had already
+  appeared in the available-skills list in the **same session** that wrote them, which also
+  disproves the earlier assumption in this document that V4.3–V4.5 required a fresh session.
 - V4.5 Run `increment-plan` for a sample feature → output follows the template in 10.2.
+  **PASSED 2026-09-23**, invoked through the Skill tool with the sample feature "supply the backup
+  tests required by DD-012". Output followed the 10.2 template field by field across three
+  increments, including the IN9 line, which the skill forbids defaulting to "none". It also applied
+  the entry-condition check on its own and stated that backup work belongs to R2 and is therefore
+  correctly scheduled only after R1 — the plan was not presented as startable today.
 - V4.2 Run `readonly-gate` → completes; before/after diff empty.
+  **PASSED 2026-09-23**, executed end to end: `ruff check` → `All checks passed!`;
+  `ruff format --check` → `43 files already formatted`; `yamllint -s` clean; ShellCheck over all
+  19 tracked scripts clean; `tests/precommit -m precommit` → 8 passed, 4 deselected;
+  guards + doctor → 7 passed, 1 skipped; final diff → `OK: no side effects`.
 - V4.3 Run `image-pin-audit` → table matches section 3.3 image list.
+  **PASSED 2026-09-23**, invoked through the Skill tool. All ten compose images matched section 3.3
+  tag for tag. Totals across the whole repository: 1 digest, 15 full version tags, **6 floating**,
+  **0 unpinned** — the "never `latest`" rule holds without exception. The floating six are
+  `alpine:3.24` (F37), `renovate/renovate:43` in `scripts/renovate/validate-config.sh` (F24, while
+  `Makefile:85` pins the same image by digest), and `actions/checkout@v4`, `actions/setup-python@v5`,
+  `actions/cache@v4`. Renovate coverage confirmed from `renovate.json5`: `enabledManagers:
+  ["docker-compose"]`, so exactly the ten compose images and nothing else (F4).
 - V4.4 Run `backup-progress` → reports at least F9 and GPG step 6.
+  **PASSED 2026-09-23**, invoked through the Skill tool; both reported, F9 as the headline.
+  The run also **corrected the picture F9 alone conveys**: five of the seven ADR-009 requirements
+  are already implemented — exit codes as named constants in `scripts/backup/common.sh:12-17`
+  (`EX_USAGE=2` … `EX_DEPLOY=7`, matching §2.3 exactly), non-blocking `flock -n` on
+  `/run/lock/homelab-backup.lock` with `acquire_lock` in all three scripts (§2.4), the full set of
+  fixture overrides including a fallback lock file off the Pi (§2.5), and restore requiring both
+  `RESTORE_APPLY=1` and `RESTORE_CONFIRM` (DD-013). What is missing is the **proof**, not the
+  implementation. "No tests" reads like "nothing there"; it is not, and the skill is what made that
+  visible.
+
+**V4.6 (added) Frontmatter and budget check.** `.claude/scratch/check_skills.py` verifies that each
+`SKILL.md` parses, carries a `description`, has `name` equal to its directory, uses only documented
+frontmatter keys, stays under the 500-line body guidance, and that the per-skill description budget
+holds. **PASSED, 0 failures.** The unknown-key check matters because the docs state that any field
+Claude Code does not know is *ignored without an error* — the same silent-failure class as the rules'
+frontmatter, where an unparsable `paths` quietly makes a rule global.
 
 ### Phase 5 – Subagents
 
@@ -1539,7 +1636,7 @@ Verification:
 - `settings.local.json` provably ignored.
 - Guard test matrix green (V1.9) and live hook tests passed (V1.10–V1.15) on the installed Claude Code version.
 - Operator-run `make ci` and GitHub CI green.
-- Findings F1–F24 handed over as proposals.
+- Findings handed over as proposals.
 - Phase 8 is tracked separately and not part of the transition's definition of done.
 
 ---
@@ -1623,6 +1720,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
+| R0.6 (Phase 4) | 2026-09-23 | ? | ? | n/a | `.claude/skills/`: eight skills, always-loaded description cost 1,236 chars total (cap is 1,536 per skill). D4-a (descriptions are the budget), D4-b (`allowed-tools` only on `readonly-gate`) and D4-c (no `paths` on skills) recorded. **V4.1–V4.6 all passed.** Invoking the skills produced F44 and showed that five of seven ADR-009 backup requirements are already implemented — F9 had made that invisible. |
 | R0.5 (Phase 3) | 2026-09-23 | ? | ? | n/a | `.claude/rules/`: eight path-scoped rule files, 468 lines, none always-loaded. D3-a (path scoping is mandatory, not optional) and D3-b (eight rules, not ten) recorded. V3.1 passed incl. a mechanical cited-path check; V3.2/V3.3 open. |
 | R0.4 (Phase 2, **complete**) | 2026-09-23 | ? | ? | n/a | `CLAUDE.md` restructured: German bootstrap (25 lines) → English project memory, 170 lines, ten sections. **V2.1–V2.3 all passed**; V2.3 verified live in a fresh session, answered from loaded memory with no file access. Decisions D2-a (C1–C8 split for a clean Phase 8 cut) and D2-b (CLAUDE.md vs ClaudeTransition.md by audience) recorded. |
 | R0.3 (Phase 1b, **complete**) | 2026-09-18 … 2026-09-23 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered and **proven to enforce**. **V1.10–V1.16 all passed 2026-09-23**, V1.16 = proceed (HEAD `e7580bb` unchanged, `README.md` untouched). **Patches P1–P6 applied**, matrix 65 → **77 passed**, ruff clean. T43 re-probe and hook-level V1.14 done; `self_protect` back to `true`. |
