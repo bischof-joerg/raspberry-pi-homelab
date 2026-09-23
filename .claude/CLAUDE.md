@@ -149,7 +149,8 @@ R4 app stacks.
 |---|---|
 | Transition plan, decisions, findings F1–F25, guard design, test matrix | `.claude/ClaudeTransition.md` |
 | How to work with Claude here, how to verify the safety set-up | `.claude/readme_claude.md` |
-| Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/` *(from Phase 3)* |
+| Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`; verifiers in `.claude/tools/` |
+| Repository findings F1–F46 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
 | Architecture decisions | `docs/architecture/adr/` — ADR-0007 secrets, ADR-0008 bind mounts, ADR-009 backup |
 | Operations | `docs/operations/` — `DevWorkflow.md`, `git-branch-workflow.md`, `runtime-updates.md`, `BackupVerifyRestore.md`, `GPG_config_for_backup_encryption.md`, `renovate.md` |
 | Monitoring | `docs/monitoring.md`, `docs/services/` |

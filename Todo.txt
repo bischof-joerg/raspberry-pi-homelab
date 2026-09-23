@@ -105,7 +105,7 @@ Reviewe den implementierten Stack - sind alle Regeln und Guidelines umgesetzt od
 Arbeite an Findings - sind diese überhaupt noch offen?
 
 # Claud Transition
-- Weiter mit Phase 6
+- Weiter mit Phase 6 in neuer Session:  Weiter mit ClaudeTransition.md Phase 6 - readme_claude.md plus der Findings-Report
 
 
 
@@ -116,6 +116,10 @@ _____________________________________________________________________________
 
 
 # Claud Transition
+
+Phase 5
+
+Phase 4
 
 Danach wäre Phase 3 dran: zehn Regeldateien unter .claude/rules/. Dort kommt zuerst eine Doku-Prüfung — der Plan verlangt, den Rules-Mechanismus und das paths-Frontmatter gegen die offizielle Doku zu verifizieren, bevor ich schreibe, weil .claude/rules/ in aktuellen Claude-Code-Versionen nicht zwingend automatisch geladen wird.
 

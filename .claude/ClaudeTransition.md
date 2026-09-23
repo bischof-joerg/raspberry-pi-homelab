@@ -1,6 +1,11 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 5 COMPLETE (v2.2, 2026-09-23) – Phases 1a–5 complete. `.claude/agents/` holds
+- **Status:** PHASE 6 WRITTEN (v2.3, 2026-09-23) – `readme_claude.md` and
+  `reports/repo-findings.md` written; the verifiers moved from git-ignored `scratch/` to tracked
+  `tools/` (plus a new `check_findings.py`); §3.6 is now an index into the report. V6.2 passed
+  mechanically; **V6.1 is an operator step**. Claude Code is now **2.1.280**, so V1.10–V1.16 are
+  due again (risk table). Next: V6.1, then Phase 7.
+- **Earlier:** PHASE 5 COMPLETE (v2.2, 2026-09-23) – Phases 1a–5 complete. `.claude/agents/` holds
   **four read-only subagents**; **V5.1–V5.3 all passed**. V5.2 produced **F45** (UFW likely does not
   govern the published ports) and **F46** (cadvisor's privileged mode is undocumented and the docs
   claim the opposite), extended F26 and closed F42's open caveat. Findings now run F1–F46.
@@ -150,58 +155,61 @@ Cross-cutting [V]: external networks `monitoring` and `apps` (bootstrapped by
 
 ### 3.6 Findings backlog (for the human operator – NOT to be fixed by Claude during transition)
 
-These go into `.claude/reports/repo-findings.md` in Phase 6 as proposals. Items marked [I] need
-verification in WSL or on the Pi by the operator.
+**Index only since Phase 6 (2026-09-23).** The full entries — evidence with `file:line`, impact,
+proposed fix, test and acceptance criterion — live in `.claude/reports/repo-findings.md`, which is
+the single source of truth. This index must list the same IDs; `.claude/tools/check_findings.py`
+fails if it does not. The earlier full table (with the evidence as first recorded) is in the git
+history of this file up to commit `2c88ea6`.
 
-| ID | Finding | Evidence |
-|---|---|---|
-| F1 | Config hash only includes `vmagent.yml`, `vmalert.yml`, `alertmanager/alertmanager.yml`, `victoriametrics.yml`. Changes to `vmalert/rules/*`, `vector/vector.yaml`, `alertmanager.yml.tmpl`, Grafana provisioning do not change the hash → no recreate. **Sharpened 2026-09-23:** of the four listed files, `alertmanager/alertmanager.yml` does not exist (only `.tmpl`) and is skipped by the `[[ -f ]]` filter, while `vmalert/vmalert.yml` and `victoriametrics/victoriametrics.yml` are not mounted into any container. **Exactly one runtime-relevant file drives the hash: `vmagent.yml`.** Combined with F29 the mechanism is close to inert. | `deploy.sh:177` `compute_monitoring_config_hash`, compose volume list [V] |
-| F2 | Hash list contains `alertmanager/alertmanager.yml` (only `.tmpl` exists in repo); `vmalert.yml` and `victoriametrics.yml` are in the repo but not mounted by compose. | compose + file list [V] |
-| F3 | Images pinned by tag, not digest (hint says prefer digests). | compose [V] |
-| F4 | Renovate manages only `docker-compose`; GitHub Actions (`@v4`/`@v5` tags), pre-commit hook revs, pip ranges and the Grafana plugin pin are unmanaged. | `renovate.json5`, `ci.yml` [V] |
-| F5 | `README.md` is stale: mentions Prometheus, Loki, Promtail, a different env path, broken relative links. | `README.md` [V] |
-| F6 | ADR numbering inconsistent (file ADR-0001 titled ADR-0004, ADR-0008 titled ADR-000X, ADR-009 three digits). | ADR files [V] |
-| F7 | `victorialogs` has no `restart` policy and no healthcheck; node-exporter/cadvisor have no healthcheck. | compose [V] |
-| F8 | Renderer installs `gettext` via `apk add` at every run → network dependency, non-deterministic package version. | compose [V] |
-| F9 | ADR-009 DD-012 requires tests before accepting backup scripts; no backup tests exist. | `tests/` listing [V] |
-| F10 | pre-commit pytest hook pins `pytest<9`, local `__pycache__` shows pytest 9.0.2 was used → toolchain drift. | `.pre-commit-config.yaml`, pyc names [I] |
-| F11 | `.gitattributes` enforces LF for sh/yml/yaml/json/toml but not `*.md`, `*.py`, `Makefile`, `*.json5`. | `.gitattributes` [V] |
-| F12 | `.env.example` lists `DOCKER_GID`/`SYSTEMD_JOURNAL_GID` twice and contains host-derived values, contradicting ADR-0007 §4. | `.env.example` [V] |
-| F13 | compose mounts `../alertmanager/templates` (line 67), which does not exist in the repo; Docker creates it on the Pi as a root-owned empty directory. **Confirmed 2026-09-23:** `git ls-files stacks/monitoring/alertmanager` returns only `alertmanager.yml.tmpl`, and the directory is absent on disk. | compose line 67 + file listing [V]; Pi-side effect [I] |
-| F14 | `docs/DevWorkflow.md` §4 commits before `make ci`; `ChatGPTHint.txt` §5 says only validated commits. | DevWorkflow [V] Addressed by increment R0.x docs merge (DevWorkflow.md + git-branch-workflow.md), pending merge. |
-| F15 | UFW is not reconciled on deploy; `cleanup-ufw.sh` is manual and has no make target (`Todo.txt` notes "Aktivieren in make"). Hint §7 expects UFW bootstrap in `deploy.sh`. | `deploy.sh`, `Makefile` [V] |
-| F16 | `bootstrap-networks.sh` runs without subnet/bridge env in deploy; on a fresh host `monitoring` would be created without `br-monitoring`/`172.20.0.0/16`, while `cleanup-ufw.sh`, `daemon.json` (`metrics-addr 172.20.0.1:9323`) and `test_35` depend on exactly these values. | `deploy.sh`, scripts [V]; fresh-host effect [I] |
-| F17 | Order in `deploy.sh`: `daemon.json` (with `metrics-addr` on the monitoring gateway IP) is applied and Docker restarted **before** networks are bootstrapped; on a fresh host the metrics address may not exist yet. | `deploy.sh` main [V]; Docker behaviour [I] |
-| F18 | `ensure-docker-daemon-json.sh` restarts Docker on any content change during deploy → full stack restart without a separate maintenance window or backup step. | script [V] |
-| F19 | Host-specific literals in reconciliation scripts: `cleanup-ufw.sh` usage path `/home/admin/iac/...`, stale bridge names `br-abe` and `br-bd2` in a regex; fixed temp file `/tmp/bootstrap-networks.overlap`. | scripts [V] |
-| F21 | Toolchain version drift between local tools and pre-commit/CI: pre-commit pins `shellcheck-py v0.10.0.1`, `ruff-pre-commit v0.14.11`, `yamllint v1.35.1`, while `requirements-dev.txt` uses ranges (`ruff>=0.9,<1.0`, `yamllint>=1.35,<2.0`) and the system ShellCheck in WSL is 0.9.0. `make venv` also upgrades pip unpinned. Results of the read-only gate and of pre-commit can differ. | `.pre-commit-config.yaml`, `requirements-dev.txt`, operator output [V] |
-| F22 | Second, diverging source of dev dependencies: `pyproject.toml` `[project.optional-dependencies].dev` (`ruff>=0.14.11`, `pytest>=8`, `typeguard>=4`, …) and the `pytest-precommit` hook's `additional_dependencies` duplicate `requirements-dev.txt`. `make venv` uses `requirements-dev.txt` only. | `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml` [V] |
-| F23 | `tests/precommit/test_15_json_valid.py` is marked `lint`, not `precommit`; `make precommit` runs `pytest tests/precommit -m precommit`, so this test is likely deselected in precommit, and `make test` ignores `tests/precommit`. Other files not yet checked. | test file + `Makefile` [V]; effect [I] |
-| F24 | `scripts/renovate/validate-config.sh` (pre-commit hook) runs `renovate/renovate:43` by tag only, while the Makefile pins the same image by digest; the hook needs Docker and a registry pull, contradicting the old DevWorkflow claim "no Docker runtime, no network". | script, `Makefile`, `.pre-commit-config.yaml` [V] |
-| F26b | **Extension of F26, found during V5.2:** the credential has a **second resting place**. `scripts/backup/backup.sh:383-385` explicitly archives `${STACK_DATA_ROOT}/alertmanager-config`, so every retained backup contains the plaintext password. The archive is GPG-encrypted, so at rest that is acceptable — but **rotating the SMTP password is not complete until retention has aged out**, and a restore re-materialises the file at `0644`. Also: `stacks/monitoring/compose/init-permissions.sh:112,146` reconciles the containing directory to `0:0` mode `0755`, so the path is traversable by everyone. The smallest fix must change both: `chmod 0640` at compose:117 **and** the directory to `0750`, with a group Alertmanager can read (it runs as `nobody` per `init-permissions.sh:111`). Mitigating default: the credential is only written when `ALERT_EMAIL_ENABLED=1` (compose:76); the disabled branch at :106 writes none. | `scripts/backup/backup.sh:383-385` [V]; `init-permissions.sh:111,112,146` [V] |
-| F26 | **Credentials land world-readable on disk.** The renderer writes `/out/alertmanager.yml` and sets `chmod 0644` (compose line 117). With `ALERT_EMAIL_ENABLED=1` that file contains `auth_password` in clear text (line 100). On the Pi it is `/srv/data/stacks/monitoring/alertmanager-config/alertmanager.yml`, readable by every local user — leaving the `root:root 600` regime ADR-0007 defines for secrets. Severest of the four; `0640` plus a matching group is the minimum. | `stacks/monitoring/compose/docker-compose.yml` lines 94–117, `docs/architecture/adr/ADR-0007-secrets-and-env-files.md` [V] |
-| F27 | `user:` is pinned only on `node-exporter` (65534) and `vector` (65532). For the other eight services the image default decides the uid — unverified, and silently changeable by an image bump, which is exactly the drift pinning prevents everywhere else. | compose, all service blocks [V]; actual uid per image [I] |
-| F28 | `cadvisor` mounts `/var/run/docker.sock` as **`:rw`** (line 319) in an already `privileged` container — effectively host root. `vector` mounts the same socket `:ro` (line 392). The `privileged` exception is documented; the writable socket is not. Whether `:ro` suffices for cadvisor must be tested, not assumed. **Correction 2026-09-23:** vector's `:ro` is not the safe variant — see F30. | compose lines 300–336 vs. 386–393 [V]; cadvisor's need for `:rw` [I] |
-| F29 | Only 5 of 10 services carry the `homelab.config-hash` label. Missing on `victoriametrics`, `node-exporter`, `cadvisor`, `victorialogs` and `vector` — and `vector` mounts `../vector/vector.yaml`, which is covered by neither the hash nor a label, so changing it triggers nothing at all. | compose (5 label occurrences) + `deploy.sh` `compute_monitoring_config_hash` [V] |
-| F30 | **`vector` is effectively host root.** It gets `group_add: ${DOCKER_GID}` and mounts `/var/run/docker.sock`. `:ro` on a socket only protects the socket inode, not the Docker API behind it. | compose lines 377–379, 392 [V]; socket semantics [I] |
-| F31 | Grafana admin credentials default to empty (`${GRAFANA_ADMIN_USER:-}`, `${GRAFANA_ADMIN_PASSWORD:-}`) instead of failing fast with `:?`. A missing host env file leaves a LAN-exposed Grafana (port 3000) on whatever Grafana does with empty values. | compose lines 246–247 [V]; Grafana behaviour [I] |
-| F32 | `grafana` lacks `read_only: true`. The justifying comment is wrong: `read_only` covers the root filesystem only, and the `/var/lib/grafana` bind mount stays writable. | compose lines 271–276 [V]; feasibility with tmpfs `/tmp` [I] |
-| F33 | `vector` has no healthcheck (not covered by F7). | compose lines 362–393 [V] |
-| F34 | `vector` joins the `apps` network without a stated reason. `vector.yaml` filters Docker logs to `com.docker.compose.project=homelab-home-prod-mon`. This widens the reach of a container with socket access (F30). | compose line 368, `stacks/monitoring/vector/vector.yaml:12` [V]; purpose [I] |
-| F35 | Renderer swallows errors: `cp … 2>/dev/null \|\| true` and `chmod -R … \|\| true` defeat `set -euo pipefail`. | compose lines 121, 123 [V] |
-| F36 | Renderer builds YAML with `printf '… "%s"'` without escaping. An SMTP value containing `"` or `\` breaks or injects into `alertmanager.yml`. | compose lines 95–102 [V] |
-| F37 | `alpine:3.24` is a minor tag, so its patch level floats. It is the weakest pin in the file (sharpens F3). | compose line 44 [V] |
-| F38 | `depends_on` uses `service_started` although the upstream services have healthchecks. `service_healthy` would be deterministic. | compose lines 175–177, 206–210, 372–374 [V] |
-| F39 | German comment in the renderer script (E6). | compose line 113 [V] |
-| F40 | Rule/reality mismatch: CLAUDE.md §4 and `rules/compose-stacks.md` require host paths `<service>-data\|config\|db`, but the real paths are `/srv/data/stacks/monitoring/<service>` (+ `alertmanager-config`). Fix the rule rather than migrate data. | compose lines 17, 19, 146, 260, 360, 387 [V] |
-| F41 | No static guard for the compose hardening contract. `tests/guards/test_10_monitoring_compose_contract.py` checks service presence only, and `vector` is missing from `REQUIRED_SERVICES`. | test file lines 12–21 [V] |
-| F42 | LAN ports `3000` and `9428` are called deliberate in `rules/compose-stacks.md`, but `ADR-0001-networking-and-firewall.md` does not mention either port. | grep `3000\|9428` on ADR-0001, no match [V]; other docs not checked |
-| F45 | **UFW very likely does not govern the two published ports at all.** `3000` (compose:243) and `9428` (compose:347) are published by Docker on every interface. The rules meant to restrict them are plain INPUT-chain rules — `cleanup-ufw.sh:446` `ufw allow from "$cidr" …`, `:474` `ufw deny "${port}/tcp"`. There is **no** `ufw route` rule and **no** `DOCKER-USER` rule anywhere in `scripts/`, `docs/` or `stacks/`, and `daemon.json` does not set `"iptables": false` [V, all four confirmed by Claude]. Docker's published-port traffic is DNAT'd and traverses `FORWARD`, not `INPUT`, so those rules are inert for these ports and both are reachable from anything that can route to the Pi [I — cannot be tested from here, C5]. `tests/postdeploy/test_35_network_and_ufw.py:327-342` asserts rule **presence**, never blocking; its one genuine negative test (`:210-244`) targets `9323`, a host daemon port on the real INPUT path, so it passes for a reason that does not generalise. The exposure contract is weaker than the test suite implies. Fix: bind both to the LAN address, or add `ufw route`/`DOCKER-USER` rules — plus a negative postdeploy check from a non-`LAN_CIDR` source, so the contract is measured rather than asserted. Found by `security-reviewer` during V5.2. | compose:243,347; `scripts/network/cleanup-ufw.sh:446,474`; `stacks/core/docker/daemon.json`; `tests/postdeploy/test_35_network_and_ufw.py:210-244,327-342` |
-| F46 | **cadvisor's privileged mode is undocumented, and the docs claim the opposite.** compose:304-306 sets `user: root` + `privileged: true`, plus `pid: host` (:311), `/dev/kmsg` (:313), `/:/rootfs:ro` (:318) and `/var/run/docker.sock:rw` (:319). `docs/monitoring.md:29` states "No privileged containers" and `:197` "cAdvisor is intentionally isolated and run with minimal privileges"; no ADR mentions cadvisor [V]. Consequently `.claude/CLAUDE.md` §4 and `.claude/rules/compose-stacks.md` both pointed at documentation that does not exist — **corrected 2026-09-23**, see 5.2. The compose comment claims necessity without evidence, while `--docker_only=true` (:329) and the explicit cgroup mount (:317) are the flags that usually remove the need for `privileged`. Order of fixes: `:319` to `:ro` first (cadvisor only reads), then correct `docs/monitoring.md`, then write the ADR that `docs-adr.md` already requires. Dropping `privileged` is a separate, testable increment — do not treat "non-negotiable" as verified. | compose:304-336; `docs/monitoring.md:29,190,197` [V] |
-| F44 | A documentation example carries a stale image tag that no manager will ever update: `stacks/core/docker/docker-daemon-json-handling.md:93` shows `image: grafana/grafana:11.0.0`, while the deployed version is `11.6.16`. Renovate runs `enabledManagers: ["docker-compose"]`, which reads compose files only, so a version inside a Markdown file drifts permanently. Same class as F5 (stale README). Found by `image-pin-audit` during V4.3. | `stacks/core/docker/docker-daemon-json-handling.md:93`, `renovate.json5`, compose line 239 [V] |
-| F43 | **An ADR promises a guarantee the deploy path does not deliver.** ADR-0001 Decision 2 states that `bootstrap-networks.sh` is "guarded against subnet overlap" and that "network creation and validation happen before any container deployment". In fact the script validates subnet, gateway and bridge **only** when `MONITORING_SUBNET`, `…_BRIDGE_NAME` etc. are present in the environment — and `deploy.sh` does not export them (F16). So on the deploy path no subnet validation happens at all. Correct the **ADR**, not `rules/host-runtime.md`, which describes reality accurately. Found by V3.3. | ADR-0001 lines 37–41, `deploy.sh`, `scripts/network/bootstrap-networks.sh` [V] |
-| F25 | `tests/precommit/test_15_json_valid.py` rglobs **every** `*.json`, including git-ignored ones, and fails on `.vscode/settings.json` (JSONC with a trailing comma, ignored via `.gitignore:21:.vscode/*`). The failure is invisible in practice because the test is marked `lint`, so `make precommit` and CI deselect it (F23). Found while validating the new `.claude/*.json` files, which parse clean. | test run 2026-09-18: `1 failed, 3 passed, 8 deselected`, only hit `.vscode/settings.json` [V] |
-| F20 | `ensure-journald-read.sh` defaults to `TARGET_USER=vector` (no such host user expected) while `deploy.sh` passes `admin`; the container runs as uid 65532 and gets the GID via `group_add`, so group membership of `admin` is likely irrelevant for Vector. | scripts + compose [V]; relevance [I] |
+| ID | Finding | Sev | Status |
+|---|---|---|---|
+| F1 | Config hash is driven by a single runtime file | High | open |
+| F2 | Hash list names a missing file and two unmounted ones | Med | open |
+| F3 | Images pinned by tag, not by digest | Med | open |
+| F4 | Renovate manages compose images only | Med | open |
+| F5 | `README.md` describes a stack that no longer exists | Low | open |
+| F6 | ADR numbering and titles are inconsistent | Low | open |
+| F7 | Missing restart policy / healthchecks | Med | open |
+| F8 | Renderer installs `gettext` from the network at every run | Med | open |
+| F9 | Backup scripts have no tests although ADR-009 requires them | High | open |
+| F10 | pytest version drift between pre-commit and `.venv` | Low | addressed |
+| F11 | `.gitattributes` does not pin LF for all text types | Low | open |
+| F12 | `.env.example` duplicates keys and holds host-derived values | Low | open |
+| F13 | Compose mounts a templates directory that does not exist | Med | open |
+| F14 | DevWorkflow committed before `make ci` | Low | addressed |
+| F15 | UFW is not reconciled on deploy | Med | open |
+| F16 | Network bootstrap on deploy skips subnet/bridge validation | Med | open |
+| F17 | `daemon.json` applied before the network it references exists | Med | open |
+| F18 | Any `daemon.json` change restarts Docker during deploy | Med | open |
+| F19 | Host-specific literals in reconciliation scripts | Low | open |
+| F20 | `ensure-journald-read.sh` default user does not match its use | Low | open |
+| F21 | Toolchain drift between `.venv` and pre-commit | Med | partly |
+| F22 | Three diverging sources of dev dependencies | Med | open |
+| F23 | Tests marked `lint` are never run by any gate | Med | open |
+| F24 | Renovate validator hook runs a floating image tag | Med | open |
+| F25 | JSON test scans git-ignored files | Low | open |
+| F26 | Alertmanager SMTP password written world-readable | High | open |
+| F26b | The same password persists in every backup archive | High | open |
+| F27 | Container uid left to image defaults for 8 of 10 services | Med | open |
+| F28 | cadvisor mounts the Docker socket read-write | High | open |
+| F29 | Config-hash label missing on 5 of 10 services | High | open |
+| F30 | vector is effectively host root via the Docker socket | High | open |
+| F31 | Grafana admin credentials default to empty | High | open |
+| F32 | Grafana runs without `read_only` on a wrong justification | Med | open |
+| F33 | vector has no healthcheck | Low | open |
+| F34 | vector joins the `apps` network without a reason | Med | open |
+| F35 | Renderer swallows errors despite `set -euo pipefail` | Med | open |
+| F36 | Renderer builds YAML without escaping | Med | open |
+| F37 | `alpine:3.24` is a floating minor tag | Med | open |
+| F38 | `depends_on` ignores existing healthchecks | Low | open |
+| F39 | German comment in the renderer script | Low | open |
+| F40 | Volume naming rule contradicted the implementation | Low | addressed |
+| F41 | No static guard for the compose hardening contract | Med | open |
+| F42 | LAN exposure of 3000/9428 is recorded in no document | Med | partly |
+| F43 | ADR-0001 promises subnet validation the deploy path skips | Med | open |
+| F44 | Stale image tag in a Markdown example | Low | open |
+| F45 | UFW very likely does not govern the published ports | High | open |
+| F46 | cadvisor's privileged mode is undocumented; docs say the opposite | High | open |
 
 ### 3.7 Security-relevant facts for Claude's boundaries [V]
 
@@ -291,6 +299,7 @@ deploy. `ChatGPTHint.txt` §7 expects `deploy.sh` to bootstrap UFW → deviation
 │   ├── test-author.md         # read-only during transition; proposes tests as text
 │   ├── security-reviewer.md   # read-only; secrets, exposure, UFW, privileges, supply chain
 │   └── docs-steward.md        # read-only; doc/ADR drift vs implementation
+├── tools/                     # tracked verifiers: check_rules/skills/agents/findings.py (Phase 6)
 ├── reports/                   # Phase 6 output, e.g. repo-findings.md
 ├── scratch/                   # git-ignored drafts (proposed patches, ADR drafts)
 └── logs/                      # git-ignored guard decision log (guard.log)
@@ -1303,7 +1312,7 @@ Verification:
 - V3.1 Each rule cites at least one repo source file.
   **PASSED** — every rule has a `Sources` section, and each cited path was checked to exist
   mechanically, not by eye. One real error was caught: `vector/vector.yaml` is
-  `stacks/monitoring/vector/vector.yaml`. The checker is `.claude/scratch/check_rules.py`.
+  `stacks/monitoring/vector/vector.yaml`. The checker was `.claude/scratch/check_rules.py`, tracked as `.claude/tools/check_rules.py` since Phase 6.
 - V3.1b (added) Frontmatter parses and every glob matches real files.
   **PASSED** — 8/8 parse, 8/8 carry `paths`, no pattern matches zero files, no `[` in any glob,
   no unknown frontmatter keys. This check matters because Claude Code **silently** ignores
@@ -1547,7 +1556,8 @@ Verification:
   implementation. "No tests" reads like "nothing there"; it is not, and the skill is what made that
   visible.
 
-**V4.6 (added) Frontmatter and budget check.** `.claude/scratch/check_skills.py` verifies that each
+**V4.6 (added) Frontmatter and budget check.** `.claude/scratch/check_skills.py` (tracked as
+`.claude/tools/check_skills.py` since Phase 6) verifies that each
 `SKILL.md` parses, carries a `description`, has `name` equal to its directory, uses only documented
 frontmatter keys, stays under the 500-line body guidance, and that the per-skill description budget
 holds. **PASSED, 0 failures.** The unknown-key check matters because the docs state that any field
@@ -1579,7 +1589,7 @@ v2.1.271).
 **D5-a — the dangerous case is an absent `tools`, not a wrong one.** V5.3 as written ("agent
 definitions contain no Edit/Write tools") would happily pass a file that omits `tools` entirely and
 therefore grants everything. The check was inverted accordingly: `tools` **must be present**, and
-`.claude/scratch/check_agents.py` fails the file if it is missing. This is the same silent-failure
+`.claude/scratch/check_agents.py` (now `.claude/tools/check_agents.py`) fails the file if it is missing. This is the same silent-failure
 class as unparsable rule frontmatter (which makes a rule global) and unknown skill keys (ignored
 without an error) — three different mechanisms, one shared trap: the failure mode is invisible.
 
@@ -1654,7 +1664,7 @@ Verification:
 - V5.3 Agent definitions contain no Edit/Write tools.
   **PASSED 2026-09-23**, and checked in the corrected form from D5-a: `tools` is **present** in all
   four files and equals exactly `Read, Grep, Glob`. Verified mechanically by
-  `.claude/scratch/check_agents.py`, 0 failures — after Phase 3 and 4 this class of check is no
+  `.claude/scratch/check_agents.py` (now in `tools/`), 0 failures — after Phase 3 and 4 this class of check is no
   longer done by eye.
 
 **Newly measured asymmetry, worth remembering.** Skills written during a session became available
@@ -1668,11 +1678,66 @@ try it.
 
 - [ ] `readme_claude.md`: purpose of each artefact, how to start a session, what Claude will refuse
       and why, how to verify the safety set-up (V1.x), how to update artefacts.
+      **WRITTEN 2026-09-23.** Seven sections: inventory, session start, refusals, the two layers
+      (with the deny list grouped into self-protection / transition / permanent, which 5.2
+      promised and nothing had delivered), verification, updating, Phase 8 preview.
 - [ ] `reports/repo-findings.md`: F1–F24 with evidence, impact, proposed fix, suggested test.
+      **WRITTEN 2026-09-23 — scope F1–F46 plus F26b (47 entries), not F1–F24**, because the backlog
+      had grown by 23 findings since this line was written. Each entry: Evidence, Impact, Proposed
+      fix, Test, Acceptance; plus severity, status and a suggested R1 increment grouping (a–i).
+
+#### 6.0 Decisions and corrections
+
+**D6-a — the verifiers had to become tracked.** `check_rules.py`, `check_skills.py` and
+`check_agents.py` lived in git-ignored `scratch/`, so the readme would have pointed a fresh clone at
+files that do not exist, failing V6.1 by construction. Operator decision: move them to `tools/`.
+Moving them exposed a second, quieter defect: ruff skips git-ignored files, so the scripts had never
+been linted — `check_rules.py` had three B023 errors (a closure over loop variables) and all three
+files failed `ruff format --check`. Both fixed; the gate now covers them.
+
+**D6-b — the report is the single source of truth; §3.6 is an index.** Two full copies would drift.
+`tools/check_findings.py` enforces that report entries, report index and §3.6 index hold the same
+IDs, that every entry has all five fields, that cited repo paths exist, and that a path written as
+*(absent)* really is absent — some findings are about a missing file, and that claim is now checked
+too.
+
+**Status changes found while re-reading** (only the six findings whose status could have moved):
+
+| Finding | Result |
+|---|---|
+| F10 | **addressed** — `.venv` reports pytest 8.4.2; both sources pin `<9` |
+| F14 | **addressed** — `docs/operations/DevWorkflow.md:16,34` require `make ci` before commit |
+| F21 | **partly** — R0.0 fixed ruff/ShellCheck/yamllint; pip upgrade in `make venv` and the pytest range remain |
+| F22 | unchanged |
+| F23 | **sharpened** — four test files carry `lint`, and no gate selects that marker at all |
+| F5 | unchanged |
+
+F40 is marked addressed (Claude's artefacts were the only thing wrong). F42 is marked partly: the
+rule was corrected, the missing document is still missing.
+
+**Readme correction found while writing.** The self-protect window as used for P1–P6 (set
+`self_protect: false`, Claude applies) no longer works on its own: P5 added
+`Edit(/.claude/hooks/**)` to the settings denies, so the Edit tool stays blocked with the guard flag
+off. The readme now gives two paths — operator applies (default), or a two-layer window in a fixed
+order.
+
+**Guard false positive observed** — `grep -n -i 'prometheus\|loki\|promtail\|\.env' README.md` →
+`guard: C3: \`grep\` would read secret material`. The *pattern* was classified as a secret path.
+Accepted like the other false positives in 5.4.5 and listed in the readme.
 
 Verification:
 - V6.1 Operator can follow `readme_claude.md` from a fresh shell without extra knowledge.
+  **OPEN — operator step.** Claude ran every read-only command of readme §5 it is allowed to:
+  §5.1, §5.2 (77 passed), §5.5 and §5.6 (all four checkers `0 failure(s)`). §5.3 is blocked for
+  Claude by design (raw Pi-identifier scan), §5.4 needs live tool calls.
 - V6.2 Each finding has evidence path and a testable acceptance criterion.
+  **PASSED 2026-09-23**, mechanically: `47 entries, 47 report index rows, 47 rows in
+  ClaudeTransition.md 3.6` / `0 failure(s)`. Negative controls: an emptied **Acceptance** field →
+  `FAIL F31: missing or empty **Acceptance**`; an existing path marked absent plus a non-existent
+  path → two FAIL lines for F13; both reverted.
+- V6.3 (added) Claude Code version drift. `claude --version` → `2.1.280`; V1.10–V1.16 were last run
+  on 2.1.276. Per the risk table they are due again (readme §5.3/§5.4). Incidental evidence that
+  the hook still enforces: two blocks in this session (`python3 -c`, the `grep` above).
 
 ### Phase 7 – Handover and CI parity
 
@@ -1823,6 +1888,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
+| R0.8 (Phase 6) | 2026-09-23 | ? | ? | n/a | `readme_claude.md` (operator guide incl. grouped deny list), `reports/repo-findings.md` (47 findings, five fields each, R1 grouping a–i), verifiers moved to tracked `tools/` (D6-a, three latent ruff errors fixed) plus `check_findings.py`; §3.6 reduced to an index (D6-b). V6.2 passed with negative controls; V6.1 open (operator). Claude Code 2.1.280 → V1.10–V1.16 due again. |
 | R0.7 (Phase 5) | 2026-09-23 | ? | ? | n/a | `.claude/agents/`: four read-only subagents, `tools: Read, Grep, Glob` each, 703 chars of always-loaded descriptions. D5-a (an absent `tools` grants everything — V5.3 inverted accordingly) and D5-b (bodies must not restate the inherited rules) recorded. **V5.1–V5.3 all passed** (V5.1/V5.2 after the operator restart — agents are not hot-loaded the way skills are). V5.2 produced F45 and F46, extended F26, closed F42's caveat, and forced the third correction of a Claude artefact claiming documentation that does not exist. |
 | R0.6 (Phase 4) | 2026-09-23 | ? | ? | n/a | `.claude/skills/`: eight skills, always-loaded description cost 1,236 chars total (cap is 1,536 per skill). D4-a (descriptions are the budget), D4-b (`allowed-tools` only on `readonly-gate`) and D4-c (no `paths` on skills) recorded. **V4.1–V4.6 all passed.** Invoking the skills produced F44 and showed that five of seven ADR-009 backup requirements are already implemented — F9 had made that invisible. |
 | R0.5 (Phase 3) | 2026-09-23 | ? | ? | n/a | `.claude/rules/`: eight path-scoped rule files, 468 lines, none always-loaded. D3-a (path scoping is mandatory, not optional) and D3-b (eight rules, not ten) recorded. V3.1 passed incl. a mechanical cited-path check; V3.2/V3.3 open. |
