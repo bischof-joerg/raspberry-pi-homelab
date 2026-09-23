@@ -96,7 +96,7 @@ vector update auf version image: timberio/vector:0.58.0-debian mit runtime issue
 
 
 # Claud Transition
-Claude hat die Findings in ClaudeTransition.md eingefügt
+claude --resume 7d4e8f1f-16db-49c7-bfcd-bb7b70564a10
 Phase 1b: Verifikationen V1.10–V1.16. sind noch durchzuführen und das ganze zu dokumentieren.
 
 
@@ -109,7 +109,7 @@ _____________________________________________________________________________
 # Claud Transition
 Phase 1b führst du selbst durch: den Hook prüfen und in settings.json aktivieren.
     Danach laufen die Live-Negativtests V1.10–V1.16.
-
+Claude hat die Findings in ClaudeTransition.md eingefügt
 
 Phase 1a (Claude Code): Starte Claude Code im Repo-Root, zum Beispiel mit dieser Anweisung:
 Read .claude/ClaudeTransition.md sections 1–5 completely. Then execute Phase 1a only. Present your plan first and wait for my approval.

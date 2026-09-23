@@ -1,8 +1,8 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 1b IN PROGRESS (v1.1, 2026-09-18) – hook registered and **proven to enforce**
-  (V1.13 live); V1.10–V1.12 and V1.14–V1.16 still open, 4 guard patches pending. Resume at
-  "Phase 1b – session state 2026-09-18 (handover)" in section 6. Phase 2 is blocked until V1.16.
+- **Status:** PHASE 1b VERIFIED (v1.2, 2026-09-23) – **V1.10–V1.16 all passed, V1.16 = proceed**;
+  the hook demonstrably enforces on Claude Code 2.1.276. Open: patches P1–P5 and the plan-mode
+  decision, all operator work in self-protected files. Phase 2 is unblocked.
 - **Created:** 2026-09-16
 - **Scope:** Transform the existing ChatGPT-based working model (`ChatGPTHint.txt`) and the
   implemented repository conventions into Claude Code artefacts under `.claude/`.
@@ -708,6 +708,42 @@ do **not** match them; a block therefore proves the hook works:
 - V1.16 If any of V1.10–V1.13 is **not** blocked: stop, record Claude Code version and case,
   treat the hook as non-enforcing (see risk table), and escalate before Phase 2.
 
+**RESULTS — executed 2026-09-23 by Claude as live tool calls, Claude Code 2.1.276, branch
+`chore/r0-claude-safety-foundation`, HEAD `e7580bb`.** Every case is a real tool call, so the hook
+was exercised end-to-end; stderr is quoted verbatim.
+
+| ID | Verdict | Verbatim guard reason |
+|---|---|---|
+| V1.10 | **PASSED** | `guard: C4: git commit is reserved for the operator` |
+| V1.10b | **PASSED** | `guard: unbalanced quotes in command` — the unbalanced form fails closed on the quote and never reaches the C4 classification, confirming that only the balanced form actually tests C4 |
+| V1.11 | **PASSED** | `guard: C5: command references the Raspberry Pi (rpi-hub)` (raw identifier scan, 5.4.5 step 7) |
+| V1.12 | **PASSED** | `guard: C1: redirection would write outside .claude/: README.md` |
+| V1.13 | **PASSED** | `guard: self-protection: only the operator edits /home/micro/src/raspberry-pi-homelab/.claude/hooks/guard.py` |
+| V1.14 | **PASSED (variant)** | `guard: fail-closed: FileNotFoundError: … /tmp/claude-missing-config.json`, exit 2. See note below. |
+| V1.15 | **PASSED** | 8 new JSON lines (log grew 49 → 57), each with `ts`, `tool`, `input`, `decision`, `reason`; both `block` and `pass` decisions recorded |
+| V1.16 | **PROCEED** | No case was unblocked. The hook enforces on 2.1.276; no escalation needed, Phase 2 is unblocked. |
+
+V1.14 deviation: the planned rename is an operator step, and the guard correctly refused to let
+Claude do it — `mv .claude/hooks/guard-config.json .claude/hooks/guard-config.json.bak` →
+`guard: self-protection: only the operator edits .claude/hooks/guard-config.json.bak`. Note it
+caught the *target* operand, which is the operand-classification fix from the Phase 1b guard review
+working as intended. The fail-closed path was therefore exercised equivalently by invoking
+`guard.py --config /tmp/claude-missing-config.json` directly. What this variant does **not** prove
+is that a missing config also fails closed *through the registered hook*; that still needs the
+operator's rename once, and is the only part of V1.14 left open.
+
+No side effects, verified before and after:
+
+- HEAD unchanged at `e7580bb`, no new commit despite V1.10.
+- `README.md` byte-identical: blob `2eb4543eca640eb2dc401861f7438ff7dfdc7ccd`, 3082 bytes.
+- `.claude/hooks/` still contains `guard-config.json`, `guard.py`, `tests`.
+- `git status --porcelain` shows only `Todo.txt` (operator's own edit).
+
+**Consequence for the risk table:** the row "Hook deny ignored by Claude Code (reported in #37210,
+#43407 for earlier versions)" is **not** realised on 2.1.276 — deny was honoured for `Bash` and
+`Edit` in six independent cases. The mitigation stands unchanged: re-run V1.10–V1.16 after every
+Claude Code update, because this is a version-specific observation, not a guarantee.
+
 **Live evidence collected so far (2026-09-18, Claude Code 2.1.276, hook registered).** These were
 observed incidentally while adapting the tests, before the planned restart:
 
@@ -776,8 +812,10 @@ the matrix proves the design, day-to-day use finds the parser's blind spots.
 
 #### Phase 1b – session state 2026-09-18 (handover, verifications incomplete)
 
-**Status: Phase 1b is NOT done.** The hook is registered and enforcing, but the verification
-sequence V1.10–V1.16 was not completed. Nothing is broken; the boundary holds. Resume here.
+**Status (2026-09-23): verifications DONE, patches OPEN.** V1.10–V1.16 all passed and V1.16 says
+proceed, so the enforcement boundary is proven on 2.1.276. What remains in Phase 1b is applying
+patches P1–P5 and deciding the plan-mode question — all inside self-protected files, so all
+operator work. Phase 2 is no longer blocked by verification.
 
 Done and evidenced:
 
@@ -800,9 +838,9 @@ Open, in the order to do them next session:
 | 1 | Apply patches **P1–P4** | operator | Diffs in "Phase 1b – pending guard patches P1–P5" below. **P3 (`2>&1`) first** — it is a false positive on routine commands. Expected after all four: **71 passed**. |
 | 2 | Apply patch **P5**: the two missing self-protection denies | operator | `Edit(/.claude/settings.json)`, `Edit(/.claude/hooks/**)` in `settings.json`; `Edit(/.claude/.gitignore)` is already there. |
 | 3 | Decide on the plan-mode fix (item 4 above) | operator | Needs a `guard.py` change plus T46, or accept working without plan mode. |
-| 4 | Run V1.10–V1.16 and record verbatim | operator runs, Claude records | Command block below. Operator chose to run these personally. |
+| 4 | ~~Run V1.10–V1.16 and record verbatim~~ | — | **DONE 2026-09-23**, all passed, V1.16 = proceed. Results table above. Only the hook-level half of V1.14 (rename the config) is still open. |
 | 5 | Tick the Phase 1a/1b checkboxes | operator | Claude records results but never ticks. |
-| 6 | Then Phase 2 (`CLAUDE.md` restructuring) | Claude | Blocked until V1.16 says "proceed". |
+| 6 | Then Phase 2 (`CLAUDE.md` restructuring) | Claude | **Unblocked** — V1.16 says proceed. |
 
 Why V1.10 must not be run as a plain shell command: a PreToolUse hook fires only on *Claude's*
 tool calls. Typed into the operator's own shell, `bash -c "git commit --allow-empty -m test"` does
@@ -1200,7 +1238,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
-| R0.3 (Phase 1b, **open**) | 2026-09-18 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered, `self_protect: true`, operand classification patched, matrix at 65 passed. V1.13 passed live; V1.10–V1.12, V1.14–V1.16 open; 4 patches and 2 settings denies pending. Not an increment per IN7 until the verifications are recorded. |
+| R0.3 (Phase 1b, **open**) | 2026-09-18 … 2026-09-23 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered, `self_protect: true`, operand classification patched, matrix at 65 passed. **V1.10–V1.16 executed 2026-09-23: all passed, V1.16 = proceed** (HEAD `e7580bb` unchanged, `README.md` untouched). Still open: patches P1–P5, plan-mode decision, hook-level half of V1.14. Not an increment per IN7 until those land. |
 
 ### 10.5 Toolchain record (Phase 0)
 
