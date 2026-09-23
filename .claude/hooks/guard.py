@@ -121,14 +121,30 @@ def is_self_protected(ctx: Context, path: Path) -> bool:
     return False
 
 
+def matches_allowed_prefix(ctx: Context, path: Path) -> bool:
+    """True when `path` lies under a configured write-allowed prefix.
+
+    `allowed_temp_prefixes` covers scratch locations such as `/tmp/claude-`.
+    `allowed_write_prefixes` covers directories outside the project that Claude Code itself
+    owns, currently only the plan-mode plan directory (`~/.claude/plans/`). Without it, plan
+    mode cannot write its plan file and the whole plan/approve workflow deadlocks.
+    """
+    posix = path.as_posix()
+    for key in ("allowed_temp_prefixes", "allowed_write_prefixes"):
+        for prefix in ctx.get(key, []):
+            expanded = os.path.expanduser(str(prefix))
+            if posix == expanded.rstrip("/") or posix.startswith(expanded):
+                return True
+    return False
+
+
 def is_write_allowed(ctx: Context, raw: str) -> bool:
     """True when writing to `raw` is permitted under the current mode."""
     if raw in ctx.names("null_targets"):
         return True
     path = resolve(ctx, raw)
-    for prefix in ctx.get("allowed_temp_prefixes", []):
-        if path.as_posix().startswith(str(prefix)):
-            return True
+    if matches_allowed_prefix(ctx, path):
+        return True
     if is_self_protected(ctx, path):
         return False
     if not ctx.transition:
@@ -278,6 +294,13 @@ def split_segments(text: str) -> list[str]:
                 segments.append("".join(current))
                 current = []
                 i += 2
+                continue
+            # `>&` / `<&` / `&>`: part of a redirection, not a control operator
+            if ch == "&" and (
+                "".join(current).rstrip()[-1:] in ("<", ">") or text[i + 1 : i + 2] == ">"
+            ):
+                current.append(ch)
+                i += 1
                 continue
             if ch in ";|&\n":
                 segments.append("".join(current))
@@ -448,6 +471,8 @@ def check_redirections(ctx: Context, tokens: list[str]) -> list[str]:
                 if is_secret(ctx, target):
                     raise Blocked(f"C3: input redirection reads secret material: {target}")
                 continue
+            if is_self_protected(ctx, resolve(ctx, target)):
+                raise Blocked(f"self-protection: only the operator edits {target}")
             if not is_write_allowed(ctx, target):
                 raise Blocked(f"C1: redirection would write outside .claude/: {target}")
             continue
@@ -656,6 +681,8 @@ def check_file_tool(ctx: Context, tool_input: dict) -> None:
     path = resolve(ctx, raw)
     if is_self_protected(ctx, path):
         raise Blocked(f"self-protection: only the operator edits {raw}")
+    if matches_allowed_prefix(ctx, path):
+        return
     if ctx.transition and not is_inside(path, ctx.write_dir):
         raise Blocked(f"C1: writes are restricted to .claude/ during the transition: {raw}")
 

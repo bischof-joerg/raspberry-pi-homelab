@@ -6,6 +6,8 @@
     "disableAutoMode": "disable",
     "deny": [
       "Edit(/.claude/.gitignore)",
+      "Edit(/.claude/settings.json)",
+      "Edit(/.claude/hooks/**)",
       "Edit(/.github/**)",
       "Edit(/docs/**)",
       "Edit(/scripts/**)",

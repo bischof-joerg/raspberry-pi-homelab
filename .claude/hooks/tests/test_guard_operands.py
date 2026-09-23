@@ -113,6 +113,15 @@ def bash(repo: Path, command: str, config: Path | None = None) -> tuple[int, str
         ("rm README.md", BLOCK),
         ("chmod 600 .claude/scratch/a.md", PASS),
         ("chmod 644 README.md", BLOCK),
+        # T44: fd duplication is not a redirect target
+        ("ls > /dev/null 2>&1", PASS),
+        ("ls 2>&1 | tail -3", PASS),
+        # T45: &> is an output redirect and its target is checked
+        ("echo x &> README.md", BLOCK),
+        ("echo x &> .claude/scratch/out.txt", PASS),
+        # real backgrounding must still split into segments
+        ("sleep 5 &", PASS),
+        ("echo a & echo b", PASS),
     ],
 )
 def test_write_targets(fixture_repo: Path, command: str, expected: int) -> None:
@@ -148,6 +157,9 @@ def test_env_example_stays_readable(fixture_repo: Path) -> None:
         "sed -i s/a/b/ .claude/hooks/guard.py",
         "cp /tmp/x .claude/settings.json",
         "rm .claude/hooks/guard-config.json",
+        # T43: redirection into a self-protected path must report self-protection, not C1
+        "echo x > .claude/.gitignore",
+        "echo x > .claude/settings.json",
     ],
 )
 def test_self_protection_reports_itself(fixture_repo: Path, tmp_path: Path, command: str) -> None:
@@ -169,3 +181,30 @@ def test_gh_is_reported_as_operator_only(fixture_repo: Path) -> None:
     code, reason = bash(fixture_repo, "gh pr create")
     assert code == BLOCK
     assert "C4" in reason
+
+
+@pytest.mark.precommit
+def test_t46_plan_mode_plan_file_is_writable(fixture_repo: Path) -> None:
+    """T46: plan mode writes its plan file to ~/.claude/plans/, outside the project.
+
+    Without `allowed_write_prefixes` the C1 check blocks it and the plan/approve workflow
+    deadlocks: plan mode allows only the plan file, and the guard forbids exactly that file.
+    """
+    plan = str(Path.home() / ".claude" / "plans" / "some-plan.md")
+    code, reason = run_guard(fixture_repo, "Write", {"file_path": plan})
+    assert code == PASS, reason
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "path",
+    [
+        "~/.claude/settings.json",
+        "~/.claude/plans-evil/x.md",
+        "~/.ssh/id_rsa",
+    ],
+)
+def test_t46_allowance_stays_narrow(fixture_repo: Path, path: str) -> None:
+    """The plan-directory allowance must not open the rest of the home directory."""
+    code, _ = run_guard(fixture_repo, "Write", {"file_path": str(Path(path).expanduser())})
+    assert code == BLOCK
