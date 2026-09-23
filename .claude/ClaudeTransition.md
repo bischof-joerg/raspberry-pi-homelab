@@ -1,9 +1,8 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 1b ESSENTIALLY COMPLETE (v1.3, 2026-09-23) – V1.10–V1.16 all passed
-  (V1.16 = proceed), patches **P1–P6 applied**, guard matrix at **77 passed**. Remaining: operator
-  sets `self_protect` back to `true` and re-probes T43, plus the hook-level half of V1.14.
-  Phase 2 is unblocked.
+- **Status:** PHASE 1b COMPLETE (v1.4, 2026-09-23) – V1.10–V1.16 all passed on Claude Code 2.1.276,
+  patches **P1–P6 applied**, guard matrix at **77 passed**, `self_protect` back to `true`.
+  Next: Phase 2 (`CLAUDE.md` restructuring), after the operator commits.
 - **Created:** 2026-09-16
 - **Scope:** Transform the existing ChatGPT-based working model (`ChatGPTHint.txt`) and the
   implemented repository conventions into Claude Code artefacts under `.claude/`.
@@ -721,18 +720,37 @@ was exercised end-to-end; stderr is quoted verbatim.
 | V1.11 | **PASSED** | `guard: C5: command references the Raspberry Pi (rpi-hub)` (raw identifier scan, 5.4.5 step 7) |
 | V1.12 | **PASSED** | `guard: C1: redirection would write outside .claude/: README.md` |
 | V1.13 | **PASSED** | `guard: self-protection: only the operator edits /home/micro/src/raspberry-pi-homelab/.claude/hooks/guard.py` |
-| V1.14 | **PASSED (variant)** | `guard: fail-closed: FileNotFoundError: … /tmp/claude-missing-config.json`, exit 2. See note below. |
+| V1.14 | **PASSED (complete)** | Variant on 2026-09-23 via `--config /tmp/claude-missing-config.json`; hook-level half completed the same day after the operator renamed the file. See note below. |
 | V1.15 | **PASSED** | 8 new JSON lines (log grew 49 → 57), each with `ts`, `tool`, `input`, `decision`, `reason`; both `block` and `pass` decisions recorded |
 | V1.16 | **PROCEED** | No case was unblocked. The hook enforces on 2.1.276; no escalation needed, Phase 2 is unblocked. |
 
-V1.14 deviation: the planned rename is an operator step, and the guard correctly refused to let
+V1.14 in two steps. The planned rename is an operator step, and the guard twice refused to let
 Claude do it — `mv .claude/hooks/guard-config.json .claude/hooks/guard-config.json.bak` →
 `guard: self-protection: only the operator edits .claude/hooks/guard-config.json.bak`. Note it
 caught the *target* operand, which is the operand-classification fix from the Phase 1b guard review
-working as intended. The fail-closed path was therefore exercised equivalently by invoking
-`guard.py --config /tmp/claude-missing-config.json` directly. What this variant does **not** prove
-is that a missing config also fails closed *through the registered hook*; that still needs the
-operator's rename once, and is the only part of V1.14 left open.
+working as intended. The fail-closed path was therefore first exercised by invoking
+`guard.py --config /tmp/claude-missing-config.json` directly.
+
+**Hook-level half completed 2026-09-23.** The operator renamed the config, Claude made two ordinary
+tool calls, and both were blocked with the identical reason:
+
+```text
+Bash `ls`          -> PreToolUse:Bash hook error: guard: fail-closed: FileNotFoundError:
+                      [Errno 2] No such file or directory: '…/.claude/hooks/guard-config.json'
+Read `README.md`   -> PreToolUse:Read hook error: guard: fail-closed: FileNotFoundError: (identical)
+```
+
+The `Read` case matters as much as the `Bash` one: it shows fail-closed covers the **whole matcher**,
+not just command execution. A missing policy file does not make the guard permissive, it makes it
+total. The operator restored the name afterwards and the guard was confirmed operational again
+(a harmless `ls -la` probe returned exit 0).
+
+**Layering observation from the same test.** The `mv` was blocked by the *hook*, not by P5's
+`Edit(/.claude/hooks/**)` deny rule. Per the permissions docs, deny rules check redirect and `tee`
+targets against `Edit` rules, but not arbitrary command operands — so a Bash `mv` slips past the
+settings layer entirely and only the guard catches it. Conversely the settings layer catches things
+before the hook ever runs. The two layers cover **different** surfaces; neither alone is sufficient,
+which is the concrete justification for keeping P5.
 
 No side effects, verified before and after:
 
@@ -814,11 +832,11 @@ the matrix proves the design, day-to-day use finds the parser's blind spots.
 
 #### Phase 1b – session state 2026-09-18 (handover, verifications incomplete)
 
-**Status (2026-09-23): verifications DONE, patches P1–P6 DONE.** V1.10–V1.16 all passed and V1.16
-says proceed, so the enforcement boundary is proven on 2.1.276. P1–P6 were applied in a deliberate
-`self_protect: false` window and the matrix stands at 77 passed. Only two operator steps remain:
-restore `self_protect: true` with a T43 re-probe (item 3a), and the hook-level half of V1.14
-(item 3b). Phase 2 is unblocked.
+**Status (2026-09-23): PHASE 1b COMPLETE.** V1.10–V1.16 all passed on Claude Code 2.1.276, patches
+P1–P6 applied in a deliberate `self_protect: false` window that was closed again, matrix at
+77 passed, and both follow-ups (3a T43 re-probe, 3b hook-level V1.14) done. `self_protect` is back
+to `true` and the guard was confirmed operational. Nothing is left open in Phase 1b; the next step
+is Phase 2, after the operator has committed.
 
 Done and evidenced:
 
@@ -841,8 +859,8 @@ Open, in the order to do them next session:
 | 1 | ~~Apply patches **P1–P4**~~ | — | **DONE 2026-09-23** in the `self_protect: false` window. |
 | 2 | ~~Apply patch **P5**~~ | — | **DONE 2026-09-23**, applied last so it re-locks `.claude/hooks/**`. |
 | 3 | ~~Decide on the plan-mode fix~~ | — | **DONE 2026-09-23**: decided to allow `~/.claude/plans/`, implemented as **P6**, T46 covers it. |
-| 3a | Set `self_protect` back to `true`, then re-probe T43 | operator | The window must not stay open. Expected after restoring: `echo x > .claude/.gitignore` → exit 2, `self-protection: …`. |
-| 3b | Finish the hook-level half of V1.14 | operator | Rename `guard-config.json` once, have Claude run any Bash call (must fail closed), restore the name. |
+| 3a | ~~Set `self_protect` back to `true`, then re-probe T43~~ | — | **DONE 2026-09-23**: restored, re-probe gave `exit 2`, `guard: self-protection: only the operator edits .claude/.gitignore`. P1 confirmed in production. |
+| 3b | ~~Finish the hook-level half of V1.14~~ | — | **DONE 2026-09-23**: both `Bash` and `Read` failed closed while the config was renamed; name restored and guard confirmed operational. |
 | 4 | ~~Run V1.10–V1.16 and record verbatim~~ | — | **DONE 2026-09-23**, all passed, V1.16 = proceed. Results table above. Only the hook-level half of V1.14 (rename the config) is still open. |
 | 5 | Tick the Phase 1a/1b checkboxes | operator | Claude records results but never ticks. |
 | 6 | Then Phase 2 (`CLAUDE.md` restructuring) | Claude | **Unblocked** — V1.16 says proceed. |
@@ -1335,7 +1353,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
-| R0.3 (Phase 1b) | 2026-09-18 … 2026-09-23 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered, `self_protect: true`, operand classification patched. **V1.10–V1.16 executed 2026-09-23: all passed, V1.16 = proceed** (HEAD `e7580bb` unchanged, `README.md` untouched). **Patches P1–P6 applied 2026-09-23**, matrix 65 → **77 passed**, ruff clean. Open: restore `self_protect: true` + T43 re-probe, hook-level half of V1.14. |
+| R0.3 (Phase 1b, **complete**) | 2026-09-18 … 2026-09-23 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered and **proven to enforce**. **V1.10–V1.16 all passed 2026-09-23**, V1.16 = proceed (HEAD `e7580bb` unchanged, `README.md` untouched). **Patches P1–P6 applied**, matrix 65 → **77 passed**, ruff clean. T43 re-probe and hook-level V1.14 done; `self_protect` back to `true`. |
 
 ### 10.5 Toolchain record (Phase 0)
 
