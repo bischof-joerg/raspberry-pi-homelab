@@ -1,8 +1,8 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 2 COMPLETE (v1.6, 2026-09-23) – Phase 1b complete (V1.10–V1.16 passed, P1–P6
-  applied, matrix **77 passed**). `CLAUDE.md` restructured to **170 lines**, **V2.1–V2.3 all
-  passed**, V2.3 confirmed live in a fresh session. Next: Phase 3 (rules).
+- **Status:** PHASE 3 WRITTEN (v1.7, 2026-09-23) – Phases 1a/1b/2 complete. `.claude/rules/` holds
+  **eight path-scoped rules** (468 lines, none always-loaded); V3.1 passed, V3.2/V3.3 need a fresh
+  session and an operator review. Next: Phase 4 (skills).
 - **Created:** 2026-09-16
 - **Scope:** Transform the existing ChatGPT-based working model (`ChatGPTHint.txt`) and the
   implemented repository conventions into Claude Code artefacts under `.claude/`.
@@ -1210,8 +1210,82 @@ Content notes:
 
 - [ ] Verify current rules mechanism and `paths` frontmatter in official docs before writing;
       record the doc URL and date here.
+      **DONE 2026-09-23**, https://code.claude.com/docs/en/memory (no publication date on the page).
+      Result below — the mechanism exists, but it changes the design of section 5.
+
+#### 3.0 Rules mechanism as documented (verified 2026-09-23, Claude Code 2.1.276)
+
+| Fact | Consequence for this phase |
+|---|---|
+| `.claude/rules/*.md` exist and are discovered **recursively**, subdirectories allowed | The layout in section 5 works as planned |
+| A rule **without** `paths` frontmatter is "loaded at launch with the same priority as `.claude/CLAUDE.md`" | It is *not* free. Every unconditional rule permanently enlarges the same context budget that V2.1 capped `CLAUDE.md` at 170 lines to protect |
+| A rule **with** `paths` loads only "when Claude reads files matching the pattern, not on every tool use" | This is the mechanism that makes ten topic files affordable |
+| `paths` is the **only** field Claude Code reads; every other field "is ignored without an error" | No `description`, `title` or `alwaysApply` — an invented field fails silently, so none are used |
+| Unparsable YAML → frontmatter ignored, rule loads **as if it had no `paths`**, i.e. unconditionally | A typo does not fail loudly, it quietly makes the rule global. `claude --debug` shows the parse error |
+| Accepts a YAML list or a comma-separated string; brace expansion allowed, budget 1000 expanded patterns / 4 MiB | Plain globs are enough here; no brace expansion needed |
+| Glob `[` starts a bracket expression; an unreadable one matches nothing | Avoid `[` in patterns entirely |
+| Docs note: "For task-specific instructions that don't need to be in context all the time, use **skills** instead" | Draws the line between Phase 3 and Phase 4: rules = standing constraints while editing a file class, skills = invoked procedures |
+| Docs warn: "if two rules contradict each other, Claude may pick one arbitrarily" | Rules must not restate `CLAUDE.md`; overlap is a defect, not redundancy |
+
+Version notes checked and not applicable on 2.1.276: `paths` brace-expansion crash (< v2.1.217),
+invalid-`[` breaking Read (< v2.1.207), on-demand rules loading despite excluded `project`
+(< v2.1.211), symlink path matching (>= v2.1.198).
+
+**Design consequence — D3-a.** Section 5 lists ten rule files without saying how they load. Written
+unconditionally they would all load every session, which would undo Phase 2's context discipline and
+duplicate `CLAUDE.md` §4 and §8. Therefore: **every rule that has a natural file class gets `paths`
+frontmatter and loads on demand.** `CLAUDE.md` keeps the always-loaded core; `rules/` holds the
+depth that only matters while touching a specific part of the repository.
 - [ ] Write the ten rule files from section 5. Each: purpose, MUST/SHOULD list, source references
       (ADR/doc path), examples of violations.
+      **DONE 2026-09-23 — eight files, all path-scoped. See D3-a above and D3-b below.**
+
+#### 3.1 What was written
+
+| Rule | `paths` | Files in scope | Lines |
+|---|---|---:|---:|
+| `compose-stacks.md` | `stacks/**` | 30 | 63 |
+| `testing.md` | `tests/**` | 40 | 60 |
+| `shell-scripts.md` | `**/*.sh` | 19 | 55 |
+| `host-runtime.md` | `scripts/host/**`, `scripts/host-runtime/**`, `scripts/network/**`, `stacks/core/docker/**`, `deploy.sh` | 12 | 59 |
+| `backup-restore.md` | `scripts/backup/**`, `docs/operations/BackupVerifyRestore.md`, `docs/operations/GPG_config_for_backup_encryption.md` | 6 | 65 |
+| `secrets.md` | `**/*.env.example`, `stacks/**/compose/**`, `scripts/backup/**` | 8 | 59 |
+| `ci-renovate.md` | `.github/**`, `renovate.json5`, `.pre-commit-config.yaml` | 3 | 53 |
+| `docs-adr.md` | `docs/**` | 13 | 54 |
+
+468 lines in total, **none of which load unless Claude touches a matching file**. Compare: written
+unconditionally they would have tripled the always-loaded instruction set against `CLAUDE.md`'s 170.
+
+**D3-b — two planned rules were deliberately not written.** Section 5 lists
+`operating-model.md` and `incremental-delivery.md`. Both describe stances, not file classes, so
+neither has a meaningful `paths` value, and both are already stated in `CLAUDE.md` §4 and §8.
+Writing them would have cost always-loaded context for zero gain (an unconditional rule has the
+same priority as `CLAUDE.md`, so nothing is saved by moving text there) while creating exactly the
+duplication the docs warn about: *"if two rules contradict each other, Claude may pick one
+arbitrarily."* Operator decision, 2026-09-23: **eight rules, not ten.** If one of them ever needs
+more depth than `CLAUDE.md` can carry, the right home is a skill (Phase 4), not an unconditional rule.
+
+Deliberate overlap, which is not duplication: `scripts/backup/**` appears in both
+`backup-restore.md` and `secrets.md`, and `stacks/**/compose/**` in both `compose-stacks.md` and
+`secrets.md`. Each rule addresses a different aspect of the same file, and they were checked for
+contradictions.
+
+Verification:
+- V3.1 Each rule cites at least one repo source file.
+  **PASSED** — every rule has a `Sources` section, and each cited path was checked to exist
+  mechanically, not by eye. One real error was caught: `vector/vector.yaml` is
+  `stacks/monitoring/vector/vector.yaml`. The checker is `.claude/scratch/check_rules.py`.
+- V3.1b (added) Frontmatter parses and every glob matches real files.
+  **PASSED** — 8/8 parse, 8/8 carry `paths`, no pattern matches zero files, no `[` in any glob,
+  no unknown frontmatter keys. This check matters because Claude Code **silently** ignores
+  unparsable frontmatter and loads the rule unconditionally — the failure mode is invisible
+  context bloat, not an error message.
+- V3.2 In a new session, open `stacks/monitoring/compose/docker-compose.yml` and ask for a
+  compliance review → answer references `compose-stacks.md` content (naming, pinning, bind mounts).
+  **OPEN — operator step**, needs a fresh session. This is the real test: it proves path-scoped
+  loading actually fires, which nothing here can prove from inside the session that wrote the rules.
+- V3.3 No rule contradicts an accepted ADR (manual review by operator).
+  **OPEN — operator step.** Rules cite ADR-0001, ADR-0007, ADR-0008 and ADR-009 by path.
 
 Verification:
 - V3.1 Each rule cites at least one repo source file.
@@ -1403,6 +1477,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
+| R0.5 (Phase 3) | 2026-09-23 | ? | ? | n/a | `.claude/rules/`: eight path-scoped rule files, 468 lines, none always-loaded. D3-a (path scoping is mandatory, not optional) and D3-b (eight rules, not ten) recorded. V3.1 passed incl. a mechanical cited-path check; V3.2/V3.3 open. |
 | R0.4 (Phase 2, **complete**) | 2026-09-23 | ? | ? | n/a | `CLAUDE.md` restructured: German bootstrap (25 lines) → English project memory, 170 lines, ten sections. **V2.1–V2.3 all passed**; V2.3 verified live in a fresh session, answered from loaded memory with no file access. Decisions D2-a (C1–C8 split for a clean Phase 8 cut) and D2-b (CLAUDE.md vs ClaudeTransition.md by audience) recorded. |
 | R0.3 (Phase 1b, **complete**) | 2026-09-18 … 2026-09-23 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered and **proven to enforce**. **V1.10–V1.16 all passed 2026-09-23**, V1.16 = proceed (HEAD `e7580bb` unchanged, `README.md` untouched). **Patches P1–P6 applied**, matrix 65 → **77 passed**, ruff clean. T43 re-probe and hook-level V1.14 done; `self_protect` back to `true`. |
 
