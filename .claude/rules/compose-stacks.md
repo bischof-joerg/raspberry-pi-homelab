@@ -20,7 +20,15 @@ implementation; a new stack copies its shape, not its service list.
 - **Bind mounts only, no named volumes** (ADR-0008). Data lives under
   `/srv/data/stacks/<stack>/<service>/` on the Pi.
 - **Bind ports to `127.0.0.1` unless LAN exposure is a deliberate, documented decision.**
-  Currently deliberate: Grafana `3000` and VictoriaLogs `9428` (UFW-restricted).
+  Currently LAN-exposed: Grafana `3000` and VictoriaLogs `9428` (UFW-restricted). Both are
+  intentional, but the decision is **not recorded in any ADR** — `ADR-0001-networking-and-firewall.md`
+  mentions neither port (F42). Treat them as precedent, not as documentation, and do not cite them
+  to justify a third exposed port.
+- **A read-only mount does not contain a Docker socket.** `/var/run/docker.sock:ro` prevents writes
+  to the socket *file*; it does not prevent Docker API calls, so any container with the socket and
+  the `docker` group has host-root equivalence — `:ro` is not a mitigation (F28, F30). If a service
+  needs container metadata, treat a socket proxy as the default and a direct mount as an exception
+  that needs an ADR.
 - **Harden every service**: `read_only: true`, `cap_drop: [ALL]`,
   `security_opt: [no-new-privileges:true]`, a non-root `user:`, and a `healthcheck`.
 - **Use short service names** without prefixes: `grafana`, not `mon-grafana`.
@@ -31,7 +39,10 @@ implementation; a new stack copies its shape, not its service list.
 - Add a `healthcheck` even where the upstream image has none — `victorialogs`, `node-exporter`
   and `cadvisor` currently lack one (F7), and `victorialogs` also lacks a `restart` policy.
 - Keep resource limits where memory growth is plausible (VictoriaMetrics 4G, VictoriaLogs 2G).
-- Name volumes' host paths after the service: `<service>-data|config|db`.
+- Put host data under `/srv/data/stacks/<stack>/<service>/`, named after the service. A service
+  that needs a second directory suffixes it, as `alertmanager-config` does.
+  (`ChatGPTHint.txt` §4 proposes `<service>-data|config|db` instead; the implementation does not
+  follow it, and renaming would be a data migration — the hint is wrong here, not the repo. F40.)
 
 ## Documented exceptions — do not "fix" these
 

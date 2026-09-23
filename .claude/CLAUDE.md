@@ -61,7 +61,7 @@ Both files plus `.claude/.gitignore` are self-protected: **only the operator cha
 - **Secrets** — host-only `/etc/raspberry-pi-homelab/monitoring.env` (`root:root 600`), loaded via
   `docker compose --env-file` in `deploy.sh`. A repo-root `.env` is refused (ADR-0007).
 - **Naming** — compose project `<org>-<site>-<env>-<stack>`, e.g. `homelab-home-prod-mon`;
-  short service names without prefixes; volumes `<service>-data|config|db`.
+  short service names without prefixes; host data under `/srv/data/stacks/<stack>/<service>/`.
 - **Docs** — English only, Markdown, ADRs for decisions that constrain later work.
 
 ## 5. Repository map

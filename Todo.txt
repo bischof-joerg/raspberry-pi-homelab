@@ -95,8 +95,16 @@ vector update auf version image: timberio/vector:0.58.0-debian mit runtime issue
     reverted to image: timberio/vector:0.53.0-debian
 
 
-# Claud Transition
+# Nach Claude Transitions
+Verbessere den Stack:
+- Wie mit Grafana dashbords umgehen: Download und Formatierung mit bestehenden skripten, Review der Scripte nach neuer Grafana version
+- Konsistenz der ADRs mit Claude regeln überprüfen
+- Doku template für Services pro Stack in eigenem Verzeichnis pro stack mit template einführen für monitoring unter docs\services\monitoring\
+	- Empfehlung für template erarbeiten
+Reviewe den implementierten Stack - sind alle Regeln und Guidelines umgesetzt oder gibt es weiter Findings
+Arbeite an Findings - sind diese überhaupt noch offen?
 
+# Claud Transition
 
 
 
