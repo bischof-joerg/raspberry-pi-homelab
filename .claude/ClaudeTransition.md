@@ -1,9 +1,9 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 4 COMPLETE (v2.0, 2026-09-23) – Phases 1a/1b/2/3/4 complete. `.claude/skills/`
-  holds **eight skills**, always-loaded cost 1,236 characters in total. **V4.1–V4.6 all passed**,
-  nothing open. Running the skills produced F44 and corrected the picture F9 gave of the backup
-  state. Next: Phase 5 (subagents).
+- **Status:** PHASE 5 WRITTEN (v2.1, 2026-09-23) – Phases 1a/1b/2/3/4 complete. `.claude/agents/`
+  holds **four read-only subagents** (703 chars of always-loaded descriptions); **V5.3 passed** in
+  the corrected form from D5-a. V5.1/V5.2 need a **session restart** — agents, unlike skills, are
+  not hot-loaded. Next: Phase 6 (human docs and findings report).
 - **Earlier:** PHASE 3 COMPLETE (v1.8, 2026-09-23) – `.claude/rules/` holds **eight path-scoped
   rules** (none always-loaded); **V3.1, V3.2 and V3.3 all passed**. V3.2 proved on-demand loading
   with hard evidence (only 5 of 8 rules loaded). The reviews produced F30–F43 and corrected five of
@@ -1552,14 +1552,73 @@ frontmatter, where an unparsable `paths` quietly makes a rule global.
 
 ### Phase 5 – Subagents
 
-- [ ] Write four agent files with minimal tool sets (read-only: Read, Grep, Glob; no Edit/Write/Bash
+- [x] Write four agent files with minimal tool sets (read-only: Read, Grep, Glob; no Edit/Write/Bash
       unless justified and listed).
+      **DONE 2026-09-23** — four files, each `tools: Read, Grep, Glob`, nothing beyond.
+
+#### 5.0 Subagent mechanism as documented (verified 2026-09-23, Claude Code 2.1.276)
+
+Source: https://code.claude.com/docs/en/sub-agents (no publication date; newest version note
+v2.1.271).
+
+| Fact | Consequence |
+|---|---|
+| `.claude/agents/*.md`, scanned recursively; `name` and `description` are **required** | Matches section 5 |
+| **`tools` is an allowlist. Omitting it inherits _every_ tool available to subagents**, Edit, Write and Bash included | See D5-a — this inverts what V5.3 actually has to check |
+| `disallowedTools` is a denylist applied **before** `tools` | Not used; an explicit allowlist is unambiguous on its own |
+| `description` is **always loaded** at startup; a startup warning appears past 15,000 tokens combined | Same budget discipline as the skills, with far more headroom |
+| Subagents inherit the whole `CLAUDE.md` chain **and `.claude/rules/`** | See D5-b |
+| **`settings.json` hooks fire inside subagents** | The PreToolUse guard protects a subagent too. The tool allowlist is the first layer, not the only one |
+| No per-agent way to prevent automatic delegation; use `permissions.deny: ["Agent(<name>)"]` | Recorded for Phase 8, should an agent ever need to be switched off |
+| Invocation: automatic by description, `@agent-<name>`, or `--agent` for a whole session | `@`-mention guarantees a specific agent runs |
+
+**D5-a — the dangerous case is an absent `tools`, not a wrong one.** V5.3 as written ("agent
+definitions contain no Edit/Write tools") would happily pass a file that omits `tools` entirely and
+therefore grants everything. The check was inverted accordingly: `tools` **must be present**, and
+`.claude/scratch/check_agents.py` fails the file if it is missing. This is the same silent-failure
+class as unparsable rule frontmatter (which makes a rule global) and unknown skill keys (ignored
+without an error) — three different mechanisms, one shared trap: the failure mode is invisible.
+
+**D5-b — agent bodies must not restate the rules.** Subagents inherit `CLAUDE.md` and
+`.claude/rules/`, so the criteria are already in their context. Each body therefore carries only
+what the rules do not: the review *procedure*, the list of known findings to confirm in one line
+rather than re-investigate, and the report format. Repeating the rules would cost context twice and
+risk the contradiction the memory docs warn about.
+
+#### 5.1 What was written
+
+| Agent | Tools | Focus | desc | body |
+|---|---|---|---:|---:|
+| `compose-reviewer` | Read, Grep, Glob | per-service walk, mount existence, config-hash coverage | 179 | 38 |
+| `security-reviewer` | Read, Grep, Glob | secrets, exposure, privilege, supply chain | 197 | 41 |
+| `test-author` | Read, Grep, Glob | layer, false-green analysis, tests as text only | 155 | 39 |
+| `docs-steward` | Read, Grep, Glob | doc claims against code, verdict per claim | 172 | 45 |
+
+Always-loaded description total: **703 characters**.
+
+Each body names the findings it must *confirm in one line instead of re-investigating*, so a review
+spends its output on what is new rather than re-deriving F5, F8, F13, F26, F28, F30, F42 and F44.
 
 Verification:
 - V5.1 `/agents` lists all four.
+  **OPEN — needs a session restart.** Measured 2026-09-23: invoking `security-reviewer` right after
+  writing the files failed with `Agent type 'security-reviewer' not found. Available agents: claude,
+  claude-code-guide, Explore, general-purpose, Plan, statusline-setup`.
 - V5.2 `security-reviewer` on the compose file flags cadvisor `privileged: true` and LAN ports
   3000/9428 with the documented justification.
+  **OPEN — blocked by V5.1**, same reason.
 - V5.3 Agent definitions contain no Edit/Write tools.
+  **PASSED 2026-09-23**, and checked in the corrected form from D5-a: `tools` is **present** in all
+  four files and equals exactly `Read, Grep, Glob`. Verified mechanically by
+  `.claude/scratch/check_agents.py`, 0 failures — after Phase 3 and 4 this class of check is no
+  longer done by eye.
+
+**Newly measured asymmetry, worth remembering.** Skills written during a session became available
+**in that same session** (that is how V4.1–V4.5 could be run immediately). Agents written during a
+session do **not** — the agent registry is read at startup. The statement "no restart needed",
+recorded under V4.1, is therefore true for skills and false for agents. Do not generalise from one
+artefact type to another; each has its own loading moment, and the only reliable way to know is to
+try it.
 
 ### Phase 6 – Human documentation and findings report
 
@@ -1720,6 +1779,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
+| R0.7 (Phase 5) | 2026-09-23 | ? | ? | n/a | `.claude/agents/`: four read-only subagents, `tools: Read, Grep, Glob` each, 703 chars of always-loaded descriptions. D5-a (an absent `tools` grants everything — V5.3 inverted accordingly) and D5-b (bodies must not restate the inherited rules) recorded. V5.3 passed via `check_agents.py`; V5.1/V5.2 need a session restart, since agents are not hot-loaded the way skills are. |
 | R0.6 (Phase 4) | 2026-09-23 | ? | ? | n/a | `.claude/skills/`: eight skills, always-loaded description cost 1,236 chars total (cap is 1,536 per skill). D4-a (descriptions are the budget), D4-b (`allowed-tools` only on `readonly-gate`) and D4-c (no `paths` on skills) recorded. **V4.1–V4.6 all passed.** Invoking the skills produced F44 and showed that five of seven ADR-009 backup requirements are already implemented — F9 had made that invisible. |
 | R0.5 (Phase 3) | 2026-09-23 | ? | ? | n/a | `.claude/rules/`: eight path-scoped rule files, 468 lines, none always-loaded. D3-a (path scoping is mandatory, not optional) and D3-b (eight rules, not ten) recorded. V3.1 passed incl. a mechanical cited-path check; V3.2/V3.3 open. |
 | R0.4 (Phase 2, **complete**) | 2026-09-23 | ? | ? | n/a | `CLAUDE.md` restructured: German bootstrap (25 lines) → English project memory, 170 lines, ten sections. **V2.1–V2.3 all passed**; V2.3 verified live in a fresh session, answered from loaded memory with no file access. Decisions D2-a (C1–C8 split for a clean Phase 8 cut) and D2-b (CLAUDE.md vs ClaudeTransition.md by audience) recorded. |

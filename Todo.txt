@@ -105,6 +105,7 @@ Reviewe den implementierten Stack - sind alle Regeln und Guidelines umgesetzt od
 Arbeite an Findings - sind diese überhaupt noch offen?
 
 # Claud Transition
+- Weiter mit Phase 6
 
 
 
