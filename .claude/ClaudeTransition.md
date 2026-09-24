@@ -1,6 +1,21 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** READY FOR PHASE 0/1a (v0.9) – Q1–Q9 answered; R0.0 toolchain parity defined as first increment (10.6)
+- **Status:** PHASE 6 WRITTEN (v2.3, 2026-09-23) – `readme_claude.md` and
+  `reports/repo-findings.md` written; the verifiers moved from git-ignored `scratch/` to tracked
+  `tools/` (plus a new `check_findings.py`); §3.6 is now an index into the report. V6.2 passed
+  mechanically; **V6.1 is an operator step**. Claude Code is now **2.1.280**; V1.10–V1.13/V1.15
+  re-confirmed on it. **V6.1 PASSED 2026-09-24**. The walkthrough produced findings #1–#7, all fixed
+  in the readme or the skill; V1.14 re-confirmed. **Phase 6 complete pending the operator's
+  checkbox.** Next: Phase 7 (handover and CI parity).
+- **Earlier:** PHASE 5 COMPLETE (v2.2, 2026-09-23) – Phases 1a–5 complete. `.claude/agents/` holds
+  **four read-only subagents**; **V5.1–V5.3 all passed**. V5.2 produced **F45** (UFW likely does not
+  govern the published ports) and **F46** (cadvisor's privileged mode is undocumented and the docs
+  claim the opposite), extended F26 and closed F42's open caveat. Findings now run F1–F46.
+  Next: Phase 6 (human docs and findings report).
+- **Earlier:** PHASE 3 COMPLETE (v1.8, 2026-09-23) – `.claude/rules/` holds **eight path-scoped
+  rules** (none always-loaded); **V3.1, V3.2 and V3.3 all passed**. V3.2 proved on-demand loading
+  with hard evidence (only 5 of 8 rules loaded). The reviews produced F30–F43 and corrected five of
+  Claude's own artefacts (3.3). Next: Phase 4 (skills).
 - **Created:** 2026-09-16
 - **Scope:** Transform the existing ChatGPT-based working model (`ChatGPTHint.txt`) and the
   implemented repository conventions into Claude Code artefacts under `.claude/`.
@@ -47,7 +62,7 @@ Translated from the original German bootstrap instructions in `.claude/CLAUDE.md
 | E8 | Implementation state | Monitoring stack implemented; backup in progress; see `Todo.txt` | Section 3 |
 | Q1 | Scope of C1 (write only in `.claude/`) | **Transition only.** Afterwards Claude edits repository files. | C1/C2 live in a separate "Transition constraints" section and a separate deny block; Phase 8 retires both. C3–C6 stay permanent. |
 | Q2 | Pi identifiers | Deny host name `rpi-hub`, IP `192.168.178.29`, and the Pi FQDN (value pending, section 9). Calls to Pi services are denied now and allowed selectively later. | Broad deny patterns must be replaced by narrow ones in Phase 8, because deny always wins over allow. |
-| Q3 | Claude Code version (WSL) | `2.1.273` | Newer than all version notes cited from the settings docs (v2.1.211, v2.1.257, v2.1.267), so current docs apply. WSL checkout path still pending. |
+| Q3 | Claude Code version (WSL) | Phase 0: `2.1.273`; **at Phase 1a (2026-09-18): `2.1.276`** | Newer than all version notes cited from the settings and hooks docs (v2.1.211, v2.1.257, v2.1.267, v2.1.269), so current docs apply. The CLI updated itself between Phase 0 and Phase 1a, so the live hook tests V1.10–V1.16 must run on 2.1.276 (risk table: re-run after every update). |
 | Q4 | `make doctor` | Allowed (`make doctor`, `make doctor-strict`) | Added to allow list; covered by the before/after side-effect check. |
 | Q5 | Pi FQDN | `rpi-hub.fritz.box` (LAN only) | Added to deny list and hook config. `*rpi-hub*` already matches it; explicit entries kept for clarity and for WebFetch domain rules. |
 | Q7 | Guard implementation language | **Option A:** Python 3 standard library, tokenising exclusively with `shlex` | No third-party shell parser (e.g. `bashlex`). See H1/H8. |
@@ -142,35 +157,61 @@ Cross-cutting [V]: external networks `monitoring` and `apps` (bootstrapped by
 
 ### 3.6 Findings backlog (for the human operator – NOT to be fixed by Claude during transition)
 
-These go into `.claude/reports/repo-findings.md` in Phase 6 as proposals. Items marked [I] need
-verification in WSL or on the Pi by the operator.
+**Index only since Phase 6 (2026-09-23).** The full entries — evidence with `file:line`, impact,
+proposed fix, test and acceptance criterion — live in `.claude/reports/repo-findings.md`, which is
+the single source of truth. This index must list the same IDs; `.claude/tools/check_findings.py`
+fails if it does not. The earlier full table (with the evidence as first recorded) is in the git
+history of this file up to commit `2c88ea6`.
 
-| ID | Finding | Evidence |
-|---|---|---|
-| F1 | Config hash only includes `vmagent.yml`, `vmalert.yml`, `alertmanager/alertmanager.yml`, `victoriametrics.yml`. Changes to `vmalert/rules/*`, `vector/vector.yaml`, `alertmanager.yml.tmpl`, Grafana provisioning do not change the hash → no recreate. | `deploy.sh` `compute_monitoring_config_hash` [V] |
-| F2 | Hash list contains `alertmanager/alertmanager.yml` (only `.tmpl` exists in repo); `vmalert.yml` and `victoriametrics.yml` are in the repo but not mounted by compose. | compose + file list [V] |
-| F3 | Images pinned by tag, not digest (hint says prefer digests). | compose [V] |
-| F4 | Renovate manages only `docker-compose`; GitHub Actions (`@v4`/`@v5` tags), pre-commit hook revs, pip ranges and the Grafana plugin pin are unmanaged. | `renovate.json5`, `ci.yml` [V] |
-| F5 | `README.md` is stale: mentions Prometheus, Loki, Promtail, a different env path, broken relative links. | `README.md` [V] |
-| F6 | ADR numbering inconsistent (file ADR-0001 titled ADR-0004, ADR-0008 titled ADR-000X, ADR-009 three digits). | ADR files [V] |
-| F7 | `victorialogs` has no `restart` policy and no healthcheck; node-exporter/cadvisor have no healthcheck. | compose [V] |
-| F8 | Renderer installs `gettext` via `apk add` at every run → network dependency, non-deterministic package version. | compose [V] |
-| F9 | ADR-009 DD-012 requires tests before accepting backup scripts; no backup tests exist. | `tests/` listing [V] |
-| F10 | pre-commit pytest hook pins `pytest<9`, local `__pycache__` shows pytest 9.0.2 was used → toolchain drift. | `.pre-commit-config.yaml`, pyc names [I] |
-| F11 | `.gitattributes` enforces LF for sh/yml/yaml/json/toml but not `*.md`, `*.py`, `Makefile`, `*.json5`. | `.gitattributes` [V] |
-| F12 | `.env.example` lists `DOCKER_GID`/`SYSTEMD_JOURNAL_GID` twice and contains host-derived values, contradicting ADR-0007 §4. | `.env.example` [V] |
-| F13 | compose mounts `../alertmanager/templates`, which does not exist in the repo; Docker may create it on the Pi as root. | compose + listing [I] |
-| F14 | `docs/DevWorkflow.md` §4 commits before `make ci`; `ChatGPTHint.txt` §5 says only validated commits. | DevWorkflow [V] Addressed by increment R0.x docs merge (DevWorkflow.md + git-branch-workflow.md), pending merge. |
-| F15 | UFW is not reconciled on deploy; `cleanup-ufw.sh` is manual and has no make target (`Todo.txt` notes "Aktivieren in make"). Hint §7 expects UFW bootstrap in `deploy.sh`. | `deploy.sh`, `Makefile` [V] |
-| F16 | `bootstrap-networks.sh` runs without subnet/bridge env in deploy; on a fresh host `monitoring` would be created without `br-monitoring`/`172.20.0.0/16`, while `cleanup-ufw.sh`, `daemon.json` (`metrics-addr 172.20.0.1:9323`) and `test_35` depend on exactly these values. | `deploy.sh`, scripts [V]; fresh-host effect [I] |
-| F17 | Order in `deploy.sh`: `daemon.json` (with `metrics-addr` on the monitoring gateway IP) is applied and Docker restarted **before** networks are bootstrapped; on a fresh host the metrics address may not exist yet. | `deploy.sh` main [V]; Docker behaviour [I] |
-| F18 | `ensure-docker-daemon-json.sh` restarts Docker on any content change during deploy → full stack restart without a separate maintenance window or backup step. | script [V] |
-| F19 | Host-specific literals in reconciliation scripts: `cleanup-ufw.sh` usage path `/home/admin/iac/...`, stale bridge names `br-abe` and `br-bd2` in a regex; fixed temp file `/tmp/bootstrap-networks.overlap`. | scripts [V] |
-| F21 | Toolchain version drift between local tools and pre-commit/CI: pre-commit pins `shellcheck-py v0.10.0.1`, `ruff-pre-commit v0.14.11`, `yamllint v1.35.1`, while `requirements-dev.txt` uses ranges (`ruff>=0.9,<1.0`, `yamllint>=1.35,<2.0`) and the system ShellCheck in WSL is 0.9.0. `make venv` also upgrades pip unpinned. Results of the read-only gate and of pre-commit can differ. | `.pre-commit-config.yaml`, `requirements-dev.txt`, operator output [V] |
-| F22 | Second, diverging source of dev dependencies: `pyproject.toml` `[project.optional-dependencies].dev` (`ruff>=0.14.11`, `pytest>=8`, `typeguard>=4`, …) and the `pytest-precommit` hook's `additional_dependencies` duplicate `requirements-dev.txt`. `make venv` uses `requirements-dev.txt` only. | `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml` [V] |
-| F23 | `tests/precommit/test_15_json_valid.py` is marked `lint`, not `precommit`; `make precommit` runs `pytest tests/precommit -m precommit`, so this test is likely deselected in precommit, and `make test` ignores `tests/precommit`. Other files not yet checked. | test file + `Makefile` [V]; effect [I] |
-| F24 | `scripts/renovate/validate-config.sh` (pre-commit hook) runs `renovate/renovate:43` by tag only, while the Makefile pins the same image by digest; the hook needs Docker and a registry pull, contradicting the old DevWorkflow claim "no Docker runtime, no network". | script, `Makefile`, `.pre-commit-config.yaml` [V] |
-| F20 | `ensure-journald-read.sh` defaults to `TARGET_USER=vector` (no such host user expected) while `deploy.sh` passes `admin`; the container runs as uid 65532 and gets the GID via `group_add`, so group membership of `admin` is likely irrelevant for Vector. | scripts + compose [V]; relevance [I] |
+| ID | Finding | Sev | Status |
+|---|---|---|---|
+| F1 | Config hash is driven by a single runtime file | High | open |
+| F2 | Hash list names a missing file and two unmounted ones | Med | open |
+| F3 | Images pinned by tag, not by digest | Med | open |
+| F4 | Renovate manages compose images only | Med | open |
+| F5 | `README.md` describes a stack that no longer exists | Low | open |
+| F6 | ADR numbering and titles are inconsistent | Low | open |
+| F7 | Missing restart policy / healthchecks | Med | open |
+| F8 | Renderer installs `gettext` from the network at every run | Med | open |
+| F9 | Backup scripts have no tests although ADR-009 requires them | High | open |
+| F10 | pytest version drift between pre-commit and `.venv` | Low | addressed |
+| F11 | `.gitattributes` does not pin LF for all text types | Low | open |
+| F12 | `.env.example` duplicates keys and holds host-derived values | Low | open |
+| F13 | Compose mounts a templates directory that does not exist | Med | open |
+| F14 | DevWorkflow committed before `make ci` | Low | addressed |
+| F15 | UFW is not reconciled on deploy | Med | open |
+| F16 | Network bootstrap on deploy skips subnet/bridge validation | Med | open |
+| F17 | `daemon.json` applied before the network it references exists | Med | open |
+| F18 | Any `daemon.json` change restarts Docker during deploy | Med | open |
+| F19 | Host-specific literals in reconciliation scripts | Low | open |
+| F20 | `ensure-journald-read.sh` default user does not match its use | Low | open |
+| F21 | Toolchain drift between `.venv` and pre-commit | Med | partly |
+| F22 | Three diverging sources of dev dependencies | Med | open |
+| F23 | Tests marked `lint` are never run by any gate | Med | open |
+| F24 | Renovate validator hook runs a floating image tag | Med | open |
+| F25 | JSON test scans git-ignored files | Low | open |
+| F26 | Alertmanager SMTP password written world-readable | High | open |
+| F26b | The same password persists in every backup archive | High | open |
+| F27 | Container uid left to image defaults for 8 of 10 services | Med | open |
+| F28 | cadvisor mounts the Docker socket read-write | High | open |
+| F29 | Config-hash label missing on 5 of 10 services | High | open |
+| F30 | vector is effectively host root via the Docker socket | High | open |
+| F31 | Grafana admin credentials default to empty | High | open |
+| F32 | Grafana runs without `read_only` on a wrong justification | Med | open |
+| F33 | vector has no healthcheck | Low | open |
+| F34 | vector joins the `apps` network without a reason | Med | open |
+| F35 | Renderer swallows errors despite `set -euo pipefail` | Med | open |
+| F36 | Renderer builds YAML without escaping | Med | open |
+| F37 | `alpine:3.24` is a floating minor tag | Med | open |
+| F38 | `depends_on` ignores existing healthchecks | Low | open |
+| F39 | German comment in the renderer script | Low | open |
+| F40 | Volume naming rule contradicted the implementation | Low | addressed |
+| F41 | No static guard for the compose hardening contract | Med | open |
+| F42 | LAN exposure of 3000/9428 is recorded in no document | Med | partly |
+| F43 | ADR-0001 promises subnet validation the deploy path skips | Med | open |
+| F44 | Stale image tag in a Markdown example | Low | open |
+| F45 | UFW very likely does not govern the published ports | High | open |
+| F46 | cadvisor's privileged mode is undocumented; docs say the opposite | High | open |
 
 ### 3.7 Security-relevant facts for Claude's boundaries [V]
 
@@ -230,7 +271,8 @@ deploy. `ChatGPTHint.txt` §7 expects `deploy.sh` to bootstrap UFW → deviation
 ├── hooks/
 │   ├── guard.py               # PreToolUse guard (Python 3 stdlib only), fail-closed
 │   ├── guard-config.json      # policy data: pi identifiers, secret patterns, mode (transition|operate)
-│   └── tests/test_guard.py    # pytest matrix for the guard (run from .venv, no repo side effects)
+│   └── tests/                 # test_guard.py (T01–T35) + test_guard_operands.py (T36–T46)
+│                              # InstructionsLoaded logging is a command in settings.json, no script (3.2)
 ├── readme_claude.md           # human-facing: how to work with Claude in this repo, verification
 ├── ClaudeTransition.md        # this plan (living document, decision log)
 ├── rules/                     # topic/path-scoped instructions (verify `paths` frontmatter support in Phase 3)
@@ -259,6 +301,7 @@ deploy. `ChatGPTHint.txt` §7 expects `deploy.sh` to bootstrap UFW → deviation
 │   ├── test-author.md         # read-only during transition; proposes tests as text
 │   ├── security-reviewer.md   # read-only; secrets, exposure, UFW, privileges, supply chain
 │   └── docs-steward.md        # read-only; doc/ADR drift vs implementation
+├── tools/                     # tracked verifiers: check_rules/skills/agents/findings.py (Phase 6)
 ├── reports/                   # Phase 6 output, e.g. repo-findings.md
 ├── scratch/                   # git-ignored drafts (proposed patches, ADR drafts)
 └── logs/                      # git-ignored guard decision log (guard.log)
@@ -297,7 +340,7 @@ approval for the rest.
     "defaultMode": "plan",
     "deny": [
       // C1/C2: no writes outside .claude (anchor form verified in Phase 1, see V1.3)
-      "Edit(./.github/**)", "Edit(./docs/**)", "Edit(./scripts/**)", "Edit(./stacks/**)",
+      "Edit(/.claude/.gitignore)", "Edit(./.github/**)", "Edit(./docs/**)", "Edit(./scripts/**)", "Edit(./stacks/**)",
       "Edit(./tests/**)", "Edit(./config/**)", "Edit(./secrets/**)", "Edit(./logs/**)",
       "Edit(./.vscode/**)", "Edit(./Makefile)", "Edit(./deploy.sh)", "Edit(./README.md)",
       "Edit(./Todo.txt)", "Edit(./ChatGPTHint.txt)", "Edit(./pyproject.toml)",
@@ -356,8 +399,42 @@ Notes:
   equivalent is in 5.3.
 - `"Bash(*rpi-hub*)"` also blocks harmless local strings containing `rpi-hub`; accepted.
 - IP-based Pi access cannot be fully covered by patterns (K3). Confirm the Pi IP in Q2.
-- The exact semantics of `./` vs `/` anchors in project settings must be confirmed against the
-  permissions docs and by negative test V1.3 before the file is considered final.
+- The `./` anchors in the draft above are **superseded**; the as-built file uses `/` anchors.
+  See 5.2.1 for the resolved anchor question and every other deviation.
+
+### 5.2.1 As-built deviations from the 5.2 draft (Phase 1a, verified 2026-09-18)
+
+Source: https://code.claude.com/docs/en/permissions, retrieved 2026-09-18 (no publication date on
+the page; newest version notes cited there are v2.1.268/v2.1.269).
+
+| ID | Draft | As built | Reason |
+|---|---|---|---|
+| D-a | `Edit(./docs/**)`, `Edit(./Makefile)`, … | `Edit(/docs/**)`, `Edit(/Makefile)`, … | The docs define four pattern types: `path` and `./path` anchor at the **current directory**, `/path` at the **settings source** (= primary working directory for project settings), `//path` at the filesystem root, `~/path` at `$HOME`. `/` is cwd-independent and therefore the correct anchor for repo-root paths. This answers the open V1.3 question. |
+| D-b | – | added `"disableBypassPermissionsMode": "disable"` and `"disableAutoMode": "disable"` | Documented `permissions` keys. `defaultMode: plan` only sets the *starting* mode; these two keys prevent a session from being started in or switched to `auto`/`bypassPermissions`, which closes the remaining part of K8. |
+| D-c | `Read(**/.env)`, `Read(**/*.env)` | unchanged | Confirmed: bare/single-segment **deny** patterns match at any depth, and `Read(.env)` ≡ `Read(**/.env)`. `.env.example` does not end in `.env`, so it stays readable (T07). |
+| D-d | – | no path rules for `Write(...)`, `MultiEdit(...)`, `NotebookEdit(...)`, `Glob(...)` | Documented (v2.1.210+): Claude Code checks file permissions against `Edit(path)` and `Read(path)` rules **only**. A path rule on the other tool names is accepted but never consulted and warns at startup. `Edit(path)` governs Write/MultiEdit/NotebookEdit; `Read(path)` governs Glob. The draft already complied; recorded so it is not "fixed" later. |
+| D-e | `Bash(*rpi-hub*)` etc. | unchanged | Confirmed stronger than assumed: deny rules apply when **any** subcommand matches, including inside a subshell, a command substitution or a loop body, and they match past leading variable assignments. Wrappers `timeout`, `time`, `nice`, `nohup`, `stdbuf`, `command`, `builtin` and bare `xargs` are stripped before matching. Still **not** matched: the same program by absolute path (`/usr/bin/ssh`), inside `sh -c '…'`, or `git -C . push` → K3 stands, and closing exactly this gap is the guard's job (T10, T11, T14). |
+| D-f | – | `Edit(**)` + `Edit(!.claude/**)` **rejected** | See V1.3b below. |
+
+**V1.3b (optional catch-all experiment, operator-approved, result: negative).** Instead of
+enumerating known top-level paths, `deny: ["Edit(**)", "Edit(!.claude/**)"]` was tried, using the
+documented gitignore negation ("a deny pattern starting with `!` carves the paths it matches out of
+the `path` or `./path` rules listed before it"). Result on 2.1.276: **all** `Edit`/`Write` calls were
+denied, `.claude/` included — `File is in a directory that is denied by your permission settings.`
+The carve-out is ineffective here, matching the documented limit *"a carve-out can't reopen a file
+inside a directory that a rule blocks as a whole"*. Both entries were removed by the operator.
+
+Consequences to keep in mind:
+
+- The enumeration in 5.2 is the only workable deny form, so it covers **known** top-level paths
+  only. A newly created top-level file or directory is not denied by `settings.json`.
+- That residual gap is covered by the guard's path check (5.4.3), which allows nothing outside
+  `<root>/.claude/` regardless of the path's name (T02, T03, T04, T16).
+- `settings.json` takes effect **without restarting Claude Code** (observed: Bash allow/deny and the
+  Edit denies were live immediately after the file was written).
+- A deny rule cannot be approved interactively — deny always wins. A mistake in the deny list can
+  therefore lock Claude out of `.claude/` itself, and only the operator can undo it. Treat edits to
+  the deny list as operator-only from Phase 1b on (self-protection).
 
 ### 5.3 Read-only validation gate (skill `readonly-gate`)
 
@@ -388,6 +465,22 @@ of `docker compose config` or gitleaks) is checked by the same diff.
 
 Primary sources to re-check in Phase 1a (behaviour is version-dependent):
 https://code.claude.com/docs/en/hooks-guide and https://code.claude.com/docs/en/hooks.
+
+**Re-check performed 2026-09-18 on Claude Code 2.1.276.** The hooks reference carries no
+publication date; its newest version note is v2.1.267, so the installed CLI is at or past the
+documented state. Result: the contract in this section **holds unchanged**. Confirmed in detail:
+
+| Item | Documented behaviour (2026-09-18) | Effect on 5.4 |
+|---|---|---|
+| stdin payload | `session_id`, `transcript_path`, `cwd`, `tool_name`, `tool_input`, `hook_event_name`, `tool_use_id`, plus `permission_mode`, `prompt_id`, `scratchpad_dir` | H4 unchanged; the guard uses `tool_name`, `tool_input`, `cwd` only. The extra fields are available if a later phase needs them. |
+| exit 0 | "no decision", the normal permission flow still applies | Q8 unchanged: unclassified commands exit 0. |
+| exit 2 | blocks the call; stderr becomes the reason shown to Claude; a JSON `permissionDecision: "allow"` cannot override it | H3 unchanged. |
+| other exit codes | **1 and 3–255 do not block** | Confirms H2: the guard must use exactly 0 or 2, and every fail-closed path must exit 2. |
+| stdout JSON | optional `hookSpecificOutput.permissionDecision` = `allow`/`deny`/`ask` with `permissionDecisionReason` | Not used (H3). Exit 2 + stderr is sufficient and depends on fewer output-format details. |
+| `timeout` | unit is **seconds**, default 600 for `command` hooks | The planned `"timeout": 10` means 10 s, as intended. |
+| `${CLAUDE_PROJECT_DIR}` | substituted in `command` and also exported into the hook process environment | H4 works in both forms. |
+| matcher | exact name, `|`/`,`-separated list, or an **unanchored** JavaScript regex | `Edit` alone would already match `MultiEdit`/`NotebookEdit`; 5.4.1 keeps the explicit list for readability. The guard additionally treats any unknown edit-shaped tool defensively. |
+| tool names | `Bash`, `Edit`, `Write`, `Read`, `Grep`, `Glob`, `WebFetch` are listed explicitly; `MultiEdit`/`NotebookEdit` appear only contextually | No change; the guard classifies by tool name and falls through to exit 0 for anything it does not know. |
 
 **Documented contract used by the guard [V, hooks guide]:** the hook receives event JSON on stdin
 (including `tool_name`, `tool_input`, `cwd`); exit code `2` blocks the tool call and stderr is fed
@@ -438,6 +531,7 @@ unit, and the current names of file-editing tools in 2.1.273.
 2. Resolve relative to `cwd`, then `os.path.realpath` (follows symlinks and `..`).
 3. Allow only if the resolved path is inside `<root>/.claude/`.
 4. Block even inside `.claude/` for: `hooks/**`, `settings.json`, `settings.local.json` (self-protection, active from Phase 1b via config flag `self_protect: true`).
+5. File `.claude/.gitignore` is protected against edit
 
 #### 5.4.4 Read tools (Read, Grep, Glob)
 
@@ -457,34 +551,56 @@ The guard builds a list of *command segments* and inspects each one:
    `command`, `builtin`, `exec`, `nohup`, `nice`, `ionice`, `timeout <n>`, `time`, `stdbuf …`,
    `setsid`, `unbuffer`.
 4. **Normalise the head** to its basename (`/usr/bin/ssh` → `ssh`).
-5. **Heredocs and stdin scripts**: `bash <<…`, `sh -s`, `python3 -`, `| bash`, `| sh` → block
-   during transition (code body is not reliably inspectable).
+5. **Shell invocations whose code is not a `-c` argument** → block during transition. This covers
+   heredocs (`bash <<…`), stdin scripts (`sh -s`, `python3 -`), pipes into a shell (`| bash`,
+   `| sh`) and script arguments (`bash <script>`), because the executed body is not reliably
+   inspectable. A script path given this way is still checked against the Pi-script list first,
+   so the reported reason names the actual violation (C5 instead of C1).
 6. **Inline interpreter code**: `python3 -c`, `perl -e/-i`, `ruby -e`, `node -e` → block during
-   transition. `python -m pytest` and `.venv/bin/python -m pytest` stay allowed.
+   transition. The flags are matched anywhere in the segment, which also blocks unrelated uses of
+   the same flags (for example `python3 -m pytest -c pytest.ini`); accepted as a false positive.
+   `python -m pytest` and `.venv/bin/python -m pytest` without such a flag stay allowed.
 7. **Raw scan** of the full original string (after un-escaping) for Pi identifiers
    (`rpi-hub`, `rpi-hub.fritz.box`, `192.168.178.29`) → block. Catches quoting tricks that the
-   parser resolves differently.
+   parser resolves differently, and also blocks read-only commands that merely mention an
+   identifier (for example `grep -rn rpi-hub docs/`); accepted as a false positive.
 
 **Block list per segment (transition mode):**
 
 | Category | Heads / patterns |
 |---|---|
-| C4 Git | `git` with `commit`, `push`, `tag`, `merge`, `rebase`, `reset`, `checkout`, `switch`, `stash`, `add`, `rm`, `am`, `cherry-pick`, `revert`, `clean`, `config`, `gh` (all) |
-| C5 Remote / Pi | `ssh`, `scp`, `sftp`, `rsync`, `ansible*`, `mosh`, `nc`, `ncat`, `socat`, `telnet`; `curl`, `wget`, `ping`, `nmap` with any Pi identifier; `./deploy.sh`, `deploy.sh`, `sudo`, `su`, `doas`; any execution of `scripts/host/*`, `scripts/host-runtime/*`, `scripts/network/*`, `init-permissions.sh` (also via `bash <script>`); `ufw`, `systemctl`, `usermod`, `groupadd`, `docker network create`/`rm` |
-| C2 Mutating tools | `make` targets except `doctor`, `doctor-strict`, `help`; `pre-commit`; `pip`/`pip3 install`, `uninstall`; `ruff` without `--check`/`check --no-fix`; `ruff format` without `--check`; `gpg`; `docker` except `compose config`, `version`, `info`, `ps`, `images` |
-| C1 File writes | `rm`, `mv`, `cp`, `ln`, `touch`, `mkdir`, `rmdir`, `chmod`, `chown`, `truncate`, `install`, `dd`, `tee`, `patch`, `sed -i`, `git apply` → allowed only if **all** path operands resolve inside `<root>/.claude/` or an allowed temp dir (`/tmp/claude-*`) |
-| C1 Redirections | `>`, `>>`, `>` with clobber, `&>`, `2>` targets outside `.claude/`, `/tmp/claude-*`, or `/dev/null` |
-| C3 Secret reads | `cat`, `less`, `more`, `head`, `tail`, `grep`, `rg`, `awk`, `sed`, `source`, `.`, `base64`, `xxd`, `strings` on secret patterns (5.4.4) |
+| C4 Git / repository state | `git` with `commit`, `push`, `tag`, `merge`, `rebase`, `reset`, `checkout`, `switch`, `stash`, `add`, `rm`, `am`, `cherry-pick`, `revert`, `clean`, `config`; `gh` (all subcommands, reported as C4 because it creates commits, branches and pull requests) |
+| C5 Remote / Pi | `ssh`, `scp`, `sftp`, `rsync`, `ansible*`, `mosh`, `nc`, `ncat`, `socat`, `telnet`; any command containing a Pi identifier (step 7), which covers `curl`, `wget`, `ping`, `nmap`; `./deploy.sh`, `deploy.sh`, `sudo`, `su`, `doas`; any execution of `scripts/host/*`, `scripts/host-runtime/*`, `scripts/network/*`, `init-permissions.sh` (also via `bash <script>`); `ufw`, `systemctl`, `systemd-run`, `usermod`, `useradd`, `groupadd`, `groupmod`, `apt`, `apt-get`, `rpi-eeprom-update`, `rpi-update`; `docker network create`/`rm` (covered by the docker allowlist below) |
+| C2 Mutating tools | `make` targets except `doctor`, `doctor-strict`, `help` (a bare `make` is blocked too); `pre-commit`; `gpg`, `gpg2`; `pip`/`pip3` except `list`, `show`, `check`, `freeze`; `ruff` except `check --no-fix` and `format --check|--diff`; `docker` except `version`, `info`, `ps`, `images` and `docker compose config` |
+| C1 File writes | `rm`, `mv`, `cp`, `ln`, `touch`, `mkdir`, `rmdir`, `chmod`, `chown`, `chgrp`, `truncate`, `install`, `dd`, `tee`, `patch`, `shred`, `sed -i`, `git apply`. Every **write target** must resolve inside `<root>/.claude/` or an allowed temp dir (`/tmp/claude-*`). Which operands are targets: for `cp`, `mv`, `ln`, `install` (config key `target_last_operand_heads`) only the **last** operand; for `sed -i` all operands except the leading script (unless `-e`/`-f` is given); for `dd` only `of=`; for every other head all positional operands. Mode and owner operands of `chmod`, `chown`, `chgrp`, `install` are ignored. A `{}` placeholder from `find -exec` blocks with its own reason. `find -delete` is blocked. |
+| C1 Redirections | `>`, `>>`, `>` with clobber, `&>`, `2>` targets outside `.claude/`, `/tmp/claude-*`, or `/dev/null`; here-documents (`<<`, `<<<`) block per step 5; `<` targets are checked against the secret patterns |
+| C3 Secret reads | `cat`, `less`, `more`, `head`, `tail`, `grep`, `rg`, `egrep`, `fgrep`, `awk`, `sed`, `source`, `.`, `base64`, `xxd`, `od`, `strings`, `tar`, `zip` on secret patterns (5.4.4); additionally the **source** operands of `cp`, `mv`, `ln`, `install` and the `if=` operand of `dd`, so relaxing the target rule above cannot exfiltrate secrets into `.claude/` |
+| Self-protection | With `self_protect: true`, any write target inside `.claude/hooks/**`, `.claude/settings.json` or `.claude/settings.local.json` blocks with a self-protection reason, in `transition` and in `operate` mode alike |
 
 Anything the parser cannot classify is **not** blocked by the guard (exit 0, decision Q8) and falls through to
 the deny rules and the plan-mode approval prompt. This keeps normal read-only work usable; the
 operator remains the final gate.
 
-#### 5.4.6 Test matrix (`.claude/hooks/tests/test_guard.py`)
+The head lists above are policy data in `guard-config.json` (H5), not literals in `guard.py`:
+`shell_heads`, `interpreter_heads`, `interpreter_inline_flags`, `denied_git_subcommands`,
+`write_git_subcommands`, `operator_only_heads`, `remote_heads`, `host_mutation_heads`,
+`denied_heads`, `write_heads`, `target_last_operand_heads`, `mode_operand_heads`,
+`secret_read_heads`, `nested_exec_heads`, `allowed_make_targets`, `allowed_docker_subcommands`,
+`allowed_docker_compose_subcommands`, `allowed_pip_subcommands`, `pi_script_fragments`,
+`pi_script_basenames`, `allowed_temp_prefixes`, `null_targets`.
+
+#### 5.4.6 Test matrix (`.claude/hooks/tests/`)
 
 Run: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .claude/hooks/tests`
 The tests invoke `guard.py` as a subprocess with crafted stdin JSON and `CLAUDE_PROJECT_DIR`
 pointing to a temporary fixture repo (`tmp_path`), so no real repo file is touched.
+
+The matrix spans two files since Phase 1b:
+
+- `test_guard.py` – **T01–T35**, one test function per row (T18 and T19 assert both sub-cases).
+- `test_guard_operands.py` – **T36–T43**, the operand-classification patch: which operand of a
+  command is a write *target* versus a *source*, and which violations must report self-protection
+  rather than a plain C1 breach.
 
 | Case | Input | Expected |
 |---|---|---|
@@ -523,6 +639,18 @@ pointing to a temporary fixture repo (`tmp_path`), so no real repo file is touch
 | T33 | Bash `bash scripts/network/cleanup-ufw.sh --verbose` (dry-run mode) | exit 2 |
 | T34 | Bash `DRY_RUN=1 ./scripts/network/bootstrap-networks.sh` | exit 2 |
 | T35 | Read `scripts/network/cleanup-ufw.sh` | exit 0 |
+| T36 | Bash `cp README.md .claude/scratch/copy.md` | exit 0 (source may be outside) |
+| T37 | Bash `cp .claude/scratch/a.md docs/copy.md` | exit 2 (target outside) |
+| T38 | Bash `cp secrets/backup/gpg/key.asc .claude/scratch/k` | exit 2 (C3 source) |
+| T39 | Bash `sed -i s/a/b/ .claude/scratch/a.md`; Bash `sed -i s/a/b/ README.md` | exit 0; exit 2 |
+| T40 | Bash `dd if=/dev/zero of=.claude/scratch/d.bin`; `… of=README.md` | exit 0; exit 2 |
+| T41 | Bash `sed -i s/a/b/ .claude/hooks/guard.py` with `self_protect: true` | exit 2, reason mentions self-protection |
+| T42 | Bash `gh pr create` | exit 2, reason C4 |
+| T43 | Bash `echo x > .claude/.gitignore` with `self_protect: true` | exit 2, reason mentions self-protection (redirection into a self-protected path) |
+| T44 | Bash `ls > /dev/null 2>&1`; Bash `ls 2>&1 \| tail -3` (fd duplication) | exit 0; exit 0 |
+| T45 | Bash `echo x &> README.md` | exit 2 |
+| T46 | Write `~/.claude/plans/x.md` (plan-mode plan file) | exit 0 (P6 applied) |
+| T46b | Write `~/.claude/settings.json`, `~/.claude/plans-evil/x.md`, `~/.ssh/id_rsa` | exit 2 — the P6 allowance stays narrow; the trailing slash in the prefix is what makes `plans-evil` fail |
 
 ---
 
@@ -557,17 +685,31 @@ Acceptance: branch exists, Claude Code version recorded, questions answered.
 Deliverables: `.claude/.gitignore`, `.claude/hooks/guard.py`, `.claude/hooks/guard-config.json`,
 `.claude/hooks/tests/test_guard.py`, draft `.claude/settings.json` **without** the `hooks` block.
 
-- [ ] Re-read hooks docs (5.4) and record doc date and any contract differences here.
-- [ ] Write `.claude/.gitignore`: `settings.local.json`, `scratch/`, `logs/`.
-- [ ] Write `settings.json` from 5.2 (strict JSON), `self_protect: false` in guard config.
-- [ ] Write `guard.py`, `guard-config.json`, tests T01–T35.
-- [ ] Restart Claude Code; run `/status`, `/permissions`.
+- [x] Re-read hooks docs (5.4) and record doc date and any contract differences here.
+      *Done 2026-09-18, recorded in 5.4; permissions docs re-read as well, recorded in 5.2.1.*
+- [x] Write `.claude/.gitignore`: `settings.local.json`, `scratch/`, `logs/`.
+      *Done. `logs/` is redundant with the root `.gitignore` rule but kept explicit (K5).*
+- [x] Write `settings.json` from 5.2 (strict JSON), `self_protect: false` in guard config.
+      *Done with deviations D-a, D-b, D-f (5.2.1). No `hooks` block, no self-protection denies —
+      both are Phase 1b and operator-applied.*
+- [x] Write `guard.py`, `guard-config.json`, tests T01–T35.
+      *Done. `guard.py` ≈ 600 lines, stdlib only; policy data entirely in `guard-config.json` (H5);
+      35 test functions, one per matrix row (T18 and T19 assert both sub-cases).*
+- [x] Restart Claude Code; run `/status`, `/permissions`.
+      *Operator step. Note: `settings.json` was already live without a restart.*
 
-Verification:
+Verification (Claude-run results recorded 2026-09-18 on Claude Code 2.1.276; the live checks
+V1.2–V1.8 need the operator, because plan mode and the permission dialog are not scriptable):
 - V1.1 `git check-ignore -v .claude/settings.local.json .claude/logs/guard.log .claude/scratch/x` → all matched by `.claude/.gitignore`.
+  **PASSED:** `.claude/.gitignore:6:settings.local.json`, `.claude/.gitignore:12:logs/`,
+  `.claude/.gitignore:9:scratch/` → K5 closed. Before the file existed, only `guard.log` was
+  ignored (by the root rule `logs/`); `settings.local.json` and `scratch/` were not ignored at all.
 - V1.2 `/status` lists "Shared project settings"; mode shows plan.
 - V1.3 Negative test: ask Claude to append a line to `README.md` → denied without prompt. If not,
-  switch the anchor form per the permissions docs and re-test. Working form: `__________`.
+  switch the anchor form per the permissions docs and re-test. Working form: `Edit(/README.md)`
+  (`/`-anchored, D-a; still to be confirmed live by the operator).
+- V1.3b Catch-all experiment `Edit(**)` + `Edit(!.claude/**)` → **FAILED, entries removed.**
+  Full result in 5.2.1 (D-f).
 - V1.4 Negative tests: `git commit --allow-empty -m test`, `ssh rpi-hub true`, `make precommit`,
   reading a file under `secrets/` → all denied.
 - V1.5 Positive test: edit a file under `.claude/scratch/` → allowed after approval.
@@ -577,11 +719,22 @@ Verification:
   `ping -c1 rpi-hub.fritz.box`, WebFetch `http://rpi-hub:3000` → all denied.
 - V1.9 `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .claude/hooks/tests` → 35 passed;
   `.venv/bin/ruff check --no-fix --no-cache .claude/hooks` and `ruff format --check` clean.
+  **PASSED:** `35 passed in 0.97s`; ruff check → `All checks passed!`; ruff format --check →
+  `2 files already formatted`.
+- V1.9b (added) K9 line endings: `grep -rl $'\r' .claude` → no output.
+- V1.9c (added) C1/C2 side-effect proof: `git status --porcelain --ignored` captured before and
+  after the full test run → `OK: no side effects`. `git diff --stat -- . ':!.claude'` shows only
+  `Todo.txt`, which was already modified before the session started.
+- V1.9d (added) Repository static tests with the new artefacts present, run read-only from `.venv`:
+  `tests/precommit -m precommit` → 8 passed, 4 deselected; `tests/guards` + `tests/doctor`
+  (`-m "not postdeploy"`) → 7 passed, 1 skipped. `tests/precommit -m lint` → 1 failed, 3 passed;
+  the failure is pre-existing and unrelated to `.claude/` (new finding F25).
 
 ### Phase 1b – Activate the hook (operator applies, Claude verifies)
 
-- [ ] Operator reviews `guard.py` line by line (it is the enforcement boundary).
-- [ ] Operator adds the `hooks` block (5.4.1) and self-protection denies (5.2) to `settings.json`
+- [x] Operator reviews `guard.py` line by line (it is the enforcement boundary).
+      *Done 2026-09-18, reviewed and made some changes with help of Claude, commit hash 117d092f528494786b66ff4bb166075ed86e7344, message: fix(claude-guard): classify write targets separately from sources...*
+- [x] Operator adds the `hooks` block (5.4.1) and self-protection denies (5.2) to `settings.json`
       and sets `self_protect: true`. From here on, only the operator changes hook/settings files.
 - [ ] Restart Claude Code; `/hooks` shows the PreToolUse entry.
 
@@ -595,6 +748,444 @@ do **not** match them; a block therefore proves the hook works:
 - V1.15 `.claude/logs/guard.log` contains one JSON line per V1.10–V1.13 decision.
 - V1.16 If any of V1.10–V1.13 is **not** blocked: stop, record Claude Code version and case,
   treat the hook as non-enforcing (see risk table), and escalate before Phase 2.
+
+**RESULTS — executed 2026-09-23 by Claude as live tool calls, Claude Code 2.1.276, branch
+`chore/r0-claude-safety-foundation`, HEAD `e7580bb`.** Every case is a real tool call, so the hook
+was exercised end-to-end; stderr is quoted verbatim.
+
+| ID | Verdict | Verbatim guard reason |
+|---|---|---|
+| V1.10 | **PASSED** | `guard: C4: git commit is reserved for the operator` |
+| V1.10b | **PASSED** | `guard: unbalanced quotes in command` — the unbalanced form fails closed on the quote and never reaches the C4 classification, confirming that only the balanced form actually tests C4 |
+| V1.11 | **PASSED** | `guard: C5: command references the Raspberry Pi (rpi-hub)` (raw identifier scan, 5.4.5 step 7) |
+| V1.12 | **PASSED** | `guard: C1: redirection would write outside .claude/: README.md` |
+| V1.13 | **PASSED** | `guard: self-protection: only the operator edits /home/micro/src/raspberry-pi-homelab/.claude/hooks/guard.py` |
+| V1.14 | **PASSED (complete)** | Variant on 2026-09-23 via `--config /tmp/claude-missing-config.json`; hook-level half completed the same day after the operator renamed the file. See note below. |
+| V1.15 | **PASSED** | 8 new JSON lines (log grew 49 → 57), each with `ts`, `tool`, `input`, `decision`, `reason`; both `block` and `pass` decisions recorded |
+| V1.16 | **PROCEED** | No case was unblocked. The hook enforces on 2.1.276; no escalation needed, Phase 2 is unblocked. |
+
+V1.14 in two steps. The planned rename is an operator step, and the guard twice refused to let
+Claude do it — `mv .claude/hooks/guard-config.json .claude/hooks/guard-config.json.bak` →
+`guard: self-protection: only the operator edits .claude/hooks/guard-config.json.bak`. Note it
+caught the *target* operand, which is the operand-classification fix from the Phase 1b guard review
+working as intended. The fail-closed path was therefore first exercised by invoking
+`guard.py --config /tmp/claude-missing-config.json` directly.
+
+**Hook-level half completed 2026-09-23.** The operator renamed the config, Claude made two ordinary
+tool calls, and both were blocked with the identical reason:
+
+```text
+Bash `ls`          -> PreToolUse:Bash hook error: guard: fail-closed: FileNotFoundError:
+                      [Errno 2] No such file or directory: '…/.claude/hooks/guard-config.json'
+Read `README.md`   -> PreToolUse:Read hook error: guard: fail-closed: FileNotFoundError: (identical)
+```
+
+The `Read` case matters as much as the `Bash` one: it shows fail-closed covers the **whole matcher**,
+not just command execution. A missing policy file does not make the guard permissive, it makes it
+total. The operator restored the name afterwards and the guard was confirmed operational again
+(a harmless `ls -la` probe returned exit 0).
+
+**Layering observation from the same test.** The `mv` was blocked by the *hook*, not by P5's
+`Edit(/.claude/hooks/**)` deny rule. Per the permissions docs, deny rules check redirect and `tee`
+targets against `Edit` rules, but not arbitrary command operands — so a Bash `mv` slips past the
+settings layer entirely and only the guard catches it. Conversely the settings layer catches things
+before the hook ever runs. The two layers cover **different** surfaces; neither alone is sufficient,
+which is the concrete justification for keeping P5.
+
+No side effects, verified before and after:
+
+- HEAD unchanged at `e7580bb`, no new commit despite V1.10.
+- `README.md` byte-identical: blob `2eb4543eca640eb2dc401861f7438ff7dfdc7ccd`, 3082 bytes.
+- `.claude/hooks/` still contains `guard-config.json`, `guard.py`, `tests`.
+- `git status --porcelain` shows only `Todo.txt` (operator's own edit).
+
+**Consequence for the risk table:** the row "Hook deny ignored by Claude Code (reported in #37210,
+#43407 for earlier versions)" is **not** realised on 2.1.276 — deny was honoured for `Bash` and
+`Edit` in six independent cases. The mitigation stands unchanged: re-run V1.10–V1.16 after every
+Claude Code update, because this is a version-specific observation, not a guarantee.
+
+**Live evidence collected so far (2026-09-18, Claude Code 2.1.276, hook registered).** These were
+observed incidentally while adapting the tests, before the planned restart:
+
+- **V1.13 PASSED.** `Edit .claude/hooks/guard.py` →
+  `PreToolUse:Edit hook error: […] guard: self-protection: only the operator edits
+  /home/micro/src/raspberry-pi-homelab/.claude/hooks/guard.py`. The edit did not happen.
+- **Bonus (5.4.5 step 6) PASSED.** A `Bash` call containing `python3 -c …` →
+  `PreToolUse:Bash hook error: […] guard: C1: inline interpreter code is not inspectable: python`.
+- Both blocks prove the hook **is enforcing** on 2.1.276 for the `Edit` and `Bash` tools, which is
+  the failure mode reported in issues #37210/#43407 for earlier versions. V1.10–V1.12 and V1.14–V1.15
+  still need to be run explicitly after the restart; the risk-table rule (re-run after every Claude
+  Code update) stays in force.
+
+**Open items found while adapting the tests (operator action, both inside self-protected files):**
+
+1. **Self-protection denies are incomplete in `settings.json`.** The deny list contains
+   `Edit(/.claude/.gitignore)` but **not** `Edit(/.claude/hooks/**)` and
+   `Edit(/.claude/settings.json)`, which 5.2 requires from Phase 1b on. The guard covers all three
+   via `self_protect: true`, so the boundary holds today, but it rests on a single layer instead of
+   the intended two. Adding them restores defence in depth.
+2. **T43 blocks with the wrong reason.** Verified against the live guard:
+   `echo x > .claude/.gitignore` → exit 2 with
+   `C1: redirection would write outside .claude/: .claude/.gitignore`. The path is plainly *inside*
+   `.claude/`, so the message misdirects; the actual cause is self-protection.
+   `check_redirections` is the only write path that still lacks the self-protection branch that
+   `check_write_operands` and `check_file_tool` already have. Fix: patches **P1** (guard) and **P2**
+   (test) below; T43 is the regression test for it.
+3. **`2>&1` is falsely blocked (found by using the guard, not by the matrix).** `split_segments`
+   treats every bare `&` as a control operator, so it splits inside the fd-duplication forms `>&`
+   and `&>`. Probed against the live guard:
+
+   | Command | Result |
+   |---|---|
+   | `ls 2>&1` | exit 2, `C1: redirection without a target` |
+   | `ls 2>&1 \| tail -3` | exit 2, same |
+   | `ls > /dev/null 2>&1` | exit 2, same |
+   | `ls &> /dev/null` | exit 0, but only by accident: the `&` was read as backgrounding and the leftover `> /dev/null` happened to be allowed |
+
+   Impact: this is a false positive on an extremely common shell idiom, so it blocks routine
+   read-only work and pushes the operator towards workarounds — the "guard bug blocks legitimate
+   work" risk in section 7, now realised. The read-only gate in 5.3 is unaffected because it uses
+   no `2>&1`. Fix: patches **P3** (guard) and **P4** (tests) below; T44/T45 are the regression rows.
+
+4. **The guard makes plan mode unusable (structural, not a parser bug).** C1 permits writes only
+   under the *project's* `.claude/`, but Claude Code's plan mode writes its plan file to the
+   *user's home* `.claude/plans/`. Observed 2026-09-18:
+
+   ```text
+   guard: C1: writes are restricted to .claude/ during the transition:
+     /home/micro/.claude/plans/bash-c-git-commit-lively-boole.md
+   ```
+
+   `ExitPlanMode` reads the plan from that file, so with the guard active the plan-mode workflow
+   cannot be completed at all — neither writing the plan nor exiting it. Decision E2 makes plan mode
+   the default working mode, so this blocks the intended way of working.
+   Proposed fix (operator, `guard-config.json` is self-protected): add a dedicated
+   `allowed_write_prefixes` entry for `~/.claude/plans/`, kept separate from
+   `allowed_temp_prefixes` so the intent stays readable. `guard.py` already expands `~` in
+   `is_write_allowed`, but `check_file_tool` does **not** consult the prefix list — it only allows
+   `<root>/.claude/`, so the fix needs a small change there too, plus a test row (T46).
+   Interim workaround: work without plan mode, as in this session.
+
+**Process observation.** All four items were found by *using* the guard for ordinary work, not by
+the T01–T45 matrix, which only covers cases the design anticipated. Worth carrying into Phase 2+:
+the matrix proves the design, day-to-day use finds the parser's blind spots.
+
+#### Phase 1b – session state 2026-09-18 (handover, verifications incomplete)
+
+**Status (2026-09-23): PHASE 1b COMPLETE.** V1.10–V1.16 all passed on Claude Code 2.1.276, patches
+P1–P6 applied in a deliberate `self_protect: false` window that was closed again, matrix at
+77 passed, and both follow-ups (3a T43 re-probe, 3b hook-level V1.14) done. `self_protect` is back
+to `true` and the guard was confirmed operational. Nothing is left open in Phase 1b; the next step
+is Phase 2, after the operator has committed.
+
+Done and evidenced:
+
+- Hook registered in `.claude/settings.json` (matcher `Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash|WebFetch`, `python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/guard.py"`, `timeout: 10`).
+- `self_protect: true`; `self_protected_paths` = `hooks`, `settings.json`, `settings.local.json`, `.gitignore`.
+- Operator review of `guard.py` done, with fixes: write targets classified separately from sources
+  (`target_last_operand_heads`), `gh` moved to `operator_only_heads`, `.gitignore` protected.
+  Commit `117d092f528494786b66ff4bb166075ed86e7344`.
+- Test matrix extended to two files, **65 passed** (35 + 30), ruff clean, no side effects.
+- **V1.13 passed live** (self-protection on `Edit .claude/hooks/guard.py`).
+- Hook wiring proven live for both tools: `Bash` blocked twice on the `2>&1` defect and once on
+  `python3 -c`; `Edit` blocked on V1.13. This already answers the #37210/#43407 risk for 2.1.276 —
+  PreToolUse deny is **not** ignored on this version.
+- `.claude/logs/guard.log` is being written (9,133 bytes at handover) → H6 works, V1.15 has data.
+
+Open, in the order to do them next session:
+
+| # | Item | Who | Notes |
+|---|---|---|---|
+| 1 | ~~Apply patches **P1–P4**~~ | — | **DONE 2026-09-23** in the `self_protect: false` window. |
+| 2 | ~~Apply patch **P5**~~ | — | **DONE 2026-09-23**, applied last so it re-locks `.claude/hooks/**`. |
+| 3 | ~~Decide on the plan-mode fix~~ | — | **DONE 2026-09-23**: decided to allow `~/.claude/plans/`, implemented as **P6**, T46 covers it. |
+| 3a | ~~Set `self_protect` back to `true`, then re-probe T43~~ | — | **DONE 2026-09-23**: restored, re-probe gave `exit 2`, `guard: self-protection: only the operator edits .claude/.gitignore`. P1 confirmed in production. |
+| 3b | ~~Finish the hook-level half of V1.14~~ | — | **DONE 2026-09-23**: both `Bash` and `Read` failed closed while the config was renamed; name restored and guard confirmed operational. |
+| 4 | ~~Run V1.10–V1.16 and record verbatim~~ | — | **DONE 2026-09-23**, all passed, V1.16 = proceed. Results table above. Only the hook-level half of V1.14 (rename the config) is still open. |
+| 5 | Tick the Phase 1a/1b checkboxes | operator | Claude records results but never ticks. |
+| 6 | Then Phase 2 (`CLAUDE.md` restructuring) | Claude | **Unblocked** — V1.16 says proceed. |
+
+Why V1.10 must not be run as a plain shell command: a PreToolUse hook fires only on *Claude's*
+tool calls. Typed into the operator's own shell, `bash -c "git commit --allow-empty -m test"` does
+not reach the guard and simply creates an empty commit. The form below invokes the guard directly —
+it only evaluates, never executes — and with `CLAUDE_PROJECT_DIR` unset it also exercises the H4
+fallback via `git rev-parse --show-toplevel`.
+
+```bash
+cd /home/micro/src/raspberry-pi-homelab
+R=/home/micro/src/raspberry-pi-homelab
+
+# V1.10  balanced -- expect exit 2, reason names C4/git
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"bash -c \"git commit --allow-empty -m test\""},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.10 exit=$?"
+# V1.10b unbalanced quote -- expect exit 2, fail-closed (T23), NOT a C4 reason
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"bash -c \"git commit --allow-empty -m test"},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.10b exit=$?"
+# V1.11  expect exit 2, reason names C5
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"sh -c \"true && ssh rpi-hub.fritz.box true\""},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.11 exit=$?"
+# V1.12  expect exit 2, reason names C1
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"echo test > README.md"},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.12 exit=$?"
+# V1.13  expect exit 2, reason names self-protection
+printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":".claude/hooks/guard.py"},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.13 exit=$?"
+# V1.14  fail-closed while the config is missing
+mv .claude/hooks/guard-config.json .claude/hooks/guard-config.json.bak
+printf '%s' '{"tool_name":"Bash","tool_input":{"command":"ls"},"cwd":"'$R'"}' | python3 .claude/hooks/guard.py; echo "V1.14 exit=$?"
+mv .claude/hooks/guard-config.json.bak .claude/hooks/guard-config.json
+# V1.15  one JSON line per decision above
+tail -8 .claude/logs/guard.log
+```
+
+Additionally worth one live Claude tool call next session, because only that exercises the hook
+end-to-end rather than the guard in isolation: ask Claude to run `bash -c "git commit --allow-empty
+-m test"`. Expected: blocked by the hook, and `git log -1` unchanged.
+
+#### Phase 1b – guard patches P1–P5 (**APPLIED 2026-09-23**)
+
+These live here rather than in `.claude/scratch/` because `scratch/` is git-ignored: a copy there
+survives on disk but not in a commit or a fresh clone. This subsection stays after application as
+the record of what changed and why. All findings were verified against the live guard on
+2026-09-23, Claude Code 2.1.276.
+
+**How they were applied.** `self_protect: true` covers `.claude/hooks/**`, so Claude was blocked
+from applying them — correctly, and demonstrated twice. The operator therefore opened a deliberate,
+short-lived window by setting `self_protect: false`; Claude applied P1–P5 in order and the operator
+closed the window afterwards. **P5 was applied last on purpose**: it adds `Edit(/.claude/hooks/**)`
+to the deny list, which locks Claude out of those files again regardless of `self_protect`.
+
+A sixth change rode along in the same window, because it needs the same files — the plan-mode fix,
+open item 4, recorded below as **P6**.
+
+##### P1 – `guard.py`, in `check_redirections`: report self-protection (T43)
+
+Symptom:
+
+```text
+$ printf '%s' '{"tool_name":"Bash","tool_input":{"command":"echo x > .claude/.gitignore"},"cwd":"/home/micro/src/raspberry-pi-homelab"}' | python3 .claude/hooks/guard.py
+guard: C1: redirection would write outside .claude/: .claude/.gitignore
+exit=2
+```
+
+The call is blocked, so the boundary holds, but the reason is wrong: `.claude/.gitignore` is
+*inside* `.claude/`. The cause is self-protection. Same for `echo x > .claude/settings.json`.
+Root cause: `check_redirections` calls `is_write_allowed`, which returns `False` for a
+self-protected path without saying why. `check_write_operands` and `check_file_tool` already have
+the explicit self-protection branch; the redirection path does not.
+
+```diff
+             if token.endswith("<"):
+                 if is_secret(ctx, target):
+                     raise Blocked(f"C3: input redirection reads secret material: {target}")
+                 continue
++            if is_self_protected(ctx, resolve(ctx, target)):
++                raise Blocked(f"self-protection: only the operator edits {target}")
+             if not is_write_allowed(ctx, target):
+                 raise Blocked(f"C1: redirection would write outside .claude/: {target}")
+```
+
+Mirrors the existing branch in `check_write_operands`; no new imports, and no behaviour change for
+paths that are not self-protected — they still report C1.
+
+##### P2 – `test_guard_operands.py`: T43 regression test
+
+Add to the existing `test_self_protection_reports_itself` parametrize list, which already asserts
+`"self-protection" in reason` and builds a config with `self_protect=True`:
+
+```diff
+ @pytest.mark.parametrize(
+     "command",
+     [
+         "sed -i s/a/b/ .claude/hooks/guard.py",
+         "cp /tmp/x .claude/settings.json",
+         "rm .claude/hooks/guard-config.json",
++        # T43: redirection into a self-protected path must report self-protection, not C1
++        "echo x > .claude/.gitignore",
++        "echo x > .claude/settings.json",
+     ],
+ )
+```
+
+The second added line is not a matrix row, but it is the same defect through the same code path and
+costs nothing to cover.
+
+##### P3 – `guard.py`, in `split_segments`: stop splitting fd duplication (T44/T45)
+
+Separate defect, found by running an ordinary command. Every bare `&` is treated as a control
+operator, so the fd-duplication forms `>&` and `&>` are split apart:
+
+```text
+$ ls 2>&1                 -> exit 2, "C1: redirection without a target"
+$ ls > /dev/null 2>&1     -> exit 2, same
+$ ls 2>&1 | tail -3       -> exit 2, same
+$ ls &> /dev/null         -> exit 0, but only because the leftover "> /dev/null" was allowed
+```
+
+`ls 2>&1` becomes the segments `ls 2>` and `1`; the first ends in a redirect operator with nothing
+after it, so the fail-closed branch fires. Add the two exceptions before the separator test:
+
+```diff
+         if not in_single and not in_double:
+             if text[i : i + 2] in ("&&", "||", "|&", ";;"):
+                 segments.append("".join(current))
+                 current = []
+                 i += 2
+                 continue
++            # `>&` / `<&` / `&>`: part of a redirection, not a control operator
++            if ch == "&" and (
++                "".join(current).rstrip()[-1:] in ("<", ">") or text[i + 1 : i + 2] == ">"
++            ):
++                current.append(ch)
++                i += 1
++                continue
+             if ch in ";|&\n":
+```
+
+`check_redirections` already handles the resulting tokens correctly: `>&` ends in `&` and is skipped
+as fd duplication, `&>` is treated as an output redirect and its target is checked. Real
+backgrounding (`sleep 5 &`, `a & b`) still splits, because neither exception applies.
+
+##### P4 – `test_guard_operands.py`: T44/T45 regression tests
+
+Add to the `test_write_targets` parametrize list:
+
+```diff
++        # T44: fd duplication is not a redirect target
++        ("ls > /dev/null 2>&1", PASS),
++        ("ls 2>&1 | tail -3", PASS),
++        # T45: &> is an output redirect and its target is checked
++        ("echo x &> README.md", BLOCK),
++        ("echo x &> .claude/scratch/out.txt", PASS),
+```
+
+##### P5 – `settings.json`: complete the self-protection denies
+
+The deny list has `Edit(/.claude/.gitignore)` but is missing the other two denies that 5.2 requires
+from Phase 1b on:
+
+```diff
+       "Edit(/.claude/.gitignore)",
++      "Edit(/.claude/settings.json)",
++      "Edit(/.claude/hooks/**)",
+```
+
+The guard already blocks all three via `self_protect: true`, so this is defence in depth, not a
+hole. Without it the boundary rests on one layer instead of the intended two.
+
+Measured afterwards during V1.14: a Bash `mv` targeting `.claude/hooks/guard-config.json` was
+blocked by the **hook**, not by this rule — deny rules check redirect and `tee` targets against
+`Edit` rules but not arbitrary command operands. So P5 and the guard genuinely cover different
+surfaces, and P5 is not redundant.
+
+##### P6 – the plan-mode fix (open item 4, decided and applied 2026-09-23)
+
+Decision: **allow the plan directory**. E2 makes plan mode the default working mode, and the
+deadlock had already blocked real work twice — first V1.10, then P1–P5 themselves. The alternative
+(work without plan mode) would have meant correcting E2.
+
+The block came from the `write_dir` check in `check_file_tool`, not from self-protection, so
+`self_protect: false` did not help. `is_write_allowed` already consulted `allowed_temp_prefixes`,
+but `check_file_tool` consulted nothing — the two write paths disagreed. P6 unifies them in one
+helper and adds a second, narrower prefix list:
+
+```diff
++def matches_allowed_prefix(ctx: Context, path: Path) -> bool:
++    """True when `path` lies under a configured write-allowed prefix."""
++    posix = path.as_posix()
++    for key in ("allowed_temp_prefixes", "allowed_write_prefixes"):
++        for prefix in ctx.get(key, []):
++            expanded = os.path.expanduser(str(prefix))
++            if posix == expanded.rstrip("/") or posix.startswith(expanded):
++                return True
++    return False
+```
+
+Used in both places — in `is_write_allowed` (replacing the inline `allowed_temp_prefixes` loop) and
+in `check_file_tool`, where it is checked **after** self-protection so a protected path can never be
+reopened by a prefix:
+
+```diff
+     path = resolve(ctx, raw)
+     if is_self_protected(ctx, path):
+         raise Blocked(f"self-protection: only the operator edits {raw}")
++    if matches_allowed_prefix(ctx, path):
++        return
+     if ctx.transition and not is_inside(path, ctx.write_dir):
+```
+
+`guard-config.json`:
+
+```diff
+   "allowed_temp_prefixes": ["/tmp/claude-"],
++  "allowed_write_prefixes": ["~/.claude/plans/"],
+```
+
+The allowance is deliberately narrow, and tested to stay narrow (T46): the trailing slash matters,
+so `~/.claude/plans-evil/x.md` is **not** covered, and neither are `~/.claude/settings.json` or
+`~/.ssh/id_rsa`. Four test cases cover this — one positive, three negative.
+
+**Confirmed in production 2026-09-23.** During the V2.3 session, plan mode was active and Claude
+wrote its plan file to `~/.claude/plans/` successfully, then completed the plan/approve cycle via
+`ExitPlanMode`. That exact write was the deadlock before P6: plan mode permits only the plan file,
+and the guard forbade precisely that file. The workflow decided in E2 is usable again.
+
+##### Pre-validation of P1 and P3 (2026-09-23, done before applying)
+
+Claude cannot write to `.claude/hooks/**`, so P1 and P3 were validated on a patched **copy** in
+`.claude/scratch/guard_preview.py` (built with `sed` line inserts from `p1-insert.txt` and
+`p3-insert.txt`, both kept there), invoked with `--config .claude/hooks/guard-config.json`:
+
+| Command | Before the patches | With P1 + P3 |
+|---|---|---|
+| `ls 2>&1` | exit 2, `C1: redirection without a target` | **exit 0** |
+| `ls > /dev/null 2>&1` | exit 2, same | **exit 0** |
+| `ls 2>&1 \| tail -3` | exit 2, same | **exit 0** |
+| `echo x &> README.md` | exit 2, `C1` | exit 2, `C1` (same verdict, correct parse) |
+| `echo x &> .claude/scratch/out.txt` | exit 0 | exit 0 |
+| `echo x > .claude/.gitignore` | exit 2, wrong reason `C1` | **exit 2**, `self-protection: only the operator edits .claude/.gitignore` |
+| `echo x > README.md` | exit 2, `C1` | exit 2, `C1` (unchanged) |
+| `sleep 5 &` | exit 0 | exit 0 (real backgrounding still splits) |
+| `echo a & echo b` | exit 0 | exit 0 (real backgrounding still splits) |
+| `git commit -m x` | exit 2, `C4` | exit 2, `C4` (unchanged) |
+
+Scope of P3, measured rather than assumed: the `&>` forms reached the **right verdict even before**
+the patch, because the `&` split left `> target` as its own segment, which was then checked
+normally. P3 therefore closes no security hole — it replaces an accidentally-correct parse with a
+correct one and removes the `2>&1` false positive. That false positive is the whole reason to apply
+it first; it is a usability fix, not a boundary fix.
+
+##### Acceptance for P1–P5
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .claude/hooks/tests
+.venv/bin/ruff check --no-fix --no-cache .claude/hooks
+.venv/bin/ruff format --check --no-cache .claude/hooks
+```
+
+Measured **before** the patches: 65 passed in 1.70 s (35 in `test_guard.py`, 30 in
+`test_guard_operands.py`), ruff clean, `3 files already formatted`.
+
+**Measured after P1–P6 (2026-09-23): 77 passed in 1.95 s**, `ruff check` → `All checks passed!`,
+`ruff format --check` → `3 files already formatted`. That is 12 more than before, not the 71 the
+plan predicted, because six cases were added beyond the original P2/P4 scope:
+
+| Added | Cases | Why |
+|---|---|---|
+| P2 | 2 | T43 plus the `settings.json` variant of the same defect |
+| P4 | 4 | T44 (two forms), T45 (blocked and allowed target) |
+| P4 extra | 2 | `sleep 5 &` and `echo a & echo b` — real backgrounding must still split, otherwise P3 could silently break control operators |
+| P6 | 4 | T46: one positive (the plan file is writable) and three negatives proving the allowance stays narrow |
+
+Live re-probe of the fixed false positive, run as a real tool call:
+
+```text
+$ ls > /dev/null 2>&1
+OK: ls > /dev/null 2>&1 lief durch
+```
+
+It used to fail with `C1: redirection without a target`. P3 confirmed in production.
+
+One result needs reading carefully: probing T43 against the **live** config right after applying
+returned `exit=0`, not 2. That is correct — `self_protect` was still `false` at that moment, so
+`.claude/.gitignore` was an ordinary path inside `.claude/`. The pytest case builds its own config
+with `self_protect=True` and passes. **Re-probe T43 against the live config once `self_protect` is
+back to `true`**; expected `exit 2` with `self-protection: only the operator edits .claude/.gitignore`.
 
 ### Phase 2 – `CLAUDE.md` restructuring
 
@@ -612,56 +1203,648 @@ Target structure (English):
 
 Verification:
 - V2.1 Line count ≤ ~200 (`wc -l .claude/CLAUDE.md`).
+  **PASSED: 170 lines.**
 - V2.2 Every C1–C8 constraint present (manual check against section 1).
+  **PASSED:** each of C1–C8 appears exactly once, checked mechanically against the table rows.
 - V2.3 New session: ask "What may you not do in this repo?" → answer lists C1–C5 correctly.
+  **PASSED 2026-09-23** in a fresh session, question asked in German. The answer listed C1 and C2 as
+  transition-only and C3–C6 as permanent, with the concrete secret paths, the `git` verbs covered by
+  C4, and the Pi identifiers covered by C5. It also named the operator-only commands, the
+  `.venv` rule, the self-protected files, and the two enforcement layers — none of which the
+  question asked for, so the file transports more than the constraint list.
+  **Decisive detail: the answer was produced without a single file access.** It came from the loaded
+  project memory alone, which is what V2.3 is actually testing. V2.1 (line count) and V2.2 (presence
+  of the constraints) only prove the file is well-formed; V2.3 proves it is *loaded and usable*.
+
+**RESULTS — written 2026-09-23.** All ten target sections are present, in order. Two structural
+decisions were taken while writing; both are choices, not transcription, so they are recorded here.
+
+**D2-a — C1–C8 split into two subsections.** The target structure asks for one separate constraints
+section, while Q1/K2 require that only C1/C2 retire in Phase 8 and C3–C6 stay permanent. A single
+block would have forced Phase 8 to edit *inside* a section rather than delete one. `CLAUDE.md` §2 is
+therefore split: **§2.1 Transition-only** (C1, C2, plus C7/C8, which describe the transition work
+itself) and **§2.2 Permanent** (C3–C6). Phase 8 deletes §2.1 whole and leaves §2.2 untouched.
+
+**D2-b — division of labour between `CLAUDE.md` and this document.** `CLAUDE.md` is loaded into
+every session and `ClaudeTransition.md` (1300+ lines) is not, so the split is by *audience*, not by
+topic: `CLAUDE.md` carries only what is needed to act correctly in an arbitrary session — rules,
+commands, the repo map, where to look things up. Everything historical or evidential — decisions
+E1–E9/Q1–Q9, findings F1–F25, guard design, test matrix, verification records — stays here and is
+reached through the pointer table in `CLAUDE.md` §9. Rule of thumb for later edits: if it answers
+"what do I do now", it belongs in `CLAUDE.md`; if it answers "why is it like this", it belongs here.
+
+Content notes:
+
+- The German bootstrap text was translated, not paraphrased; C1–C8 keep their original meaning (K4).
+- §5 records the **actual** layout and names the deviations from `ChatGPTHint.txt` §8.1 explicitly
+  (`_shared/` and `victorialogs/victorialogs.yml` do not exist, `vector/` was added), so the map
+  cannot be mistaken for the hint's target state.
+- §7 embeds the read-only gate from 5.3 verbatim, including the side-effect check.
+- `ChatGPTHint.txt` is listed in §9 as **historical, superseded by `CLAUDE.md` where they differ**.
+  This is the point where C7 takes effect: the hint is no longer the operating model.
+- Every path referenced in `CLAUDE.md` was checked to exist (12 of 12). One error was caught this
+  way: `DevWorkflow.md` lives in `docs/operations/`, not `docs/` — section 3.2 of this document
+  lists it in a way that reads as top-level, which is what caused it.
 
 ### Phase 3 – Rules
 
-- [ ] Verify current rules mechanism and `paths` frontmatter in official docs before writing;
+- [x] Verify current rules mechanism and `paths` frontmatter in official docs before writing;
       record the doc URL and date here.
+      **DONE 2026-09-23**, https://code.claude.com/docs/en/memory (no publication date on the page).
+      Result below — the mechanism exists, but it changes the design of section 5.
+
+#### 3.0 Rules mechanism as documented (verified 2026-09-23, Claude Code 2.1.276)
+
+| Fact | Consequence for this phase |
+|---|---|
+| `.claude/rules/*.md` exist and are discovered **recursively**, subdirectories allowed | The layout in section 5 works as planned |
+| A rule **without** `paths` frontmatter is "loaded at launch with the same priority as `.claude/CLAUDE.md`" | It is *not* free. Every unconditional rule permanently enlarges the same context budget that V2.1 capped `CLAUDE.md` at 170 lines to protect |
+| A rule **with** `paths` loads only "when Claude reads files matching the pattern, not on every tool use" | This is the mechanism that makes ten topic files affordable |
+| `paths` is the **only** field Claude Code reads; every other field "is ignored without an error" | No `description`, `title` or `alwaysApply` — an invented field fails silently, so none are used |
+| Unparsable YAML → frontmatter ignored, rule loads **as if it had no `paths`**, i.e. unconditionally | A typo does not fail loudly, it quietly makes the rule global. `claude --debug` shows the parse error |
+| Accepts a YAML list or a comma-separated string; brace expansion allowed, budget 1000 expanded patterns / 4 MiB | Plain globs are enough here; no brace expansion needed |
+| Glob `[` starts a bracket expression; an unreadable one matches nothing | Avoid `[` in patterns entirely |
+| Docs note: "For task-specific instructions that don't need to be in context all the time, use **skills** instead" | Draws the line between Phase 3 and Phase 4: rules = standing constraints while editing a file class, skills = invoked procedures |
+| Docs warn: "if two rules contradict each other, Claude may pick one arbitrarily" | Rules must not restate `CLAUDE.md`; overlap is a defect, not redundancy |
+
+Version notes checked and not applicable on 2.1.276: `paths` brace-expansion crash (< v2.1.217),
+invalid-`[` breaking Read (< v2.1.207), on-demand rules loading despite excluded `project`
+(< v2.1.211), symlink path matching (>= v2.1.198).
+
+**Design consequence — D3-a.** Section 5 lists ten rule files without saying how they load. Written
+unconditionally they would all load every session, which would undo Phase 2's context discipline and
+duplicate `CLAUDE.md` §4 and §8. Therefore: **every rule that has a natural file class gets `paths`
+frontmatter and loads on demand.** `CLAUDE.md` keeps the always-loaded core; `rules/` holds the
+depth that only matters while touching a specific part of the repository.
 - [ ] Write the ten rule files from section 5. Each: purpose, MUST/SHOULD list, source references
       (ADR/doc path), examples of violations.
+      **DONE 2026-09-23 — eight files, all path-scoped. See D3-a above and D3-b below.**
+
+#### 3.1 What was written
+
+| Rule | `paths` | Files in scope | Lines |
+|---|---|---:|---:|
+| `compose-stacks.md` | `stacks/**` | 30 | 63 |
+| `testing.md` | `tests/**` | 40 | 60 |
+| `shell-scripts.md` | `**/*.sh` | 19 | 55 |
+| `host-runtime.md` | `scripts/host/**`, `scripts/host-runtime/**`, `scripts/network/**`, `stacks/core/docker/**`, `deploy.sh` | 12 | 59 |
+| `backup-restore.md` | `scripts/backup/**`, `docs/operations/BackupVerifyRestore.md`, `docs/operations/GPG_config_for_backup_encryption.md` | 6 | 65 |
+| `secrets.md` | `**/*.env.example`, `stacks/**/compose/**`, `scripts/backup/**` | 8 | 59 |
+| `ci-renovate.md` | `.github/**`, `renovate.json5`, `.pre-commit-config.yaml` | 3 | 53 |
+| `docs-adr.md` | `docs/**` | 13 | 54 |
+
+468 lines in total, **none of which load unless Claude touches a matching file**. Compare: written
+unconditionally they would have tripled the always-loaded instruction set against `CLAUDE.md`'s 170.
+
+**D3-b — two planned rules were deliberately not written.** Section 5 lists
+`operating-model.md` and `incremental-delivery.md`. Both describe stances, not file classes, so
+neither has a meaningful `paths` value, and both are already stated in `CLAUDE.md` §4 and §8.
+Writing them would have cost always-loaded context for zero gain (an unconditional rule has the
+same priority as `CLAUDE.md`, so nothing is saved by moving text there) while creating exactly the
+duplication the docs warn about: *"if two rules contradict each other, Claude may pick one
+arbitrarily."* Operator decision, 2026-09-23: **eight rules, not ten.** If one of them ever needs
+more depth than `CLAUDE.md` can carry, the right home is a skill (Phase 4), not an unconditional rule.
+
+Deliberate overlap, which is not duplication: `scripts/backup/**` appears in both
+`backup-restore.md` and `secrets.md`, and `stacks/**/compose/**` in both `compose-stacks.md` and
+`secrets.md`. Each rule addresses a different aspect of the same file, and they were checked for
+contradictions.
 
 Verification:
 - V3.1 Each rule cites at least one repo source file.
+  **PASSED** — every rule has a `Sources` section, and each cited path was checked to exist
+  mechanically, not by eye. One real error was caught: `vector/vector.yaml` is
+  `stacks/monitoring/vector/vector.yaml`. The checker was `.claude/scratch/check_rules.py`, tracked as `.claude/tools/check_rules.py` since Phase 6.
+- V3.1b (added) Frontmatter parses and every glob matches real files.
+  **PASSED** — 8/8 parse, 8/8 carry `paths`, no pattern matches zero files, no `[` in any glob,
+  no unknown frontmatter keys. This check matters because Claude Code **silently** ignores
+  unparsable frontmatter and loads the rule unconditionally — the failure mode is invisible
+  context bloat, not an error message.
 - V3.2 In a new session, open `stacks/monitoring/compose/docker-compose.yml` and ask for a
   compliance review → answer references `compose-stacks.md` content (naming, pinning, bind mounts).
+  **OPEN — operator step**, needs a fresh session. This is the real test: it proves path-scoped
+  loading actually fires, which nothing here can prove from inside the session that wrote the rules.
+  Procedure in 3.2 below.
+  **Attempted 2026-09-23 and discarded as invalid.** The review prompt was run in the same session
+  that had just written `compose-stacks.md`, so its content was already in context. The review was
+  substantive — it produced findings F26–F29 and sharpened F1 and F13 — but it proves **nothing**
+  about on-demand loading, because the rule could not have been absent. V3.2 requires a session that
+  has never seen the rule file. This is the trap the procedure in 3.2 exists to avoid; note that the
+  invalid run still looked entirely convincing.
+  **PASSED 2026-09-23 on the second, valid attempt** — a fresh session with the
+  `InstructionsLoaded` hook active. Hard evidence from `.claude/logs/instructions.log`:
+  5 entries with reason `path_glob_match`, `compose-stacks.md` among the loaded files.
+
+  The log also supplied the negative control for free. Loaded on demand: `ci-renovate.md`,
+  `compose-stacks.md`, `secrets.md`, `shell-scripts.md`, `testing.md`. **Not loaded:**
+  `docs-adr.md`, `host-runtime.md`, `backup-restore.md` — the session touched nothing under
+  `docs/`, `scripts/host*/` or `scripts/backup/`. Five of eight, so path scoping does not merely
+  work, it demonstrably withholds the other three. D3-a saves context in practice, not only on paper.
+
+  The review itself produced findings F30–F42 and corrected two of Claude's own artefacts (F40, F42)
+  plus the framing of F28 — see 3.3.
+
+#### 3.3 Corrections to Claude's own artefacts (from the V3.2 review, 2026-09-23)
+
+The V3.2 review did not only find repository defects — it found three errors in the artefacts
+written in Phases 2 and 3. Recorded here because "the review found my own mistakes" is the part
+most likely to be forgotten.
+
+| # | Error | Fix |
+|---|---|---|
+| 1 | **F28 was misleading, not merely incomplete.** It cited `vector`'s `docker.sock:ro` as the safe contrast to cadvisor's `:rw`. A read-only mount stops writes to the socket *file*; it does not stop Docker API calls, and with `group_add: ${DOCKER_GID}` vector has host-root equivalence (F30). | F28 annotated rather than rewritten — a findings log should show what was claimed and what corrected it. The underlying misconception is now stated as a MUST in `rules/compose-stacks.md`, because that is the artefact that steers future work. |
+| 2 | **F40 — the volume naming rule contradicted reality, in two files.** `rules/compose-stacks.md` and `CLAUDE.md` §4 both demanded `<service>-data\|config\|db`, copied from `ChatGPTHint.txt` §4 without checking. The implementation uses `/srv/data/stacks/<stack>/<service>/`. | Both corrected to the real convention; the hint is now named as wrong on this point. Renaming the data paths was rejected — it would be a data migration to satisfy a document. |
+| 3 | **F42 — the rule asserted documentation that does not exist.** It called the LAN exposure of ports 3000/9428 a "deliberate, documented decision"; `ADR-0001-networking-and-firewall.md` mentions neither port. | The rule now says the exposure is intentional but **unrecorded**, and must be treated as precedent rather than as documentation. |
+
+Lesson for the remaining phases: an artefact that cites a source is only as good as the check that
+the source says what the artefact claims. V3.1's mechanical path check caught missing *files*; it
+cannot catch a claim about a file's *contents*. Phases 4–6 should assume the same class of error
+exists in whatever they produce.
+
+#### 3.2 How to run V3.2 (and repeat it after every Claude Code update)
+
+"Open the file" does not mean opening it in an editor. The trigger is **Claude reading it**: a
+path-scoped rule loads "when Claude reads files matching the pattern, not on every tool use".
+
+**Setup — the `InstructionsLoaded` hook (operator applies; `settings.json` is self-protected).**
+Documented event: fires when a `CLAUDE.md` or `.claude/rules/*.md` file is loaded into context, at
+session start **and on lazy loading during a session**. Its matcher selects the load *reason*:
+`session_start`, `nested_traversal`, `path_glob_match`, `include`, `compact`. It is observational
+only — it cannot block, and exit code 2 has no effect. Add to `.claude/settings.json` inside
+`"hooks"`, alongside `PreToolUse`:
+
+```json
+"InstructionsLoaded": [
+  {
+    "matcher": "session_start|nested_traversal|path_glob_match|include|compact",
+    "hooks": [
+      {
+        "type": "command",
+        "command": "cat >> \"$CLAUDE_PROJECT_DIR/.claude/logs/instructions.log\"; echo >> \"$CLAUDE_PROJECT_DIR/.claude/logs/instructions.log\""
+      }
+    ]
+  }
+]
+```
+
+No script file is needed — the event JSON arrives on stdin. `.claude/logs/` is already git-ignored.
+All five reasons are captured on purpose: `session_start` answers "what loads in every session",
+which is the question D3-a is about, and `path_glob_match` answers V3.2.
+
+**Step 1 — positive case.** Fresh session, then:
+
+```text
+Review stacks/monitoring/compose/docker-compose.yml gegen unsere Regeln.
+```
+
+Claude must **not** read `deploy.sh` or `ClaudeTransition.md` in that session, otherwise the source
+of any repo-specific knowledge is ambiguous. Check afterwards which files it read.
+
+**Step 2 — hard evidence.**
+
+```bash
+grep path_glob_match .claude/logs/instructions.log
+```
+
+An entry naming `compose-stacks.md` proves V3.2 regardless of what the answer said. This is the only
+check that does not rest on interpretation.
+
+**Step 3 — content canary, if the hook is not in place.** Measured 2026-09-23, so the canary is
+chosen rather than guessed:
+
+| Fact | In `CLAUDE.md` (always loaded)? | In `compose-stacks.md`? | Usable as proof |
+|---|---|---|---|
+| F1, F3, F9, F25 | **yes** | partly | **no** |
+| F2, F7, F8 | no | yes | yes |
+| "config hash covers only four files" | no (0 matches) | yes | **best** |
+
+The config-hash statement derives from `deploy.sh`, is absent from `CLAUDE.md`, and cannot be
+inferred from the compose file alone. If the review raises it **unprompted**, the knowledge can only
+have come from the rule. Do not ask for it — a leading question invalidates the test.
+
+**Step 4 — negative control.** A second fresh session, touching no file under `stacks/`:
+
+```text
+Was sind unsere Regeln für Compose-Stacks?
+```
+
+The canary must be **absent** here. Present in step 1 and absent in step 4 proves not just that the
+rule works, but that it loads **on demand** — i.e. that D3-a actually saves context rather than only
+claiming to.
+
+`/context` lists **Memory files**, but the documentation describes that list for `CLAUDE.md` and
+`CLAUDE.local.md`; whether lazily loaded path-scoped rules appear there is **unverified**. Do not
+read an absence there as evidence.
 - V3.3 No rule contradicts an accepted ADR (manual review by operator).
+  **PASSED 2026-09-23.** All four ADRs checked against all eight rules. **No rule contradicts an
+  ADR.** Three rule statements were verified against the source rather than trusted:
+
+  | Rule statement | Source | Result |
+  |---|---|---|
+  | `deploy.sh` refuses a repo-root `.env` (`secrets.md`) | `deploy.sh:109-110`, `die "Refusing repo-root .env …"` | correct |
+  | host data under `/srv/data/stacks/<stack>/<service>/` (`compose-stacks.md`) | ADR-0008 Decision, verbatim | correct — retroactively confirms the F40 fix |
+  | exit codes, DD-012, DD-013, public-key model (`backup-restore.md`) | ADR-009 §2.3 and lines 174/681/698 | correct |
+
+  ADR-0001 mentions neither port 3000 nor 9428, which confirms the F42 correction.
+
+  Two rules were **imprecise rather than wrong**, both fixed:
+  - `secrets.md` never mentioned that ADR-0007 §2 **allows** a compose-directory `.env` for local
+    CLI use (non-secret, gitignored, local-only). The rule is scoped to exactly that directory, so
+    the omission misleads inside its own scope. Same class of defect as F40/F42.
+  - `backup-restore.md` claimed the Pi holds the private key "never". ADR-009 line 875 permits a
+    documented emergency import followed by mandatory cleanup. A rule that hides a documented
+    exception gets bypassed in an emergency instead of followed.
+
+  One **ADR** turned out to be wrong — recorded as F43. V3.3 was expected to be a formality
+  checking rules against ADRs; the only real defect sits in an ADR, and it surfaced only because
+  both were checked against the code rather than against each other.
 
 ### Phase 4 – Skills
 
-- [ ] Verify SKILL.md frontmatter fields against current docs; record URL/date.
-- [ ] Write the eight skills. Skills that would produce repo changes output **proposals** into
+- [x] Verify SKILL.md frontmatter fields against current docs; record URL/date.
+      **DONE 2026-09-23**, https://code.claude.com/docs/en/skills (no publication date on the page;
+      newest version note v2.1.273). Result below.
+
+#### 4.0 Skills mechanism as documented (verified 2026-09-23, Claude Code 2.1.276)
+
+| Fact | Consequence for this phase |
+|---|---|
+| Layout `.claude/skills/<name>/SKILL.md`; subdirectories and supporting files allowed and encouraged | Matches section 5 |
+| **All frontmatter fields are optional**; only `description` is recommended | No required boilerplate |
+| **`description` (plus `when_to_use`) is loaded into context on every turn**, the two combined capped at 1,536 characters per skill | The always-loaded cost of Phase 4 is the sum of eight descriptions. This is the same trap as D3-a, in a different place |
+| The **full body loads only on invocation** and then stays for the session | Body length is cheap until used; description length is not |
+| Invocation: automatic by description match, `/skill-name`, or the Skill tool | A wrong description means the skill is either never found or fires constantly |
+| `disable-model-invocation: true` prevents automatic invocation (user-only) | Intended for side-effect operations such as `/deploy` |
+| `allowed-tools` / `disallowed-tools` pre-approve or remove tools **for the current turn**, expiring on the next user message; supports Bash rules such as `Bash(git add *)` | A third permission mechanism next to `settings.json` and the guard — see D4-b |
+| `paths` also exists for skills, gating them to matching files | Considered and rejected — see D4-c |
+| `context: fork` + `agent` run a skill in an isolated subagent | Not used; these skills are short and their output belongs in the main transcript |
+| Guidance: keep `SKILL.md` under 500 lines, move reference material to linked files | All eight stay far below |
+
+**D4-a — descriptions are the budget, not the bodies.** Eight skills with careless descriptions
+would cost up to 8 × 1,536 ≈ 12,000 characters of always-loaded context, which would quietly undo
+what V2.1 and D3-a protect. Each description is therefore held to roughly one line: what it does
+and when to reach for it, nothing else. The detail goes in the body, which costs nothing until the
+skill is invoked.
+
+**D4-c — no `paths` on skills.** Rules are *standing constraints* and benefit from path scoping;
+skills are *procedures the operator asks for*. `backup-progress` must be findable when someone asks
+"how far is the backup", not only while a file under `scripts/backup/` happens to be open. Short
+descriptions solve the budget problem without making a skill invisible when it is wanted.
+- [x] Write the eight skills. Skills that would produce repo changes output **proposals** into
       `.claude/scratch/` or into chat, never into other paths (C1).
-- [ ] `readonly-gate` embeds 5.3 including the before/after comparison.
+      **DONE 2026-09-23** — all eight written, none writing outside `.claude/`.
+- [x] `readonly-gate` embeds 5.3 including the before/after comparison.
+      **DONE** — verbatim, including the acceptance rule that any diff is a C2 violation.
+
+#### 4.1 What was written
+
+| Skill | Purpose | Description cost | Body |
+|---|---|---:|---:|
+| `readonly-gate` | run the 5.3 gate, prove no side effects | 140 | 47 |
+| `increment-plan` | feature → increments, template from 10.2 | 176 | 59 |
+| `image-pin-audit` | pin quality and Renovate coverage | 176 | 45 |
+| `backup-progress` | ADR-009 contract vs. implementation | 164 | 50 |
+| `change-review` | diff against the rules, checklist and verdict | 146 | 50 |
+| `new-stack-proposal` | full stack scaffold as a proposal | 163 | 54 |
+| `postdeploy-test-design` | runtime checks with actionable failures | 148 | 45 |
+| `adr-draft` | ADR draft into `.claude/scratch/` | 123 | 61 |
+
+**Always-loaded cost: 1,236 characters across all eight** — less than the 1,536 cap that applies to
+a *single* skill. D4-a held.
+
+**D4-b — `allowed-tools` only on `readonly-gate`** (operator decision, 2026-09-23). It lists the
+eight exact read-only commands, all of which `CLAUDE.md` §7 already permits but `settings.json`
+does not pre-approve, so without the grant the gate prompts on every increment — and IN4 runs it
+before every commit. Deny rules still win over allow and the PreToolUse guard fires regardless, so
+the grant cannot widen the boundary. The other seven skills carry no tool grant.
+
+The rejected option matters more than the chosen one: granting tools in all four Bash-using skills
+would have spread permissions across four files that have nothing to do with permissions — and
+**skills are not self-protected**, so that would have been the first place where Claude can extend
+its own rights. Keeping grants to one file, with exact commands, keeps that door shut.
 
 Verification:
 - V4.1 `/skills` lists all eight.
+  **PASSED 2026-09-23**, operator ran `/skills`. No restart was needed: all eight had already
+  appeared in the available-skills list in the **same session** that wrote them, which also
+  disproves the earlier assumption in this document that V4.3–V4.5 required a fresh session.
 - V4.5 Run `increment-plan` for a sample feature → output follows the template in 10.2.
+  **PASSED 2026-09-23**, invoked through the Skill tool with the sample feature "supply the backup
+  tests required by DD-012". Output followed the 10.2 template field by field across three
+  increments, including the IN9 line, which the skill forbids defaulting to "none". It also applied
+  the entry-condition check on its own and stated that backup work belongs to R2 and is therefore
+  correctly scheduled only after R1 — the plan was not presented as startable today.
 - V4.2 Run `readonly-gate` → completes; before/after diff empty.
+  **PASSED 2026-09-23**, executed end to end: `ruff check` → `All checks passed!`;
+  `ruff format --check` → `43 files already formatted`; `yamllint -s` clean; ShellCheck over all
+  19 tracked scripts clean; `tests/precommit -m precommit` → 8 passed, 4 deselected;
+  guards + doctor → 7 passed, 1 skipped; final diff → `OK: no side effects`.
 - V4.3 Run `image-pin-audit` → table matches section 3.3 image list.
+  **PASSED 2026-09-23**, invoked through the Skill tool. All ten compose images matched section 3.3
+  tag for tag. Totals across the whole repository: 1 digest, 15 full version tags, **6 floating**,
+  **0 unpinned** — the "never `latest`" rule holds without exception. The floating six are
+  `alpine:3.24` (F37), `renovate/renovate:43` in `scripts/renovate/validate-config.sh` (F24, while
+  `Makefile:85` pins the same image by digest), and `actions/checkout@v4`, `actions/setup-python@v5`,
+  `actions/cache@v4`. Renovate coverage confirmed from `renovate.json5`: `enabledManagers:
+  ["docker-compose"]`, so exactly the ten compose images and nothing else (F4).
 - V4.4 Run `backup-progress` → reports at least F9 and GPG step 6.
+  **PASSED 2026-09-23**, invoked through the Skill tool; both reported, F9 as the headline.
+  The run also **corrected the picture F9 alone conveys**: five of the seven ADR-009 requirements
+  are already implemented — exit codes as named constants in `scripts/backup/common.sh:12-17`
+  (`EX_USAGE=2` … `EX_DEPLOY=7`, matching §2.3 exactly), non-blocking `flock -n` on
+  `/run/lock/homelab-backup.lock` with `acquire_lock` in all three scripts (§2.4), the full set of
+  fixture overrides including a fallback lock file off the Pi (§2.5), and restore requiring both
+  `RESTORE_APPLY=1` and `RESTORE_CONFIRM` (DD-013). What is missing is the **proof**, not the
+  implementation. "No tests" reads like "nothing there"; it is not, and the skill is what made that
+  visible.
+
+**V4.6 (added) Frontmatter and budget check.** `.claude/scratch/check_skills.py` (tracked as
+`.claude/tools/check_skills.py` since Phase 6) verifies that each
+`SKILL.md` parses, carries a `description`, has `name` equal to its directory, uses only documented
+frontmatter keys, stays under the 500-line body guidance, and that the per-skill description budget
+holds. **PASSED, 0 failures.** The unknown-key check matters because the docs state that any field
+Claude Code does not know is *ignored without an error* — the same silent-failure class as the rules'
+frontmatter, where an unparsable `paths` quietly makes a rule global.
 
 ### Phase 5 – Subagents
 
-- [ ] Write four agent files with minimal tool sets (read-only: Read, Grep, Glob; no Edit/Write/Bash
+- [x] Write four agent files with minimal tool sets (read-only: Read, Grep, Glob; no Edit/Write/Bash
       unless justified and listed).
+      **DONE 2026-09-23** — four files, each `tools: Read, Grep, Glob`, nothing beyond.
+
+#### 5.0 Subagent mechanism as documented (verified 2026-09-23, Claude Code 2.1.276)
+
+Source: https://code.claude.com/docs/en/sub-agents (no publication date; newest version note
+v2.1.271).
+
+| Fact | Consequence |
+|---|---|
+| `.claude/agents/*.md`, scanned recursively; `name` and `description` are **required** | Matches section 5 |
+| **`tools` is an allowlist. Omitting it inherits _every_ tool available to subagents**, Edit, Write and Bash included | See D5-a — this inverts what V5.3 actually has to check |
+| `disallowedTools` is a denylist applied **before** `tools` | Not used; an explicit allowlist is unambiguous on its own |
+| `description` is **always loaded** at startup; a startup warning appears past 15,000 tokens combined | Same budget discipline as the skills, with far more headroom |
+| Subagents inherit the whole `CLAUDE.md` chain **and `.claude/rules/`** | See D5-b |
+| **`settings.json` hooks fire inside subagents** | The PreToolUse guard protects a subagent too. The tool allowlist is the first layer, not the only one |
+| No per-agent way to prevent automatic delegation; use `permissions.deny: ["Agent(<name>)"]` | Recorded for Phase 8, should an agent ever need to be switched off |
+| Invocation: automatic by description, `@agent-<name>`, or `--agent` for a whole session | `@`-mention guarantees a specific agent runs |
+
+**D5-a — the dangerous case is an absent `tools`, not a wrong one.** V5.3 as written ("agent
+definitions contain no Edit/Write tools") would happily pass a file that omits `tools` entirely and
+therefore grants everything. The check was inverted accordingly: `tools` **must be present**, and
+`.claude/scratch/check_agents.py` (now `.claude/tools/check_agents.py`) fails the file if it is missing. This is the same silent-failure
+class as unparsable rule frontmatter (which makes a rule global) and unknown skill keys (ignored
+without an error) — three different mechanisms, one shared trap: the failure mode is invisible.
+
+**D5-b — agent bodies must not restate the rules.** Subagents inherit `CLAUDE.md` and
+`.claude/rules/`, so the criteria are already in their context. Each body therefore carries only
+what the rules do not: the review *procedure*, the list of known findings to confirm in one line
+rather than re-investigate, and the report format. Repeating the rules would cost context twice and
+risk the contradiction the memory docs warn about.
+
+#### 5.2 Third correction of the same class (2026-09-23)
+
+V5.2 exposed the **third** instance of a Claude artefact asserting documentation that does not
+exist. The first two were F42 (the rule called the LAN ports a "documented decision"; no ADR
+mentions them). The third is F46: both `CLAUDE.md` §4 and `rules/compose-stacks.md` called cadvisor's
+privileged mode a documented exception, while `docs/monitoring.md:29` says "No privileged
+containers" and `:197` says it runs "with minimal privileges".
+
+Both were corrected to state that the exception exists, is claimed in an inline comment only, and is
+contradicted where documentation should live. `compose-stacks.md` additionally now forbids citing it
+as precedent for a second privileged container.
+
+The pattern is now unmistakable and worth carrying into Phase 6: **Claude's artefacts inherited the
+word "documented" from the hint and from each other, without anyone checking the referenced
+document.** V3.1's mechanical check proves a cited *file exists*; it cannot prove the file *says what
+the citation claims*. Only reading the source catches it, and in all three cases a review did —
+never a test.
+
+#### 5.1 What was written
+
+| Agent | Tools | Focus | desc | body |
+|---|---|---|---:|---:|
+| `compose-reviewer` | Read, Grep, Glob | per-service walk, mount existence, config-hash coverage | 179 | 38 |
+| `security-reviewer` | Read, Grep, Glob | secrets, exposure, privilege, supply chain | 197 | 41 |
+| `test-author` | Read, Grep, Glob | layer, false-green analysis, tests as text only | 155 | 39 |
+| `docs-steward` | Read, Grep, Glob | doc claims against code, verdict per claim | 172 | 45 |
+
+Always-loaded description total: **703 characters**.
+
+Each body names the findings it must *confirm in one line instead of re-investigating*, so a review
+spends its output on what is new rather than re-deriving F5, F8, F13, F26, F28, F30, F42 and F44.
 
 Verification:
 - V5.1 `/agents` lists all four.
+  **PASSED 2026-09-23** after an operator restart. All four are registered and each is listed with
+  `Tools: Read, Grep, Glob` — which confirms D5-a from the outside: the allowlist took effect, and
+  the agents did **not** silently inherit every tool.
+  Before the restart the same invocation failed with `Agent type 'security-reviewer' not found.
+  Available agents: claude, claude-code-guide, Explore, general-purpose, Plan, statusline-setup`,
+  which is what established the skills/agents asymmetry recorded below.
 - V5.2 `security-reviewer` on the compose file flags cadvisor `privileged: true` and LAN ports
   3000/9428 with the documented justification.
+  **PASSED 2026-09-23.** Both were flagged explicitly — and the agent **disproved the premise of
+  this verification**. V5.2 was written assuming a "documented justification" exists. It does not:
+  - cadvisor: the only document that discusses it says the **opposite**, twice —
+    `docs/monitoring.md:29` "No privileged containers" and `:197` "cAdvisor is intentionally
+    isolated and run with minimal privileges", under a heading "Required mounts (read-only)" that
+    does not list the Docker socket at all. No ADR mentions cadvisor. The sole record is an inline
+    compose comment asserting necessity without evidence. → **F46**
+  - ports 3000/9428: deliberate (named in `cleanup-ufw.sh`, `.env.example`, and encoded as a
+    contract in `test_35_network_and_ufw.py`) but recorded in **no** document. The agent's grep over
+    all of `docs/` returned six hits, every one a timestamp or an in-container curl example. This
+    **closes F42's open caveat** "other docs not checked".
+
+  Claude spot-checked the load-bearing `[V]` claims before recording: `docs/monitoring.md:26/29/197`
+  verbatim, absence of `ufw route`/`DOCKER-USER` anywhere in `scripts/`, `docs/`, `stacks/`, absence
+  of `"iptables": false` in `daemon.json`, and `scripts/backup/backup.sh:383-385`. All held.
+
+  The report also produced two findings not in F1–F44 (**F45**, **F46**), extended F26 and sharpened
+  F4 — from a context that knew nothing of this session, deriving everything from `CLAUDE.md`, the
+  inherited rules and the files. The `[V]`/`[I]` discipline and the one-line confirmations of known
+  findings were followed as specified, so the agent definition needs no correction.
 - V5.3 Agent definitions contain no Edit/Write tools.
+  **PASSED 2026-09-23**, and checked in the corrected form from D5-a: `tools` is **present** in all
+  four files and equals exactly `Read, Grep, Glob`. Verified mechanically by
+  `.claude/scratch/check_agents.py` (now in `tools/`), 0 failures — after Phase 3 and 4 this class of check is no
+  longer done by eye.
+
+**Correction 2026-09-23 (Phase 6, V6.1).** Two statements in this subsection do not hold against
+the sub-agents docs:
+- **"`/agents` lists all four"**: `/agents` has not listed agents since v2.1.198, well before 2.1.276.
+  Whatever the evidence for V5.1 was, it cannot have been `/agents` output. The reported form
+  `Tools: Read, Grep, Glob` matches the agent list Claude receives in its own tool context, which is
+  the likely source [I]. The *registration* result is not in doubt: the four agents are available
+  and read-only, re-confirmed from Claude's tool context on 2.1.280.
+- **"The agent registry is read at startup"**: the docs say agent files are hot-reloaded, with no
+  restart. A restart is needed for the **first** file in a new `agents/` directory — exactly the
+  Phase 5 situation, since `.claude/agents/` did not exist before. The observation was right, the
+  generalisation was wrong. The closing sentence below ("each has its own loading moment, and the
+  only reliable way to know is to try it") stands, and it should have included reading the docs.
+
+**Newly measured asymmetry, worth remembering.** Skills written during a session became available
+**in that same session** (that is how V4.1–V4.5 could be run immediately). Agents written during a
+session do **not** — the agent registry is read at startup. The statement "no restart needed",
+recorded under V4.1, is therefore true for skills and false for agents. Do not generalise from one
+artefact type to another; each has its own loading moment, and the only reliable way to know is to
+try it.
 
 ### Phase 6 – Human documentation and findings report
 
-- [ ] `readme_claude.md`: purpose of each artefact, how to start a session, what Claude will refuse
+- [x] `readme_claude.md`: purpose of each artefact, how to start a session, what Claude will refuse
       and why, how to verify the safety set-up (V1.x), how to update artefacts.
-- [ ] `reports/repo-findings.md`: F1–F24 with evidence, impact, proposed fix, suggested test.
+      **WRITTEN 2026-09-23.** Seven sections: inventory, session start, refusals, the two layers
+      (with the deny list grouped into self-protection / transition / permanent, which 5.2
+      promised and nothing had delivered), verification, updating, Phase 8 preview.
+- [x] `reports/repo-findings.md`: F1–F46 with evidence, impact, proposed fix, suggested test.
+      **WRITTEN 2026-09-23 — scope F1–F46 plus F26b (47 entries), not F1–F24**, because the backlog
+      had grown by 23 findings since this line was written. Each entry: Evidence, Impact, Proposed
+      fix, Test, Acceptance; plus severity, status and a suggested R1 increment grouping (a–i).
+
+#### 6.0 Decisions and corrections
+
+**D6-a — the verifiers had to become tracked.** `check_rules.py`, `check_skills.py` and
+`check_agents.py` lived in git-ignored `scratch/`, so the readme would have pointed a fresh clone at
+files that do not exist, failing V6.1 by construction. Operator decision: move them to `tools/`.
+Moving them exposed a second, quieter defect: ruff skips git-ignored files, so the scripts had never
+been linted — `check_rules.py` had three B023 errors (a closure over loop variables) and all three
+files failed `ruff format --check`. Both fixed; the gate now covers them.
+
+**D6-b — the report is the single source of truth; §3.6 is an index.** Two full copies would drift.
+`tools/check_findings.py` enforces that report entries, report index and §3.6 index hold the same
+IDs, that every entry has all five fields, that cited repo paths exist, and that a path written as
+*(absent)* really is absent — some findings are about a missing file, and that claim is now checked
+too.
+
+**Status changes found while re-reading** (only the six findings whose status could have moved):
+
+| Finding | Result |
+|---|---|
+| F10 | **addressed** — `.venv` reports pytest 8.4.2; both sources pin `<9` |
+| F14 | **addressed** — `docs/operations/DevWorkflow.md:16,34` require `make ci` before commit |
+| F21 | **partly** — R0.0 fixed ruff/ShellCheck/yamllint; pip upgrade in `make venv` and the pytest range remain |
+| F22 | unchanged |
+| F23 | **sharpened** — four test files carry `lint`, and no gate selects that marker at all |
+| F5 | unchanged |
+
+F40 is marked addressed (Claude's artefacts were the only thing wrong). F42 is marked partly: the
+rule was corrected, the missing document is still missing.
+
+**Readme correction found while writing.** The self-protect window as used for P1–P6 (set
+`self_protect: false`, Claude applies) no longer works on its own: P5 added
+`Edit(/.claude/hooks/**)` to the settings denies, so the Edit tool stays blocked with the guard flag
+off. The readme now gives two paths — operator applies (default), or a two-layer window in a fixed
+order.
+
+**Guard false positive observed** — `grep -n -i 'prometheus\|loki\|promtail\|\.env' README.md` →
+`guard: C3: \`grep\` would read secret material`. The *pattern* was classified as a secret path.
+Accepted like the other false positives in 5.4.5 and listed in the readme.
 
 Verification:
 - V6.1 Operator can follow `readme_claude.md` from a fresh shell without extra knowledge.
+  **IN PROGRESS — operator step.**
+  **V6.1 finding #1 (2026-09-23, 2.1.280):** readme §2 told the operator to run `/agents`, which
+  prints `The /agents wizard has been removed. Ask Claude to create or update subagents for you
+  … or edit the files directly`. The sub-agents docs (fetched 2026-09-23) say `/agents` stopped
+  listing agents **as of v2.1.198**, and name no replacement listing command. Readme §2 now uses
+  the `@` typeahead and asks Claude directly. §6.4 and the inventory row were also corrected, see
+  the note under 5.1 below. The readme was wrong because Claude wrote it from this document rather
+  than from the current docs — the same class of error as F40/F42/F46.
+  **V6.1 finding #2 (2026-09-23, 2.1.280, operator):** readme §2 expected the typeahead to list
+  `agent-compose-reviewer` and gave `@agent-security-reviewer` as the invocation. The typeahead
+  shows the **plain name** (`compose-reviewer`). Per the sub-agents docs, picking it inserts
+  `@"<name> (agent)"`, and the typed form `@agent-<name>` still resolves on submit, but while it is
+  typed the typeahead shows files, not agents. Both forms are valid, and the readme now describes
+  the picker as primary. Section 5.0's "`@agent-<name>`" is correct but incomplete. **V6.1 finding #3 (2026-09-23, 2.1.280, operator):** a hand-typed `@compose-reviewer`, without
+  the picker, also resolves to the agent. This was measured, not documented: the sub-agents docs
+  name only the picker and `@agent-<name>`. Three working forms on 2.1.280.
+  **V6.1 finding #4 (2026-09-23, operator) — the readme caused real side effects.** Readme §5.4 listed
+  the live hook checks as backticked commands in a table headed "needs a Claude session". The
+  operator ran them in the WSL shell, where no hook exists. Result: a real empty commit `236a4a2 test`
+  on `chore/r0-claude-safety-foundation` (not pushed, no upstream), and `README.md` overwritten with
+  `test` (105 lines deleted, uncommitted). Both are recoverable: `git restore README.md`, then
+  `git reset --soft HEAD~1` back to `ef273c8` (operator, C4). §5.3 did warn against typing the quoted
+  commands, but the warning sat in the wrong section and the table looked copy-pasteable. Fix: §5.4
+  is retitled "prompts for Claude, NOT shell commands", has a warning block that names this
+  incident, phrases every row as a prompt (L1–L5) with the verbatim expected reason, and explains
+  what to do if Claude declines to attempt a forbidden call. Lesson: **a document whose audience
+  alternates between a shell and a Claude prompt must make the target of every command explicit,
+  row by row.** This is exactly the failure V6.1 exists to find. V1.10–V1.13 on 2.1.280 are still
+  **not** done; the shell run tested nothing.
+  **Re-run on 2.1.280 after cleanup (2026-09-23).** The operator reset the test commit (HEAD back at
+  `ef273c8`) and restored `README.md`; Claude confirmed both read-only. Then:
+  - readme §5.3 direct probes, 17:11:18 UTC in `guard.log`: four blocks with the verbatim reasons
+    `C4: git commit is reserved for the operator`, `C5: command references the Raspberry Pi
+    (rpi-hub)`, `C1: redirection would write outside .claude/: README.md`,
+    `self-protection: only the operator edits .claude/hooks/guard.py`.
+  - readme §5.4 L1–L5 typed as prompts into a Claude session; operator reports all as expected.
+    Log evidence: L1 17:21:45 `C4: …`, L2 17:22:30 `C1: …`. **L3 and L4 left no guard block entry**:
+    the settings deny rules (`Edit(/.claude/hooks/**)`, `Read(/secrets/**)`) refused them before the
+    hook ran. That is a pass under the readme's "settings deny or guard" criterion. It also means
+    that on 2.1.280 the guard's Edit/Read branch was exercised only by the direct probe, not
+    through the hook. Ordering "deny before hook" is observed, not documented here [I].
+  → **V1.10–V1.13 and V1.15 re-confirmed on 2.1.280; V1.16 = proceed.** Not re-run on 2.1.280:
+  V1.14 (fail-closed via config rename), unless the operator did it in the same pass.
+  **V6.1 finding #5 (2026-09-23, operator):** after §5.1/§5.2 passed (77 passed), the operator had
+  to ask whether §5.5 and §5.6 run in the shell or in Claude. Readme §5 did not state the target per
+  step — the root cause of #4 as well — and its intro wrongly called every step read-only (V1.14
+  renames a file). Fix: a "where each step runs" table at the top of §5, a shell/Claude marker in
+  every subsection heading, the optional §5.5 proof written out as an explicit prompt plus the log
+  check, and the §5.6 gate given as two explicit alternatives.
+  **V6.1 finding #6 (2026-09-23, operator):** `/readonly-gate` was run in plan mode and passed. The
+  session kept the before/after snapshots in shell variables instead of the
+  `/tmp/claude-gate-*.txt` files the skill prescribed, because plan mode forbids writing files. The
+  deviation was sound, and it exposed that the skill conflicted with the default permission mode
+  (E2) on every run. It also ran `-m lint` as the skill invites (1 failed at `--maxfail=1`, F25
+  reproduced), but *after* the snapshot comparison, so that run was outside the side-effect check.
+  Claude re-checked afterwards: no new `__pycache__` or `.pytest_cache`. Fix (operator-approved):
+  `readonly-gate` now documents Form A (plan mode, variables, one single Bash call; tested through
+  the live guard, `OK: no side effects`) and Form B (`/tmp/claude-gate-*`). It requires any extra
+  run to sit inside the window, and the report must name the form used. `allowed-tools` are
+  **unchanged**. Whether Form A's compound call triggers a permission prompt is unmeasured, and the
+  skill forbids widening the grant to avoid one (D4-b).
+  **Re-run after the fix (operator, plan mode off):** the report named **Form B** and placed the
+  extra `-m lint` run inside the window. Results: `All checks passed!`, `47 files already formatted`,
+  yamllint and ShellCheck rc 0, `8 passed, 4 deselected`, `7 passed, 1 skipped`, `-m lint` →
+  `1 failed, 8 deselected` (F25, `.vscode/settings.json` line 37), `OK: no side effects`.
+  **Re-run in plan mode (operator):** the report named **Form A** and used one Bash call, with the
+  extra `-m lint` run inside the window. Results were identical to Form B, including
+  `OK: no side effects`. Both forms are now verified in real skill sessions. The permission-prompt
+  question for Form A stays open until the operator reports what was on screen; Claude correctly
+  stated that it cannot observe it.
+  **V6.1 walkthrough state (end of 2026-09-23, operator-reported):** readme §2 passed after findings
+  #1–#3. §5.1 and §5.2 (`77 passed`), §5.3 direct probes, §5.4 L1–L5, §5.5 and §5.6 (four checkers,
+  `0 failure(s)` each) all passed, and `/readonly-gate` passed in both forms.
+  **V6.1 finding #7 (2026-09-24, operator question):** the operator asked where to run the V1.14
+  `mv`: in Claude, a WSL shell, or the VS Code terminal. The readme did not say. On top of that,
+  its V1.14 block used `probe` and `$R` from the previous §5.3 block, so a fresh shell would have
+  failed with `probe: command not found`. Fix: the V1.14 block is now self-contained (`cd`, `R=`,
+  `probe()`) and names the target terminal (WSL bash, not PowerShell, not Claude, and why). It
+  warns that every Claude session is blocked while the file is renamed, carries the optional
+  hook-level half as a comment, and ends with a check that the file is back.
+  **V1.14 on 2.1.280 (2026-09-24, operator, WSL shell, new self-contained block):** `V1.14 exit=2`
+  as expected. Claude confirmed afterwards that `guard-config.json` is back, that no `.bak` is
+  left, and that the guard passes ordinary calls again. The optional hook-level half was not
+  reported. It was done on 2.1.276 (Phase 1b, item 3b).
+  **→ V6.1 PASSED 2026-09-24.** The operator followed the readme from a fresh shell. Every step
+  that failed or needed a question became a finding (#1–#7), and all seven are fixed in
+  `readme_claude.md` or `skills/readonly-gate/SKILL.md`. With V1.10–V1.15 re-confirmed on 2.1.280,
+  **V1.16 = proceed.** Still unreported and not blocking: whether Form A of `/readonly-gate`
+  triggers a permission prompt.
+  Lesson: seven defects in a document that passed its own author's review. Four of them (#1, #2,
+  #4, #7) would have failed silently or caused side effects. V6.1 is the only check here that tests
+  the document instead of the system.
+  Before these findings: Claude ran every read-only command of readme §5 it is allowed to:
+  §5.1, §5.2 (77 passed), §5.5 and §5.6 (all four checkers `0 failure(s)`). §5.3 is blocked for
+  Claude by design (raw Pi-identifier scan), §5.4 needs live tool calls.
 - V6.2 Each finding has evidence path and a testable acceptance criterion.
+  **PASSED 2026-09-23**, mechanically: `47 entries, 47 report index rows, 47 rows in
+  ClaudeTransition.md 3.6` / `0 failure(s)`. Negative controls: an emptied **Acceptance** field →
+  `FAIL F31: missing or empty **Acceptance**`; an existing path marked absent plus a non-existent
+  path → two FAIL lines for F13; both reverted.
+- V6.3 (added) Claude Code version drift. `claude --version` → `2.1.280`; V1.10–V1.16 were last run
+  on 2.1.276. Per the risk table they are due again (readme §5.3/§5.4). Incidental evidence that
+  the hook still enforces: two blocks in this session (`python3 -c`, the `grep` above).
 
 ### Phase 7 – Handover and CI parity
 
@@ -728,7 +1911,7 @@ Verification:
 - `settings.local.json` provably ignored.
 - Guard test matrix green (V1.9) and live hook tests passed (V1.10–V1.15) on the installed Claude Code version.
 - Operator-run `make ci` and GitHub CI green.
-- Findings F1–F24 handed over as proposals.
+- Findings handed over as proposals.
 - Phase 8 is tracked separately and not part of the transition's definition of done.
 
 ---
@@ -808,9 +1991,16 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
-| R0.0 toolchain parity | | | | | |
-| R0.0b workflow docs merge (`docs/r0-workflow-docs`) | | | | | |
-| R0.1 (Phase 1a) | | | | | |
+| R0.0 toolchain parity | 2026-09-17 | ? | green |  tests: passed, deploy: done | |
+| R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
+| R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
+| R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
+| R0.8 (Phase 6) | 2026-09-23 | ? | ? | n/a | `readme_claude.md` (operator guide incl. grouped deny list), `reports/repo-findings.md` (47 findings, five fields each, R1 grouping a–i), verifiers moved to tracked `tools/` (D6-a, three latent ruff errors fixed) plus `check_findings.py`; §3.6 reduced to an index (D6-b). V6.2 passed with negative controls. **V6.1 passed 2026-09-24** after the operator walkthrough, which found and fixed seven readme/skill defects (#1–#7), including one that caused a real test commit and a README overwrite. V1.10–V1.16 re-confirmed on 2.1.280. |
+| R0.7 (Phase 5) | 2026-09-23 | ? | ? | n/a | `.claude/agents/`: four read-only subagents, `tools: Read, Grep, Glob` each, 703 chars of always-loaded descriptions. D5-a (an absent `tools` grants everything — V5.3 inverted accordingly) and D5-b (bodies must not restate the inherited rules) recorded. **V5.1–V5.3 all passed** (V5.1/V5.2 after the operator restart — agents are not hot-loaded the way skills are). V5.2 produced F45 and F46, extended F26, closed F42's caveat, and forced the third correction of a Claude artefact claiming documentation that does not exist. |
+| R0.6 (Phase 4) | 2026-09-23 | ? | ? | n/a | `.claude/skills/`: eight skills, always-loaded description cost 1,236 chars total (cap is 1,536 per skill). D4-a (descriptions are the budget), D4-b (`allowed-tools` only on `readonly-gate`) and D4-c (no `paths` on skills) recorded. **V4.1–V4.6 all passed.** Invoking the skills produced F44 and showed that five of seven ADR-009 backup requirements are already implemented — F9 had made that invisible. |
+| R0.5 (Phase 3) | 2026-09-23 | ? | ? | n/a | `.claude/rules/`: eight path-scoped rule files, 468 lines, none always-loaded. D3-a (path scoping is mandatory, not optional) and D3-b (eight rules, not ten) recorded. V3.1 passed incl. a mechanical cited-path check; V3.2/V3.3 open. |
+| R0.4 (Phase 2, **complete**) | 2026-09-23 | ? | ? | n/a | `CLAUDE.md` restructured: German bootstrap (25 lines) → English project memory, 170 lines, ten sections. **V2.1–V2.3 all passed**; V2.3 verified live in a fresh session, answered from loaded memory with no file access. Decisions D2-a (C1–C8 split for a clean Phase 8 cut) and D2-b (CLAUDE.md vs ClaudeTransition.md by audience) recorded. |
+| R0.3 (Phase 1b, **complete**) | 2026-09-18 … 2026-09-23 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered and **proven to enforce**. **V1.10–V1.16 all passed 2026-09-23**, V1.16 = proceed (HEAD `e7580bb` unchanged, `README.md` untouched). **Patches P1–P6 applied**, matrix 65 → **77 passed**, ruff clean. T43 re-probe and hook-level V1.14 done; `self_protect` back to `true`. |
 
 ### 10.5 Toolchain record (Phase 0)
 

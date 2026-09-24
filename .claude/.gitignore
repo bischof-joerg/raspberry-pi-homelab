@@ -1,0 +1,12 @@
+# Nested gitignore for Claude artefacts (K5 in ClaudeTransition.md).
+# Claude Code's automatic protection for settings.local.json is a global git exclude on the
+# operator's machine only; it does not travel with the repository. This file does.
+
+# Local, machine-specific permissions and any secret Claude Code may store there (C3).
+settings.local.json
+
+# Drafts: proposed patches, ADR drafts, gate output.
+scratch/
+
+# Guard decision log (H6). Also covered by the root .gitignore rule `logs/`.
+logs/
