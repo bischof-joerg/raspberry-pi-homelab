@@ -22,6 +22,32 @@ Precondition: `.venv` exists. Never create or update it.
 
 ## Run
 
+Two equivalent forms. Choose by permission mode and say which one you used.
+
+**Form A — plan mode (the default here, E2).** Plan mode forbids writing files, `/tmp` included,
+so the snapshots stay in shell variables. Variables do not survive between Bash calls, so this
+must be **one single Bash call** from `before=` to the comparison:
+
+```bash
+export PYTHONDONTWRITEBYTECODE=1
+before=$(git status --porcelain --ignored)
+
+.venv/bin/ruff check --no-fix --no-cache .
+.venv/bin/ruff format --check --no-cache .
+.venv/bin/yamllint -s .
+git ls-files '*.sh' | xargs -r .venv/bin/shellcheck -x
+.venv/bin/python -m pytest -p no:cacheprovider --strict-markers -q tests/precommit -m precommit
+.venv/bin/python -m pytest -p no:cacheprovider --strict-markers -q tests \
+  -m "not postdeploy" --ignore=tests/postdeploy --ignore=tests/precommit
+
+after=$(git status --porcelain --ignored)
+if [ "$before" = "$after" ]; then echo "OK: no side effects"
+else diff <(printf '%s\n' "$before") <(printf '%s\n' "$after"); fi
+```
+
+**Form B — outside plan mode.** The snapshots go to `/tmp/claude-gate-*` (the only temp prefix the
+guard allows), so the steps may be separate calls:
+
 ```bash
 export PYTHONDONTWRITEBYTECODE=1
 git status --porcelain --ignored > /tmp/claude-gate-before.txt
@@ -40,8 +66,14 @@ diff /tmp/claude-gate-before.txt /tmp/claude-gate-after.txt && echo "OK: no side
 
 ## Acceptance
 
-The final `diff` must be empty. **Any difference is a C2 violation and must be reported**, not
-worked around — it means a supposedly read-only command wrote to the tree.
+Form A must print `OK: no side effects`; in Form B the final `diff` must be empty. **Any difference
+is a C2 violation and must be reported**, not worked around — it means a supposedly read-only
+command wrote to the tree. An extra run such as `-m lint` belongs **inside** the before/after
+window, otherwise its side effects go unchecked.
+
+`allowed-tools` pre-approves the individual commands. Whether the single compound call of Form A
+is covered by those patterns, or triggers a permission prompt, has not been measured. A prompt
+there is acceptable; do not widen `allowed-tools` to avoid it (D4-b).
 
 ## Reading the output honestly
 
@@ -56,5 +88,5 @@ worked around — it means a supposedly read-only command wrote to the tree.
 
 ## Report
 
-State per step: pass/fail with counts, the verbatim first failure if any, and the side-effect diff
-result. Do not summarise a failure as "mostly green".
+State which form (A or B) ran, then per step: pass/fail with counts, the verbatim first failure if
+any, and the side-effect result. Do not summarise a failure as "mostly green".

@@ -3,8 +3,10 @@
 - **Status:** PHASE 6 WRITTEN (v2.3, 2026-09-23) – `readme_claude.md` and
   `reports/repo-findings.md` written; the verifiers moved from git-ignored `scratch/` to tracked
   `tools/` (plus a new `check_findings.py`); §3.6 is now an index into the report. V6.2 passed
-  mechanically; **V6.1 is an operator step**. Claude Code is now **2.1.280**, so V1.10–V1.16 are
-  due again (risk table). Next: V6.1, then Phase 7.
+  mechanically; **V6.1 is an operator step**. Claude Code is now **2.1.280**; V1.10–V1.13/V1.15
+  re-confirmed on it. **V6.1 PASSED 2026-09-24**. The walkthrough produced findings #1–#7, all fixed
+  in the readme or the skill; V1.14 re-confirmed. **Phase 6 complete pending the operator's
+  checkbox.** Next: Phase 7 (handover and CI parity).
 - **Earlier:** PHASE 5 COMPLETE (v2.2, 2026-09-23) – Phases 1a–5 complete. `.claude/agents/` holds
   **four read-only subagents**; **V5.1–V5.3 all passed**. V5.2 produced **F45** (UFW likely does not
   govern the published ports) and **F46** (cadvisor's privileged mode is undocumented and the docs
@@ -1756,6 +1758,82 @@ Verification:
   the picker as primary. Section 5.0's "`@agent-<name>`" is correct but incomplete. **V6.1 finding #3 (2026-09-23, 2.1.280, operator):** a hand-typed `@compose-reviewer`, without
   the picker, also resolves to the agent. This was measured, not documented: the sub-agents docs
   name only the picker and `@agent-<name>`. Three working forms on 2.1.280.
+  **V6.1 finding #4 (2026-09-23, operator) — the readme caused real side effects.** Readme §5.4 listed
+  the live hook checks as backticked commands in a table headed "needs a Claude session". The
+  operator ran them in the WSL shell, where no hook exists. Result: a real empty commit `236a4a2 test`
+  on `chore/r0-claude-safety-foundation` (not pushed, no upstream), and `README.md` overwritten with
+  `test` (105 lines deleted, uncommitted). Both are recoverable: `git restore README.md`, then
+  `git reset --soft HEAD~1` back to `ef273c8` (operator, C4). §5.3 did warn against typing the quoted
+  commands, but the warning sat in the wrong section and the table looked copy-pasteable. Fix: §5.4
+  is retitled "prompts for Claude, NOT shell commands", has a warning block that names this
+  incident, phrases every row as a prompt (L1–L5) with the verbatim expected reason, and explains
+  what to do if Claude declines to attempt a forbidden call. Lesson: **a document whose audience
+  alternates between a shell and a Claude prompt must make the target of every command explicit,
+  row by row.** This is exactly the failure V6.1 exists to find. V1.10–V1.13 on 2.1.280 are still
+  **not** done; the shell run tested nothing.
+  **Re-run on 2.1.280 after cleanup (2026-09-23).** The operator reset the test commit (HEAD back at
+  `ef273c8`) and restored `README.md`; Claude confirmed both read-only. Then:
+  - readme §5.3 direct probes, 17:11:18 UTC in `guard.log`: four blocks with the verbatim reasons
+    `C4: git commit is reserved for the operator`, `C5: command references the Raspberry Pi
+    (rpi-hub)`, `C1: redirection would write outside .claude/: README.md`,
+    `self-protection: only the operator edits .claude/hooks/guard.py`.
+  - readme §5.4 L1–L5 typed as prompts into a Claude session; operator reports all as expected.
+    Log evidence: L1 17:21:45 `C4: …`, L2 17:22:30 `C1: …`. **L3 and L4 left no guard block entry**:
+    the settings deny rules (`Edit(/.claude/hooks/**)`, `Read(/secrets/**)`) refused them before the
+    hook ran. That is a pass under the readme's "settings deny or guard" criterion. It also means
+    that on 2.1.280 the guard's Edit/Read branch was exercised only by the direct probe, not
+    through the hook. Ordering "deny before hook" is observed, not documented here [I].
+  → **V1.10–V1.13 and V1.15 re-confirmed on 2.1.280; V1.16 = proceed.** Not re-run on 2.1.280:
+  V1.14 (fail-closed via config rename), unless the operator did it in the same pass.
+  **V6.1 finding #5 (2026-09-23, operator):** after §5.1/§5.2 passed (77 passed), the operator had
+  to ask whether §5.5 and §5.6 run in the shell or in Claude. Readme §5 did not state the target per
+  step — the root cause of #4 as well — and its intro wrongly called every step read-only (V1.14
+  renames a file). Fix: a "where each step runs" table at the top of §5, a shell/Claude marker in
+  every subsection heading, the optional §5.5 proof written out as an explicit prompt plus the log
+  check, and the §5.6 gate given as two explicit alternatives.
+  **V6.1 finding #6 (2026-09-23, operator):** `/readonly-gate` was run in plan mode and passed. The
+  session kept the before/after snapshots in shell variables instead of the
+  `/tmp/claude-gate-*.txt` files the skill prescribed, because plan mode forbids writing files. The
+  deviation was sound, and it exposed that the skill conflicted with the default permission mode
+  (E2) on every run. It also ran `-m lint` as the skill invites (1 failed at `--maxfail=1`, F25
+  reproduced), but *after* the snapshot comparison, so that run was outside the side-effect check.
+  Claude re-checked afterwards: no new `__pycache__` or `.pytest_cache`. Fix (operator-approved):
+  `readonly-gate` now documents Form A (plan mode, variables, one single Bash call; tested through
+  the live guard, `OK: no side effects`) and Form B (`/tmp/claude-gate-*`). It requires any extra
+  run to sit inside the window, and the report must name the form used. `allowed-tools` are
+  **unchanged**. Whether Form A's compound call triggers a permission prompt is unmeasured, and the
+  skill forbids widening the grant to avoid one (D4-b).
+  **Re-run after the fix (operator, plan mode off):** the report named **Form B** and placed the
+  extra `-m lint` run inside the window. Results: `All checks passed!`, `47 files already formatted`,
+  yamllint and ShellCheck rc 0, `8 passed, 4 deselected`, `7 passed, 1 skipped`, `-m lint` →
+  `1 failed, 8 deselected` (F25, `.vscode/settings.json` line 37), `OK: no side effects`.
+  **Re-run in plan mode (operator):** the report named **Form A** and used one Bash call, with the
+  extra `-m lint` run inside the window. Results were identical to Form B, including
+  `OK: no side effects`. Both forms are now verified in real skill sessions. The permission-prompt
+  question for Form A stays open until the operator reports what was on screen; Claude correctly
+  stated that it cannot observe it.
+  **V6.1 walkthrough state (end of 2026-09-23, operator-reported):** readme §2 passed after findings
+  #1–#3. §5.1 and §5.2 (`77 passed`), §5.3 direct probes, §5.4 L1–L5, §5.5 and §5.6 (four checkers,
+  `0 failure(s)` each) all passed, and `/readonly-gate` passed in both forms.
+  **V6.1 finding #7 (2026-09-24, operator question):** the operator asked where to run the V1.14
+  `mv`: in Claude, a WSL shell, or the VS Code terminal. The readme did not say. On top of that,
+  its V1.14 block used `probe` and `$R` from the previous §5.3 block, so a fresh shell would have
+  failed with `probe: command not found`. Fix: the V1.14 block is now self-contained (`cd`, `R=`,
+  `probe()`) and names the target terminal (WSL bash, not PowerShell, not Claude, and why). It
+  warns that every Claude session is blocked while the file is renamed, carries the optional
+  hook-level half as a comment, and ends with a check that the file is back.
+  **V1.14 on 2.1.280 (2026-09-24, operator, WSL shell, new self-contained block):** `V1.14 exit=2`
+  as expected. Claude confirmed afterwards that `guard-config.json` is back, that no `.bak` is
+  left, and that the guard passes ordinary calls again. The optional hook-level half was not
+  reported. It was done on 2.1.276 (Phase 1b, item 3b).
+  **→ V6.1 PASSED 2026-09-24.** The operator followed the readme from a fresh shell. Every step
+  that failed or needed a question became a finding (#1–#7), and all seven are fixed in
+  `readme_claude.md` or `skills/readonly-gate/SKILL.md`. With V1.10–V1.15 re-confirmed on 2.1.280,
+  **V1.16 = proceed.** Still unreported and not blocking: whether Form A of `/readonly-gate`
+  triggers a permission prompt.
+  Lesson: seven defects in a document that passed its own author's review. Four of them (#1, #2,
+  #4, #7) would have failed silently or caused side effects. V6.1 is the only check here that tests
+  the document instead of the system.
   Before these findings: Claude ran every read-only command of readme §5 it is allowed to:
   §5.1, §5.2 (77 passed), §5.5 and §5.6 (all four checkers `0 failure(s)`). §5.3 is blocked for
   Claude by design (raw Pi-identifier scan), §5.4 needs live tool calls.
@@ -1917,7 +1995,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
-| R0.8 (Phase 6) | 2026-09-23 | ? | ? | n/a | `readme_claude.md` (operator guide incl. grouped deny list), `reports/repo-findings.md` (47 findings, five fields each, R1 grouping a–i), verifiers moved to tracked `tools/` (D6-a, three latent ruff errors fixed) plus `check_findings.py`; §3.6 reduced to an index (D6-b). V6.2 passed with negative controls; V6.1 open (operator). Claude Code 2.1.280 → V1.10–V1.16 due again. |
+| R0.8 (Phase 6) | 2026-09-23 | ? | ? | n/a | `readme_claude.md` (operator guide incl. grouped deny list), `reports/repo-findings.md` (47 findings, five fields each, R1 grouping a–i), verifiers moved to tracked `tools/` (D6-a, three latent ruff errors fixed) plus `check_findings.py`; §3.6 reduced to an index (D6-b). V6.2 passed with negative controls. **V6.1 passed 2026-09-24** after the operator walkthrough, which found and fixed seven readme/skill defects (#1–#7), including one that caused a real test commit and a README overwrite. V1.10–V1.16 re-confirmed on 2.1.280. |
 | R0.7 (Phase 5) | 2026-09-23 | ? | ? | n/a | `.claude/agents/`: four read-only subagents, `tools: Read, Grep, Glob` each, 703 chars of always-loaded descriptions. D5-a (an absent `tools` grants everything — V5.3 inverted accordingly) and D5-b (bodies must not restate the inherited rules) recorded. **V5.1–V5.3 all passed** (V5.1/V5.2 after the operator restart — agents are not hot-loaded the way skills are). V5.2 produced F45 and F46, extended F26, closed F42's caveat, and forced the third correction of a Claude artefact claiming documentation that does not exist. |
 | R0.6 (Phase 4) | 2026-09-23 | ? | ? | n/a | `.claude/skills/`: eight skills, always-loaded description cost 1,236 chars total (cap is 1,536 per skill). D4-a (descriptions are the budget), D4-b (`allowed-tools` only on `readonly-gate`) and D4-c (no `paths` on skills) recorded. **V4.1–V4.6 all passed.** Invoking the skills produced F44 and showed that five of seven ADR-009 backup requirements are already implemented — F9 had made that invisible. |
 | R0.5 (Phase 3) | 2026-09-23 | ? | ? | n/a | `.claude/rules/`: eight path-scoped rule files, 468 lines, none always-loaded. D3-a (path scoping is mandatory, not optional) and D3-b (eight rules, not ten) recorded. V3.1 passed incl. a mechanical cited-path check; V3.2/V3.3 open. |

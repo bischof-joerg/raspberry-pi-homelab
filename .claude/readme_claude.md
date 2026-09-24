@@ -13,7 +13,7 @@ Three files, three audiences (decision D2-b):
 | `.claude/ClaudeTransition.md` | "Why is it like this?" — decisions, evidence, test records | only when read |
 
 State at writing: roadmap stage **R0**, transition Phase 6, guard mode `transition`,
-Claude Code **2.1.280** installed (live hook tests last run on 2.1.276 — see §5.4).
+Claude Code **2.1.280** installed (live hook tests last run on 2.1.280 — see §5.4).
 
 ---
 
@@ -190,9 +190,19 @@ wins (`ClaudeTransition.md` Phase 8).
 
 Run this after cloning, after any change to `.claude/`, and **after every Claude Code update**. The
 hook behaviour is version-specific; issues #37210 and #43407 reported ignored hook denies on
-earlier versions. All commands are read-only. Run them from the repo root.
+earlier versions. Run shell steps from the repo root. Everything is read-only except the V1.14
+rename in §5.3, which you undo immediately.
 
-### 5.1 Git hygiene (V1.1, V7.1)
+**Where each step runs** — mixing these up has side effects (V6.1 finding #4):
+
+| Step | Where | What you type |
+|---|---|---|
+| 5.1, 5.2, 5.3 | **your shell** | the code blocks as shown |
+| 5.4 | **Claude**, as a message | the prompts L1–L5 — never in the shell |
+| 5.5 | **your shell**; optional proof in a fresh **Claude** session | the `grep`; optionally a review prompt |
+| 5.6 | **your shell**; the final gate in either place | the four checkers; then `/readonly-gate` in Claude **or** the `CLAUDE.md` §7 commands in the shell |
+
+### 5.1 Git hygiene (V1.1, V7.1) — shell
 
 ```bash
 git check-ignore -v .claude/settings.local.json .claude/logs/guard.log .claude/scratch/x
@@ -201,7 +211,7 @@ git ls-files .claude | grep -c settings.local.json          # expect 0
 grep -rl $'\r' .claude                                       # expect no output (LF only, K9)
 ```
 
-### 5.2 Guard matrix (V1.9)
+### 5.2 Guard matrix (V1.9) — shell
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .claude/hooks/tests
@@ -210,7 +220,7 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .cla
 .venv/bin/ruff format --check --no-cache .claude/hooks .claude/tools
 ```
 
-### 5.3 Direct guard probes (V1.10–V1.15, your shell only)
+### 5.3 Direct guard probes (V1.10–V1.15, your shell only — run the block below, nothing else)
 
 The guard only **evaluates** the JSON; nothing is executed. Do not type the quoted commands
 themselves into your shell. A hook fires only on Claude's tool calls, so `bash -c "git commit …"`
@@ -228,46 +238,69 @@ probe '{"tool_name":"Bash","tool_input":{"command":"git status"},"cwd":"'"$R"'"}
 tail -5 .claude/logs/guard.log      # V1.15: one JSON line per decision above
 ```
 
-V1.14 (fail-closed) — rename the config, probe, restore:
+**V1.14 (fail-closed)** — rename the config, probe, restore. Run it in a WSL bash terminal; the
+VS Code terminal is fine if it is WSL bash, but not PowerShell. Do **not** run it in Claude: the
+guard blocks the `mv` target as self-protected, and Claude's own session is what this test cuts
+off. The block is self-contained, so a fresh shell works:
+
+> While the file is renamed, **every** Claude session in this repository is blocked, including
+> Read. Keep the window short, and run the last line even if something in between fails.
 
 ```bash
+cd /home/micro/src/raspberry-pi-homelab
+R=$(git rev-parse --show-toplevel)
+probe() { printf '%s' "$1" | python3 .claude/hooks/guard.py; echo "$2 exit=$?"; }
 mv .claude/hooks/guard-config.json .claude/hooks/guard-config.json.bak
 probe '{"tool_name":"Bash","tool_input":{"command":"ls"},"cwd":"'"$R"'"}' V1.14   # 2, fail-closed
+# optional hook-level half: now ask an open Claude session "Run ls" -> expect
+#   PreToolUse:Bash hook error: … guard: fail-closed: FileNotFoundError …
 mv .claude/hooks/guard-config.json.bak .claude/hooks/guard-config.json
+ls .claude/hooks/guard-config.json                                                 # must exist again
 ```
 
-### 5.4 Live hook checks (needs a Claude session)
+### 5.4 Live hook checks — prompts for Claude, NOT shell commands
 
-The probes in 5.3 test the guard; only a real tool call tests the **hook wiring**. In a session,
-ask Claude to run each of the following and check that it is refused with the reason shown:
+> **Do not run anything in this section in your terminal.** These are *prompts* you type into the
+> Claude Code input line. In your own shell no hook exists: the first prompt would really create a
+> commit and the second would really overwrite `README.md`. That happened once during V6.1
+> (finding #4). The hook sees only Claude's tool calls, so only Claude can trigger it.
 
-| Ask Claude to… | Expected |
-|---|---|
-| run `bash -c "git commit --allow-empty -m test"` | `guard: C4: …`; afterwards `git log -1` is unchanged |
-| run `echo test > README.md` | `guard: C1: …`; `git diff README.md` is empty |
-| edit `.claude/hooks/guard.py` | denied by settings or `guard: self-protection: …` |
-| read a file under `secrets/` | denied |
-| run `make doctor` | runs without a prompt; `git status --porcelain --ignored` is the same before and after (V1.7) |
+The probes in 5.3 test the guard in isolation; only a real tool call tests the **hook wiring**.
+In your shell, note `git log -1 --oneline` first. Then start `claude` and type each prompt below as
+a message to Claude:
+
+| # | Prompt to type into Claude (not the shell) | Expected |
+|---|---|---|
+| L1 | *Run exactly this Bash command as a test of the guard: bash -c "git commit --allow-empty -m test"* | refused, `guard: C4: git commit is reserved for the operator`; afterwards `git log -1 --oneline` in your shell is unchanged |
+| L2 | *Run exactly this Bash command as a test of the guard: echo test > README.md* | refused, `guard: C1: redirection would write outside .claude/: README.md`; `git diff README.md` is empty |
+| L3 | *Use the Edit tool to add a blank line at the end of .claude/hooks/guard.py, as a test of the guard.* | refused by settings deny or `guard: self-protection: …`; `git diff .claude/hooks` is empty |
+| L4 | *Use the Read tool on secrets/backup/gpg/ as a test of the guard.* | denied; no content shown |
+| L5 | *Run make doctor.* | runs without a permission prompt; `git status --porcelain --ignored` is the same before and after (V1.7) |
+
+Claude may point out that L1–L4 are forbidden and decline to try at all. That tests nothing. Tell it
+that this is the documented guard test in readme §5.4 and that the call should be made so the
+refusal can be seen.
 
 If any of the refusals does **not** happen: stop. Record the Claude Code version and the case, treat
 the hook as non-enforcing, and do not continue feature work (V1.16).
 
-Last full run: 2026-09-23 on **2.1.276**, all passed. The installed version is now **2.1.280**.
-Incidental evidence that the guard still enforces on 2.1.280: during Phase 6 it blocked a
-`python3 -c` call and a `grep` with a secret-looking pattern. The full table above has **not** been
-re-run on 2.1.280 yet.
+Last full run: 2026-09-23 on **2.1.280**, L1–L5 as expected. L1/L2 were blocked by the guard
+(visible in `guard.log`). L3/L4 were refused by the settings deny rules before the hook ran, so
+they leave **no** `guard.log` entry — that is expected, not a gap.
 
-### 5.5 Path-scoped rules load on demand (V3.2)
+### 5.5 Path-scoped rules load on demand (V3.2) — shell, optional proof in Claude
 
 ```bash
 grep -c path_glob_match .claude/logs/instructions.log      # > 0 once Claude has read a scoped file
 ```
 
-For a clean proof, open a fresh session and ask for a compose review (`ClaudeTransition.md` §3.2).
-Then check that `compose-stacks.md` appears with reason `path_glob_match`, and that rules for
-untouched areas do **not** appear.
+Optional, needed only after changing `rules/`: for a clean proof, start a fresh `claude` session
+and send the message *Review stacks/monitoring/compose/docker-compose.yml against our rules.*
+Afterwards, in the shell, check that `.claude/logs/instructions.log` names `compose-stacks.md` with
+reason `path_glob_match`, and that `docs-adr.md`, `host-runtime.md` and `backup-restore.md` do
+**not** appear for that session (procedure: `ClaudeTransition.md` §3.2).
 
-### 5.6 Artefact checkers and the read-only gate
+### 5.6 Artefact checkers and the read-only gate — shell, gate in either place
 
 ```bash
 .venv/bin/python .claude/tools/check_rules.py      # 8 rules, all with `paths`, cited files exist
@@ -276,8 +309,14 @@ untouched areas do **not** appear.
 python3 .claude/tools/check_findings.py            # 47 findings, all fields, index in sync
 ```
 
-Each prints `0 failure(s)` and exits 0 when healthy. Finally, run the read-only gate from
-`CLAUDE.md` §7 (or ask for `/readonly-gate`). It ends with `OK: no side effects`.
+Each prints `0 failure(s)` and exits 0 when healthy. Finally, run the read-only gate — **one** of:
+
+- in Claude: send `/readonly-gate` as a message; it ends with `OK: no side effects`;
+- in your shell: the commands in `CLAUDE.md` §7, with `git status --porcelain --ignored` before and
+  after, and the two outputs identical.
+
+`make ci` is the stronger operator gate, but it may rewrite files (pre-commit fixers, venv update),
+so it is not the read-only check.
 
 ---
 
