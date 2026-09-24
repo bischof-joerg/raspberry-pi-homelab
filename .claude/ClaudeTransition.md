@@ -1956,7 +1956,34 @@ ruff `All checks passed!`, `48 files already formatted`, yamllint and ShellCheck
 `8 passed, 4 deselected`, `7 passed, 1 skipped`, `OK: no side effects`. The guard itself is live
 and still `transition` — every call in this session passed through the patched code.
 
-#### 8.2 The switch — not yet started
+#### 8.2 The switch — prepared 2026-09-24
+
+Prepared as `.claude/scratch/p8/guard-config.json` and `.claude/scratch/p8/settings.json`. Both
+parse as strict JSON.
+
+`settings.json` diff:
+- **Removed:** the transition Edit denies (`/.github`, `/docs`, `/scripts`, `/stacks`, `/tests`,
+  `/config`, `/Makefile`, `/deploy.sh`, `/README.md`, `/pyproject.toml`, `/requirements-dev.txt`,
+  `/renovate.json5`, `/.gitignore`, `/.gitattributes`, `/.pre-commit-config.yaml`, `/.yamllint.yml`)
+  and the make denies for `precommit`, `format`, `ruff`, `check`, `ci`, `test`.
+- **Added:** `Edit(/.git/**)` and `Edit(/.venv/**)`, so D8-a has two layers like the other
+  exclusions, and `Edit(/.claude/settings.local.json)`, the one self-protected path that had no
+  settings deny.
+- **Unchanged:** everything else — self-protection, C3–C5, `make venv*`, `make hooks*`,
+  `pre-commit *`, `pip install *`, the Pi/backup/restore/renovate targets.
+
+**Preflight (Claude):** the live, patched `guard.py` was run against the prepared operate config and
+the real repository root with `.claude/scratch/p8/preflight_operate.py` — **23 cases, 0 failures**.
+- Passed: Write under `tests/`, `README.md`, compose edit, `make ci`, `make precommit`,
+  `ruff format .`, and the plan file.
+- Blocked, with the reasons shown:
+  - `git commit` and `bash -c "git push"` → C4;
+  - `ssh`, `curl` and WebFetch to the Pi → C5;
+  - Read of `secrets/` → C3;
+  - Write to `Todo.txt`, `ChatGPTHint.txt`, `.git/config`, `.venv/`, `~/.bashrc` → `scope`;
+  - `guard.py` and `settings.json` → self-protection;
+  - `make venv` and `make postdeploy` → `policy`;
+  - `sudo ./deploy.sh` → C5.
 
 Config values for `guard-config.json` (operator), exactly as tested in P10:
 `"mode": "operate"`, `"operate_write_excludes": ["secrets", "logs", ".vscode", "ChatGPTHint.txt",
@@ -1965,8 +1992,27 @@ Config values for `guard-config.json` (operator), exactly as tested in P10:
 `"operate_ruff_fix_allowed": true`. The `settings.json` change and the artefact updates follow
 once 8.1 is committed.
 
+**Applied 2026-09-24 (operator):** `settings.json` and `guard-config.json` were copied from
+`scratch/p8/`. Claude confirmed `"mode": "operate"` in the live config. The operate-mode switch is
+**live**.
+
+**V8.1 live results (2026-09-24, Claude Code 2.1.280).** The operator sent each prompt as a message
+to Claude; every refusal came from a real tool call.
+
+| Prompt | Refused by | Verbatim | Side-effect check |
+|---|---|---|---|
+| `git commit --allow-empty -m test` | hook | `guard: C4: git commit is reserved for the operator` | HEAD `7a3c7a8` unchanged |
+| `curl -fsS http://192.168.178.29:3000/api/health` | hook (raw Pi scan, before the settings deny) | `guard: C5: command references the Raspberry Pi (192.168.178.29)` | no request sent |
+| Read `secrets/backup/gpg/` | settings `Read(/secrets/**)` | `File is in a directory that is denied by your permission settings.` | nothing read |
+| Edit `Todo.txt` (append a blank line) | settings `Edit(/Todo.txt)` | same text | sha256 `97a0dcb4…` unchanged |
+| Edit `.claude/hooks/guard.py` (append a blank line) | settings `Edit(/.claude/hooks/**)` | same text | sha256 `d4b5b461…` unchanged |
+
+Where the settings layer refused first, the guard's own operate-mode answer for the same case is
+covered by T47/T50 and by the 23-case preflight above. **V8.1 PASSED.**
+
 Verification:
 - V8.1 Negative tests V1.4 (commit, ssh) and V1.8 (non-allowed Pi calls) still denied.
+  **PASSED 2026-09-24**, see the table above.
 - V8.2 Positive test: Claude edits a file under `tests/` after approval.
 - V8.3 Each selective Pi allowance works, and a variant of it (other port/path) is denied.
 
