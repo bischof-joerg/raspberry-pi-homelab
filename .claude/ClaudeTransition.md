@@ -1,9 +1,12 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** **IMPLEMENTED** (v2.4, 2026-09-24) – Phases 0–7 complete. Merged to `main` via
+- **Status:** **PHASE 8 IN PROGRESS** (v2.5, 2026-09-24) on branch
+  `chore/r0-phase8-operate-mode`. The guard is in mode **`operate`** (`c12edc4`), V8.1 passed live,
+  and the artefacts were updated in 8.3. Open: V8.2 (first write outside `.claude/`), then the
+  merge. After that, roadmap stage **R1**, starting with F21.
+- **Earlier:** **IMPLEMENTED** (v2.4, 2026-09-24) – Phases 0–7 complete. Merged to `main` via
   PR #10, merge commit `c9d2c5dbcf2ee94389335c42d636a312c3c75597`. CI green, deployed on the Pi,
-  postdeploy green (regression check; `.claude/` has no runtime effect). Next: **Phase 8** (retire
-  C1/C2) on its own branch, then roadmap stage R1.
+  postdeploy green (regression check; `.claude/` has no runtime effect).
 - **Earlier:** PHASE 6 WRITTEN (v2.3, 2026-09-23) – `readme_claude.md` and
   `reports/repo-findings.md` written; the verifiers moved from git-ignored `scratch/` to tracked
   `tools/` (plus a new `check_findings.py`); §3.6 is now an index into the report. V6.2 passed
@@ -1877,22 +1880,30 @@ Verification:
 Goal: Claude edits repository files; C3 (secrets), C4 (no commit), C5 (no direct Pi access, with
 selective service allowances), and C6 (versioned, idempotent, test-first) remain in force.
 
-- [ ] Operator confirms the edit scope (default proposal: whole repository except `secrets/**`,
+- [x] Operator confirms the edit scope (default proposal: whole repository except `secrets/**`,
       `logs/**`, `.vscode/**`, `ChatGPTHint.txt`).
-- [ ] Remove the transition block from `CLAUDE.md` (C1, C2) and from `settings.json`
+      **DONE 2026-09-24**, D8-a (plus `Todo.txt`, `.git/`, `.venv/`).
+- [x] Remove the transition block from `CLAUDE.md` (C1, C2) and from `settings.json`
       (Edit denies, `make`/`pre-commit` mutating-target denies).
-- [ ] Decide which make targets become allowed (`make precommit`, `make test`, `make ci`) now that
+      **DONE** — `settings.json` in 8.2 (`c12edc4`), `CLAUDE.md` §2.1 replaced by the write scope in 8.3.
+- [x] Decide which make targets become allowed (`make precommit`, `make test`, `make ci`) now that
       side effects on repo files are acceptable. Pi-only and Renovate targets stay denied.
-- [ ] Update skills/agents that were read-only by design (`test-author`, `new-stack-proposal`,
+      **DONE**, D8-b and D8-c.
+- [x] Update skills/agents that were read-only by design (`test-author`, `new-stack-proposal`,
       `adr-draft`) to write to their real target paths.
-- [ ] Replace broad Pi denies with narrow ones before adding any allowance. Example: to allow a
+      **DONE with one deliberate deviation**, see 8.3 (D8-f).
+- [x] Replace broad Pi denies with narrow ones before adding any allowance. Example: to allow a
       Grafana health check, remove `Bash(*192.168.178.29*)`, keep `Bash(ssh *)`/`scp`/`rsync`
       denies, and add `Bash(curl -fsS http://192.168.178.29:3000/api/health)` as a single allow.
       Deny rules always win, so a broad deny would silently block every selective allow.
-- [ ] Operator switches guard mode to `operate` (H7) and updates tests for C1/C2 cases.
-- [ ] Selective Pi allowances are added to both layers: narrow allow rule in `settings.json` and
+      **N/A** — no allowance requested (D8-e); the procedure stays documented in readme §4.1.
+- [x] Operator switches guard mode to `operate` (H7) and updates tests for C1/C2 cases.
+      **DONE** — P7–P10 (`7a3c7a8`), switch (`c12edc4`).
+- [x] Selective Pi allowances are added to both layers: narrow allow rule in `settings.json` and
       an exact allowlist entry in `guard-config.json` (host, port, path, method GET only).
-- [ ] Record each allowance in this document with reason and date.
+      **N/A** (D8-e).
+- [x] Record each allowance in this document with reason and date.
+      **N/A** (D8-e).
 
 #### 8.0 Operator decisions (2026-09-24)
 
@@ -2009,6 +2020,30 @@ to Claude; every refusal came from a real tool call.
 
 Where the settings layer refused first, the guard's own operate-mode answer for the same case is
 covered by T47/T50 and by the 23-case preflight above. **V8.1 PASSED.**
+
+#### 8.3 Artefact updates (2026-09-24, Claude, inside `.claude/` only)
+
+| File | Change |
+|---|---|
+| `CLAUDE.md` | §2.1 "Transition-only" replaced by "Write scope (operate)". §7 now lets Claude run the make gates and formatters, names their side effects (unpinned pip, F21; Docker, F24), and shrinks the operator-only list. The `.venv` rule is "never directly, only via the make gates". §8 gate is `make ci`, run by Claude. Roadmap stage → **R1**. The header points to §1 here for C1–C8. 187 lines. |
+| `readme_claude.md` | State line and inventory updated. The working loop has Claude run `make ci`. §3 has scope/policy rows instead of C1/C2. §4 has the 2.1.280 `cp` observation. §4.1 regroups the deny list after 8.2. §5.2 expects 147. **§5.3 V1.12 and §5.4 L2 were retargeted** (below). New L6 (`Todo.txt`). §6.5 describes the Phase 8 copy/test/apply procedure. §7 describes operate mode and the one-line rollback. |
+| `skills/adr-draft` | Writes `docs/architecture/adr/…` with Status Proposed. Only the operator accepts. |
+| `skills/new-stack-proposal` | Still drafts to `scratch/` — **D8-f**: a whole stack is never one commit (IN2), so the proposal is the design, and the real files land increment by increment via `increment-plan`. Only the stale C1 reasoning was replaced. |
+| `skills/readonly-gate`, `skills/increment-plan` | The gate is the non-mutating option next to `make ci`; the increment template records the `make ci` result plus any fixer diff. |
+| `agents/test-author` | Stays read-only by design. The main session writes after plan approval. C2 wording removed. |
+| `rules/docs-adr.md`, `rules/testing.md` | C2 wording removed; the reasoning is unchanged. |
+
+**A verification step that would have become destructive.** Readme §5.3 V1.12 and §5.4 L2 used
+`echo test > README.md` as a negative test. In operate mode that write is **allowed**. Measured
+with the live guard: `echo test > README.md` → exit 0, while
+`echo test > .git/claude-guard-probe` → exit 2
+`guard: scope: redirection would write outside the permitted write scope: .git/claude-guard-probe`,
+and no file was created. An operator following the old readme after 8.2 would have overwritten
+`README.md` through Claude — the same damage as V6.1 finding #4, this time with the hook's
+approval. Both steps now target `.git/claude-guard-probe`: excluded, and harmless if a layer ever
+failed. Lesson: **a policy change silently inverts every negative test that used a now-allowed
+path.** Re-read the verification section whenever the policy changes, not only when the tooling
+does.
 
 Verification:
 - V8.1 Negative tests V1.4 (commit, ssh) and V1.8 (non-allowed Pi calls) still denied.

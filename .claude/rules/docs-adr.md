@@ -10,7 +10,8 @@ paths:
 - **English only** for docs, comments and config descriptions — including files whose surrounding
   material is German. `Todo.txt` is the deliberate exception and stays German.
 - Markdown, LF line endings, final newline, no trailing whitespace. The pre-commit hygiene hooks
-  fix these, and Claude cannot run them (C2), so author the file correctly the first time.
+  fix these during `make precommit`/`make ci`, but a fixer rewrite is an unreviewed diff, so
+  author the file correctly the first time.
 - Write what the system *is*, not what it was planned to be. Where the two differ, say so and name
   the gap — that is more useful than a tidy fiction.
 

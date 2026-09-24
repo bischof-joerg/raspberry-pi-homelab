@@ -1,7 +1,8 @@
 # CLAUDE.md — raspberry-pi-homelab
 
 Project memory, loaded into every session. Keep it lean; details live in the files named in §9.
-Language: English only (decision E6). Source of the original German bootstrap rules: §2.
+Language: English only (decision E6). The original German bootstrap rules (C1–C8) are recorded in
+`.claude/ClaudeTransition.md` §1.
 
 ## 1. Mission and scope
 
@@ -11,19 +12,22 @@ Language: English only (decision E6). Source of the original German bootstrap ru
 
 ## 2. Constraints
 
-### 2.1 Transition-only — removed in Phase 8
+### 2.1 Write scope (guard mode `operate`, since Phase 8)
 
-These apply while the Claude artefacts are being built. Phase 8 deletes this subsection, the
-matching deny rules in `settings.json`, and switches the guard to `mode: "operate"`.
+The transition constraints C1/C2 (write only inside `.claude/`) were retired on 2026-09-24.
+Claude may now write inside the repository, **except**:
 
-| ID | Constraint |
-|----|------------|
-| C1 | Write access **only** inside `.claude/`. Everything else in the repository is read-only. |
-| C2 | No command may modify files outside `.claude/` as a side effect — formatters, `--fix`, pre-commit fixers, venv creation, caches, logs, `__pycache__`. |
-| C7 | Transform both the implemented repository approach and `ChatGPTHint.txt` into Claude artefacts. |
-| C8 | Extend and restructure `.claude/CLAUDE.md` (this file). |
+- `secrets/`, `logs/`, `.vscode/`, `.git/`, `.venv/`, `ChatGPTHint.txt`, `Todo.txt`;
+- any secret path (the C3 patterns below) — writing secret material is blocked like reading it;
+- the self-protected files: `.claude/settings.json`, `.claude/settings.local.json`,
+  `.claude/.gitignore`, `.claude/hooks/**`;
+- anything outside the repository, apart from the plan-mode directory `~/.claude/plans/` and
+  temp paths under `/tmp/claude-`.
 
-### 2.2 Permanent — these stay after Phase 8
+Every write still goes through plan-mode approval. A write the guard refuses is a result to
+report, not a path to work around.
+
+### 2.2 Permanent
 
 | ID | Constraint |
 |----|------------|
@@ -95,8 +99,9 @@ exist; `vector/` was added. The map above is the reality.
 
 ## 7. Commands
 
-**Claude may run** — read-only, no side effects. Verify with `git status --porcelain --ignored`
-before and after; any difference is a C2 violation and must be reported.
+**Claude may run — read-only gate** (skill `readonly-gate`). It has no side effects, which is
+checked by comparing `git status --porcelain --ignored` before and after. Any difference must be
+reported.
 
 ```bash
 export PYTHONDONTWRITEBYTECODE=1
@@ -111,14 +116,22 @@ make doctor        # also make doctor-strict
 git status | diff | log | show | ls-files | check-ignore | rev-parse
 ```
 
-**Operator only** — these write files, touch the Pi, or change history:
-`make precommit`, `test`, `check`, `ci`, `ci-*`, `venv`, `hooks`, `format`, `ruff-fix`,
-`postdeploy`, `host-*`, `backup*`, `restore`, `renovate*`; `pre-commit`; `deploy.sh`; `sudo`;
-every script under `scripts/host/`, `scripts/host-runtime/`, `scripts/network/`; `git commit`,
-`push`, `tag`, `merge`, `rebase`, `reset`; `gh`; `gpg`; `docker` beyond `compose config`,
-`version`, `info`, `ps`, `images`.
+**Claude may also run — gates and formatters that write** (since Phase 8, D8-b/D8-c):
+`make precommit`, `test`, `check`, `ci`, `ci-doctor`, `ci-precommit`, `ci-tests`, `format`,
+`ruff`, `ruff-fix`; `ruff check --fix`, `ruff format`. They can rewrite files (pre-commit fixers,
+formatters), so show the resulting `git diff` afterwards. Each depends on `make venv`, which updates
+`.venv` with an **unpinned** `pip install -U pip` over the network (F21). pre-commit also starts
+Docker for the Renovate validator (F24).
 
-`.venv` must already exist. Never create or update it — `make venv` runs `pip install -U pip`.
+**Operator only** — these touch the Pi, host state, secrets or history:
+`make venv`, `venv-clean`, `hooks`, `postdeploy`, `host-*`, `backup*`, `restore`, `renovate*`;
+`pre-commit` called directly; `pip install`; `deploy.sh`; `sudo`; every script under
+`scripts/host/`, `scripts/host-runtime/`, `scripts/network/`; `git commit`, `push`, `tag`,
+`merge`, `rebase`, `reset`, `switch`, `checkout`, `add`; `gh`; `gpg`; `docker` beyond
+`compose config`, `version`, `info`, `ps`, `images`.
+
+`.venv` must already exist. Never create or modify it directly; only the make gates above may
+update it.
 
 ## 8. Delivery model
 
@@ -130,8 +143,9 @@ One feature at a time, delivered in small increments, each with its own tests (D
   `tests/precommit` or `tests/guards`, runtime behaviour in `tests/postdeploy`.
 - Every increment leaves the system deployable. A split that creates an undeployable
   intermediate state is not allowed.
-- Gate before commit: Claude runs the read-only set in §7, the operator runs `make ci`.
-  **Validate first, commit afterwards.**
+- Gate before commit: Claude runs `make ci` (or the read-only gate when nothing may be rewritten)
+  and reports the result verbatim; the operator reviews the diff. **Validate first, commit
+  afterwards.**
 - Claude proposes a Conventional Commit message and a PR title/description. The operator reviews
   the diff, commits, pushes, opens the PR, merges after CI is green, and deploys on the Pi.
 - An increment is **done** only when: CI green, deploy succeeded, postdeploy green, increment log
@@ -140,8 +154,9 @@ One feature at a time, delivered in small increments, each with its own tests (D
   host configuration must also update the backup inventory, `.env.example`, the reconciliation
   scripts and their postdeploy checks, the network/firewall docs, and the Renovate rules.
 
-Current roadmap stage: **R0** (this transition). Then R1 review → R2 backup → R3 core stack →
-R4 app stacks.
+Current roadmap stage: **R1** — review of the implementation and the findings in
+`.claude/reports/repo-findings.md`; F21 first. Then R2 backup → R3 core stack → R4 app stacks.
+R0 (the Claude transition) is complete; its record is `.claude/ClaudeTransition.md`.
 
 ## 9. Where to look things up
 

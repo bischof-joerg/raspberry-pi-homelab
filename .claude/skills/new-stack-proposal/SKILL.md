@@ -5,9 +5,9 @@ description: Draft a complete new Compose stack (compose file, configs, tests, d
 
 # New stack proposal
 
-Produces a **proposal**, never a deployment. Output goes to `.claude/scratch/<stack>/` and the
-operator moves it into `stacks/` when they accept it. During the transition, C1 makes this the only
-possible target anyway.
+Produces a **proposal**, never a deployment. Output goes to `.claude/scratch/<stack>/` on purpose:
+a whole stack is never one commit (IN2), so the proposal is the design, and the real files under
+`stacks/`, `tests/` and `docs/` land increment by increment through the `increment-plan` skill.
 
 ## Ask first, if unanswered
 
