@@ -1,6 +1,10 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** **PHASE 8 IN PROGRESS** (v2.5, 2026-09-24) on branch
+- **Status:** **R0 COMPLETE, PHASES 0–8** (v2.6, 2026-09-24). Phase 8 was merged via PR #12, merge
+  commit `99a6347`. The guard runs in mode **`operate`**, and V8.1/V8.2 passed. Roadmap stage is now
+  **R1**, highest severity first (plan: `.claude/reports/repo-findings.md`, index and R1 table).
+  Pi regression deploy of `99a6347`: green (operator, 2026-09-24).
+- **Earlier:** **PHASE 8 IN PROGRESS** (v2.5, 2026-09-24) on branch
   `chore/r0-phase8-operate-mode`. The guard is in mode **`operate`** (`c12edc4`), V8.1 passed live,
   and the artefacts were updated in 8.3. V8.2 passed: the first write outside `.claude/`, which
   also covers the first half of F41. Open: `make ci`, the PR and the merge. After that, roadmap
@@ -2168,6 +2172,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0 toolchain parity | 2026-09-17 | `3b109f6` | green |  tests: passed, deploy: done | |
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
+| R0.10 (Phase 8) | 2026-09-24 | `7a3c7a8` (P7–P10), `c12edc4` (switch), `10839c3` (artefacts), `e72f314` (V8.2); merge `99a6347` (PR #12) | green | deploy: done, postdeploy: green (regression only) | Guard mode `operate` with an enforced write scope; tests 77 → 147; preflight 23/23; V8.1 5/5 refused live; V8.2 first write outside `.claude/`. The first `make ci` run by Claude produced F47 and new F21 evidence. A negative test (V1.12/L2) that operate mode would have made destructive was caught in 8.3. |
 | R0.9 (Phase 7) | 2026-09-24 | `c9d2c5dbcf2ee94389335c42d636a312c3c75597` (merge, PR #10) | green | deploy: done, postdeploy: green | Handover: `make ci` green, V7.1/V7.2 passed. R0.2–R0.8 were delivered together in this merge, so their CI and deploy columns refer to it. |
 | R0.2 (Phase 1a) | 2026-09-18 | `ecfc0ba`, merged in `c9d2c5d` | green | done via R0.9 (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
 | R0.8 (Phase 6) | 2026-09-23 … 24 | `ea6f7bb`, `e963151`, merged in `c9d2c5d` | green | done via R0.9 | `readme_claude.md` (operator guide incl. grouped deny list), `reports/repo-findings.md` (47 findings, five fields each, R1 grouping a–i), verifiers moved to tracked `tools/` (D6-a, three latent ruff errors fixed) plus `check_findings.py`; §3.6 reduced to an index (D6-b). V6.2 passed with negative controls. **V6.1 passed 2026-09-24** after the operator walkthrough, which found and fixed seven readme/skill defects (#1–#7), including one that caused a real test commit and a README overwrite. V1.10–V1.16 re-confirmed on 2.1.280. |
