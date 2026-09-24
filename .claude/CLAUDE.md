@@ -147,7 +147,7 @@ R4 app stacks.
 
 | Topic | File |
 |---|---|
-| Transition plan, decisions, findings F1–F25, guard design, test matrix | `.claude/ClaudeTransition.md` |
+| Transition plan, decisions, findings index, guard design, test matrix | `.claude/ClaudeTransition.md` |
 | How to work with Claude here, how to verify the safety set-up | `.claude/readme_claude.md` |
 | Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`; verifiers in `.claude/tools/` |
 | Repository findings F1–F46 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |

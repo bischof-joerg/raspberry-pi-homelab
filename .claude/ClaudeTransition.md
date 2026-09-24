@@ -1,6 +1,10 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
-- **Status:** PHASE 6 WRITTEN (v2.3, 2026-09-23) – `readme_claude.md` and
+- **Status:** **IMPLEMENTED** (v2.4, 2026-09-24) – Phases 0–7 complete. Merged to `main` via
+  PR #10, merge commit `c9d2c5dbcf2ee94389335c42d636a312c3c75597`. CI green, deployed on the Pi,
+  postdeploy green (regression check; `.claude/` has no runtime effect). Next: **Phase 8** (retire
+  C1/C2) on its own branch, then roadmap stage R1.
+- **Earlier:** PHASE 6 WRITTEN (v2.3, 2026-09-23) – `readme_claude.md` and
   `reports/repo-findings.md` written; the verifiers moved from git-ignored `scratch/` to tracked
   `tools/` (plus a new `check_findings.py`); §3.6 is now an index into the report. V6.2 passed
   mechanically; **V6.1 is an operator step**. Claude Code is now **2.1.280**; V1.10–V1.13/V1.15
@@ -1848,15 +1852,25 @@ Verification:
 
 ### Phase 7 – Handover and CI parity
 
-- [ ] Operator runs full `make ci` (operator, not Claude).
-- [ ] Operator verifies no secrets: `git status --ignored -- .claude`, `git ls-files .claude`.
-- [ ] Operator commits and pushes the branch, opens the PR; GitHub CI green; operator merges to `main`.
-- [ ] Pi: `git pull --ff-only` and `sudo ./deploy.sh`; postdeploy green (regression check – `.claude/` has no runtime effect).
-- [ ] Update this document status to "IMPLEMENTED" and record commit hash.
+- [x] Operator runs full `make ci` (operator, not Claude).
+- [x] Operator verifies no secrets: `git status --ignored -- .claude`, `git ls-files .claude`.
+- [x] Operator commits and pushes the branch, opens the PR; GitHub CI green; operator merges to `main`.
+- [x] Pi: `git pull --ff-only` and `sudo ./deploy.sh`; postdeploy green (regression check – `.claude/` has no runtime effect).
+- [x] Update this document status to "IMPLEMENTED" and record commit hash.
+
+**Results (2026-09-24, operator-reported; the merge was verified by Claude with `git log`).**
+`make ci` green, and `git status --porcelain` clean afterwards. Branch
+`chore/r0-claude-safety-foundation` (21 commits, Phases 1a–6) pushed, and PR #10 merged into
+`main`. The merge commit `c9d2c5dbcf2ee94389335c42d636a312c3c75597` has parents `48d1766` (main)
+and `e963151` (branch head). On the Pi, `git pull --ff-only` and `sudo ./deploy.sh` ran, with
+postdeploy green. The only changes outside `.claude/` in the merge were the operator's own
+`Todo.txt` and `docs/operations/git-branch-workflow.md`.
 
 Verification:
 - V7.1 `git ls-files .claude | grep -c settings.local.json` → `0`.
+  **PASSED** (operator, and Claude before the commit).
 - V7.2 CI green on the branch (pre-commit hygiene covers `.claude/**` markdown/JSON/YAML).
+  **PASSED** — PR #10 was merged after green CI.
 
 ### Phase 8 – Retire transition constraints (after Phase 7 is committed; Q1)
 
@@ -1991,16 +2005,17 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
-| R0.0 toolchain parity | 2026-09-17 | ? | green |  tests: passed, deploy: done | |
+| R0.0 toolchain parity | 2026-09-17 | `3b109f6` | green |  tests: passed, deploy: done | |
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
-| R0.2 (Phase 1a) | 2026-09-18 | ? | ? | n/a (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
-| R0.8 (Phase 6) | 2026-09-23 | ? | ? | n/a | `readme_claude.md` (operator guide incl. grouped deny list), `reports/repo-findings.md` (47 findings, five fields each, R1 grouping a–i), verifiers moved to tracked `tools/` (D6-a, three latent ruff errors fixed) plus `check_findings.py`; §3.6 reduced to an index (D6-b). V6.2 passed with negative controls. **V6.1 passed 2026-09-24** after the operator walkthrough, which found and fixed seven readme/skill defects (#1–#7), including one that caused a real test commit and a README overwrite. V1.10–V1.16 re-confirmed on 2.1.280. |
-| R0.7 (Phase 5) | 2026-09-23 | ? | ? | n/a | `.claude/agents/`: four read-only subagents, `tools: Read, Grep, Glob` each, 703 chars of always-loaded descriptions. D5-a (an absent `tools` grants everything — V5.3 inverted accordingly) and D5-b (bodies must not restate the inherited rules) recorded. **V5.1–V5.3 all passed** (V5.1/V5.2 after the operator restart — agents are not hot-loaded the way skills are). V5.2 produced F45 and F46, extended F26, closed F42's caveat, and forced the third correction of a Claude artefact claiming documentation that does not exist. |
-| R0.6 (Phase 4) | 2026-09-23 | ? | ? | n/a | `.claude/skills/`: eight skills, always-loaded description cost 1,236 chars total (cap is 1,536 per skill). D4-a (descriptions are the budget), D4-b (`allowed-tools` only on `readonly-gate`) and D4-c (no `paths` on skills) recorded. **V4.1–V4.6 all passed.** Invoking the skills produced F44 and showed that five of seven ADR-009 backup requirements are already implemented — F9 had made that invisible. |
-| R0.5 (Phase 3) | 2026-09-23 | ? | ? | n/a | `.claude/rules/`: eight path-scoped rule files, 468 lines, none always-loaded. D3-a (path scoping is mandatory, not optional) and D3-b (eight rules, not ten) recorded. V3.1 passed incl. a mechanical cited-path check; V3.2/V3.3 open. |
-| R0.4 (Phase 2, **complete**) | 2026-09-23 | ? | ? | n/a | `CLAUDE.md` restructured: German bootstrap (25 lines) → English project memory, 170 lines, ten sections. **V2.1–V2.3 all passed**; V2.3 verified live in a fresh session, answered from loaded memory with no file access. Decisions D2-a (C1–C8 split for a clean Phase 8 cut) and D2-b (CLAUDE.md vs ClaudeTransition.md by audience) recorded. |
-| R0.3 (Phase 1b, **complete**) | 2026-09-18 … 2026-09-23 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up | ? | n/a | Hook registered and **proven to enforce**. **V1.10–V1.16 all passed 2026-09-23**, V1.16 = proceed (HEAD `e7580bb` unchanged, `README.md` untouched). **Patches P1–P6 applied**, matrix 65 → **77 passed**, ruff clean. T43 re-probe and hook-level V1.14 done; `self_protect` back to `true`. |
+| R0.9 (Phase 7) | 2026-09-24 | `c9d2c5dbcf2ee94389335c42d636a312c3c75597` (merge, PR #10) | green | deploy: done, postdeploy: green | Handover: `make ci` green, V7.1/V7.2 passed. R0.2–R0.8 were delivered together in this merge, so their CI and deploy columns refer to it. |
+| R0.2 (Phase 1a) | 2026-09-18 | `ecfc0ba`, merged in `c9d2c5d` | green | done via R0.9 (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
+| R0.8 (Phase 6) | 2026-09-23 … 24 | `ea6f7bb`, `e963151`, merged in `c9d2c5d` | green | done via R0.9 | `readme_claude.md` (operator guide incl. grouped deny list), `reports/repo-findings.md` (47 findings, five fields each, R1 grouping a–i), verifiers moved to tracked `tools/` (D6-a, three latent ruff errors fixed) plus `check_findings.py`; §3.6 reduced to an index (D6-b). V6.2 passed with negative controls. **V6.1 passed 2026-09-24** after the operator walkthrough, which found and fixed seven readme/skill defects (#1–#7), including one that caused a real test commit and a README overwrite. V1.10–V1.16 re-confirmed on 2.1.280. |
+| R0.7 (Phase 5) | 2026-09-23 | `2f58e73`, `2c88ea6`, merged in `c9d2c5d` | green | done via R0.9 | `.claude/agents/`: four read-only subagents, `tools: Read, Grep, Glob` each, 703 chars of always-loaded descriptions. D5-a (an absent `tools` grants everything — V5.3 inverted accordingly) and D5-b (bodies must not restate the inherited rules) recorded. **V5.1–V5.3 all passed** (V5.1/V5.2 after the operator restart — agents are not hot-loaded the way skills are). V5.2 produced F45 and F46, extended F26, closed F42's caveat, and forced the third correction of a Claude artefact claiming documentation that does not exist. |
+| R0.6 (Phase 4) | 2026-09-23 | `aa80bf9`, merged in `c9d2c5d` | green | done via R0.9 | `.claude/skills/`: eight skills, always-loaded description cost 1,236 chars total (cap is 1,536 per skill). D4-a (descriptions are the budget), D4-b (`allowed-tools` only on `readonly-gate`) and D4-c (no `paths` on skills) recorded. **V4.1–V4.6 all passed.** Invoking the skills produced F44 and showed that five of seven ADR-009 backup requirements are already implemented — F9 had made that invisible. |
+| R0.5 (Phase 3) | 2026-09-23 | `d728e05` … `92ce290`, merged in `c9d2c5d` | green | done via R0.9 | `.claude/rules/`: eight path-scoped rule files, 468 lines, none always-loaded. D3-a (path scoping is mandatory, not optional) and D3-b (eight rules, not ten) recorded. V3.1 passed incl. a mechanical cited-path check; V3.2/V3.3 open. |
+| R0.4 (Phase 2, **complete**) | 2026-09-23 | `f1567c6`, merged in `c9d2c5d` | green | done via R0.9 | `CLAUDE.md` restructured: German bootstrap (25 lines) → English project memory, 170 lines, ten sections. **V2.1–V2.3 all passed**; V2.3 verified live in a fresh session, answered from loaded memory with no file access. Decisions D2-a (C1–C8 split for a clean Phase 8 cut) and D2-b (CLAUDE.md vs ClaudeTransition.md by audience) recorded. |
+| R0.3 (Phase 1b, **complete**) | 2026-09-18 … 2026-09-23 | 117d092f528494786b66ff4bb166075ed86e7344 (guard review) + follow-up, merged in `c9d2c5d` | green | done via R0.9 | Hook registered and **proven to enforce**. **V1.10–V1.16 all passed 2026-09-23**, V1.16 = proceed (HEAD `e7580bb` unchanged, `README.md` untouched). **Patches P1–P6 applied**, matrix 65 → **77 passed**, ruff clean. T43 re-probe and hook-level V1.14 done; `self_protect` back to `true`. |
 
 ### 10.5 Toolchain record (Phase 0)
 

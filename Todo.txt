@@ -99,13 +99,32 @@ vector update auf version image: timberio/vector:0.58.0-debian mit runtime issue
 Verbessere den Stack:
 - Wie mit Grafana dashbords umgehen: Download und Formatierung mit bestehenden skripten, Review der Scripte nach neuer Grafana version
 - Konsistenz der ADRs mit Claude regeln überprüfen
-- Doku template für Services pro Stack in eigenem Verzeichnis pro stack mit template einführen für monitoring unter docs\services\monitoring\
+- Doku template für Services verbessern und pro Stack in eigenem Verzeichnis pro stack mit template einführen für monitoring unter docs\services\monitoring\
 	- Empfehlung für template erarbeiten
 Reviewe den implementierten Stack - sind alle Regeln und Guidelines umgesetzt oder gibt es weiter Findings
 Arbeite an Findings - sind diese überhaupt noch offen?
+Wie Fehler auf dem PI mit Hilfe von Claude analysieren? Was sind mögliche Ansätze um Logs zu analysieren, was ist Deine Empfehlung?
+
+# Immer wieder victoriologs instance down alerts. Hilf mir diese zu analysieren? Liegt ein Problem vor oder ist der alert zu scharf (cannot scrape for >1 minute)
+1 alert for alertname=InstanceDown job=victorialogs severity=critical
+View in Alertmanager
+[1] Firing
+Labels
+alertname = InstanceDown
+alertgroup = general
+instance = victorialogs:9428
+job = victorialogs
+severity = critical
+Annotations
+description = vmagent cannot scrape this target for > 1 minute.
+summary = Target down (job=victorialogs, instance=victorialogs:9428)
+Source
+
+
+
 
 # Claud Transition
-- Weiter mit Phase 6 in neuer Session:  Weiter mit ClaudeTransition.md Phase 6 - readme_claude.md plus der Findings-Report
+
 
 
 
@@ -116,6 +135,8 @@ _____________________________________________________________________________
 
 
 # Claud Transition
+
+Phase 6 erledigt
 
 Phase 5
 
