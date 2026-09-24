@@ -79,12 +79,13 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F38 | `depends_on` ignores existing healthchecks | Hardening | Low | open | f |
 | F39 | German comment in the renderer script | Docs | Low | open | a |
 | F40 | Volume naming rule contradicted the implementation | Docs | Low | addressed | – |
-| F41 | No static guard for the compose hardening contract | Tests | Med | open | f |
+| F41 | No static guard for the compose hardening contract | Tests | Med | partly | f |
 | F42 | LAN exposure of 3000/9428 is recorded in no document | Exposure | Med | partly | c |
 | F43 | ADR-0001 promises subnet validation the deploy path skips | Docs | Med | open | e |
 | F44 | Stale image tag in a Markdown example | Supply chain | Low | open | g |
 | F45 | UFW very likely does not govern the published ports | Exposure | High | open | c |
 | F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | open | b |
+| F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | open | h |
 
 ## Secrets and credentials
 
@@ -298,7 +299,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 
 ### F41 – No static guard for the compose hardening contract
 
-- **Evidence:** `tests/guards/test_10_monitoring_compose_contract.py:12-21` — checks presence only; `vector` missing from `REQUIRED_SERVICES`. [V 2026-09-23]
+- **Evidence:** `tests/guards/test_10_monitoring_compose_contract.py:12-22` — checks presence only. `vector` was missing from `REQUIRED_SERVICES` and was **added 2026-09-24** (Phase 8, V8.2); the hardening contract itself is still open. [V 2026-09-24]
 - **Impact:** Every hardening property in this report can regress silently; F7, F27, F28, F29, F32, F33 and F38 all need this test as their home.
 - **Proposed fix:** Extend the guard test into a per-service contract: pinned image, `read_only`, `cap_drop`, `no-new-privileges`, healthcheck, `user`, restart policy, allowed exceptions listed explicitly.
 - **Test:** `tests/guards/test_10_monitoring_compose_contract.py` itself.
@@ -398,9 +399,9 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 
 ### F21 – Toolchain drift between `.venv` and pre-commit
 
-- **Evidence:** `requirements-dev.txt` now pins `ruff==0.14.11`, `shellcheck-py==0.10.0.1`, `yamllint==1.35.1`, enforced by `tests/precommit/test_50_toolchain_version_parity.py` (R0.0, commit `3b109f6`); still open: `make venv` upgrades pip unpinned (`Makefile`), pytest is a range. [V 2026-09-23]
-- **Impact:** The linters now agree; pip and pytest can still differ between machines.
-- **Proposed fix:** Pin pip in `make venv`; decide whether pytest gets an exact pin in both places.
+- **Evidence:** `requirements-dev.txt` now pins `ruff==0.14.11`, `shellcheck-py==0.10.0.1`, `yamllint==1.35.1`, enforced by `tests/precommit/test_50_toolchain_version_parity.py` (R0.0, commit `3b109f6`); still open: `make venv` upgrades pip unpinned (`Makefile:233-234`), pytest is a range. [V 2026-09-23]. **Measured 2026-09-24:** one `make ci` run prints `[venv] upgrading pip` **seven times**, because every sub-`make` (`ci-doctor`, `ci-precommit`, `precommit`, `hooks`, `ci-tests`, `test`, …) depends on `venv`. Since Phase 8 Claude runs `make ci` too, so this now happens on every Claude gate run. [V]
+- **Impact:** The linters now agree; pip and pytest can still differ between machines. Each gate run makes seven network round-trips to PyPI and may change the pip version mid-run.
+- **Proposed fix:** Pin pip in `make venv` (`pip install pip==<version>`). Make `venv` idempotent: skip the install when a stamp file is newer than `requirements-dev.txt`. Decide whether pytest gets an exact pin in both places.
 - **Test:** Extend `tests/precommit/test_50_toolchain_version_parity.py` to the pytest pin in the pre-commit hook.
 - **Acceptance:** Parity test covers pytest; `make venv` produces the same pip version twice.
 
@@ -419,6 +420,14 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Delete the four files (pre-commit hooks `check-json`, `check-yaml`, `check-merge-conflict`, `check-added-large-files` cover them), or run `-m lint` in a gate.
 - **Test:** `tests/precommit` — every marker registered in `pyproject.toml` is selected by at least one `Makefile` target.
 - **Acceptance:** No test exists that no gate runs.
+
+### F47 – The cadvisor doctor test never runs; its skip hides a compose error
+
+- **Evidence:** `tests/doctor/test_35_cadvisor_flags.py:36-55` renders the compose file with a test env that sets neither `DOCKER_GID` nor `SYSTEMD_JOURNAL_GID`, and calls `pytest.skip` on **any** non-zero exit of `docker compose config`. `stacks/monitoring/compose/docker-compose.yml:377` `group_add` then receives two empty values. Measured in `make ci` on 2026-09-24: `SKIPPED [1] tests/doctor/test_35_cadvisor_flags.py:52: … services.vector.group_add items at 0 and 1 are equal`. [V 2026-09-24]
+- **Impact:** The cadvisor flag checks have never run in CI or locally, but the result reads "1 skipped", which looks like a platform limitation. It is the same false-green class as F23: a test that exists but cannot fail.
+- **Proposed fix:** Set both GIDs to distinct dummy values in the test env. Skip only when the compose plugin is missing; any other `config` failure must `pytest.fail` with stderr.
+- **Test:** The test itself. A negative check: an env without the GIDs must make it **fail**, not skip.
+- **Acceptance:** `make ci` shows `test_35_cadvisor_flags` as PASSED. Removing a GID from its env produces FAILED with the compose stderr.
 
 ### F25 – JSON test scans git-ignored files
 
@@ -495,7 +504,7 @@ series per `CLAUDE.md` §8; each needs its own tests before merge.
 | f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | One test file becomes the home of all hardening checks |
 | e | Host reconciliation ADR | F16, F17, F18, F43, F19, F20 | Needs an ADR decision before code (roadmap R1 exit) |
 | g | Supply chain | F3, F37, F4, F24, F44 | Digest pins + Renovate coverage together |
-| h | Toolchain and dead tests | F21, F22, F23, F25, F11 | Low risk, quick |
+| h | Toolchain and dead tests | F21, F22, F23, F25, F47, F11 | Low risk, quick |
 | i | Docs | F5, F6, F12 | Last, so they describe the fixed state |
 | R2 | Backup tests | F9 | Roadmap stage R2 |
 

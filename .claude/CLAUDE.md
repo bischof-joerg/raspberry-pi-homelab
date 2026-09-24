@@ -165,7 +165,7 @@ R0 (the Claude transition) is complete; its record is `.claude/ClaudeTransition.
 | Transition plan, decisions, findings index, guard design, test matrix | `.claude/ClaudeTransition.md` |
 | How to work with Claude here, how to verify the safety set-up | `.claude/readme_claude.md` |
 | Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`; verifiers in `.claude/tools/` |
-| Repository findings F1–F46 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
+| Repository findings F1–F47 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
 | Architecture decisions | `docs/architecture/adr/` — ADR-0007 secrets, ADR-0008 bind mounts, ADR-009 backup |
 | Operations | `docs/operations/` — `DevWorkflow.md`, `git-branch-workflow.md`, `runtime-updates.md`, `BackupVerifyRestore.md`, `GPG_config_for_backup_encryption.md`, `renovate.md` |
 | Monitoring | `docs/monitoring.md`, `docs/services/` |

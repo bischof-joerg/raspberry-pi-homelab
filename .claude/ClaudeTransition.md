@@ -2,8 +2,9 @@
 
 - **Status:** **PHASE 8 IN PROGRESS** (v2.5, 2026-09-24) on branch
   `chore/r0-phase8-operate-mode`. The guard is in mode **`operate`** (`c12edc4`), V8.1 passed live,
-  and the artefacts were updated in 8.3. Open: V8.2 (first write outside `.claude/`), then the
-  merge. After that, roadmap stage **R1**, starting with F21.
+  and the artefacts were updated in 8.3. V8.2 passed: the first write outside `.claude/`, which
+  also covers the first half of F41. Open: `make ci`, the PR and the merge. After that, roadmap
+  stage **R1**, highest severity first.
 - **Earlier:** **IMPLEMENTED** (v2.4, 2026-09-24) – Phases 0–7 complete. Merged to `main` via
   PR #10, merge commit `c9d2c5dbcf2ee94389335c42d636a312c3c75597`. CI green, deployed on the Pi,
   postdeploy green (regression check; `.claude/` has no runtime effect).
@@ -213,12 +214,13 @@ history of this file up to commit `2c88ea6`.
 | F38 | `depends_on` ignores existing healthchecks | Low | open |
 | F39 | German comment in the renderer script | Low | open |
 | F40 | Volume naming rule contradicted the implementation | Low | addressed |
-| F41 | No static guard for the compose hardening contract | Med | open |
+| F41 | No static guard for the compose hardening contract | Med | partly |
 | F42 | LAN exposure of 3000/9428 is recorded in no document | Med | partly |
 | F43 | ADR-0001 promises subnet validation the deploy path skips | Med | open |
 | F44 | Stale image tag in a Markdown example | Low | open |
 | F45 | UFW very likely does not govern the published ports | High | open |
 | F46 | cadvisor's privileged mode is undocumented; docs say the opposite | High | open |
+| F47 | cadvisor doctor test never runs; its skip hides a compose error | Med | open |
 
 ### 3.7 Security-relevant facts for Claude's boundaries [V]
 
@@ -2048,6 +2050,12 @@ does.
 Verification:
 - V8.1 Negative tests V1.4 (commit, ssh) and V1.8 (non-allowed Pi calls) still denied.
   **PASSED 2026-09-24**, see the table above.
+- V8.2 Positive test: Claude edits a file under `tests/` after approval.
+  **PASSED 2026-09-24.** Claude added `"vector"` to `REQUIRED_SERVICES` in
+  `tests/guards/test_10_monitoring_compose_contract.py`, the first half of F41. The service exists
+  at `stacks/monitoring/compose/docker-compose.yml:362`, but no test required it. The Edit passed
+  the guard (`guard.log`: `"decision": "pass"` for the file) and the operator's approval. The test
+  still passes: `3 passed`. This is the first change by Claude outside `.claude/`.
 - V8.2 Positive test: Claude edits a file under `tests/` after approval.
 - V8.3 Each selective Pi allowance works, and a variant of it (other port/path) is denied.
 

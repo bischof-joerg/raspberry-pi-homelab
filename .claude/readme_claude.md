@@ -32,7 +32,7 @@ Claude Code **2.1.280** installed (live hook tests last run on 2.1.280 — see �
 | `skills/*/SKILL.md` (8) | Invokable procedures | description every turn, body on invocation | Claude, operator reviews | `tools/check_skills.py` |
 | `agents/*.md` (4) | Read-only subagents (`tools: Read, Grep, Glob`) | description at startup; edits hot-reloaded | Claude, operator reviews | `tools/check_agents.py` |
 | `tools/*.py` (4) | Verifiers for rules, skills, agents, findings | run by hand | Claude, operator reviews | `ruff check` |
-| `reports/repo-findings.md` | Findings F1–F46 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
+| `reports/repo-findings.md` | Findings F1–F47 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
 | `ClaudeTransition.md` | Transition record (R0, complete): decision log, guard design, verification records | only when read | Claude, operator reviews | – |
 | `scratch/` | Drafts (ADR drafts, patch proposals) — **git-ignored** | – | Claude | not in a fresh clone |
 | `logs/guard.log`, `logs/instructions.log` | Guard decisions (JSON lines), instruction-load events — **git-ignored** | – | written by hooks | grow unbounded; truncate by hand |
@@ -323,7 +323,7 @@ reason `path_glob_match`, and that `docs-adr.md`, `host-runtime.md` and `backup-
 .venv/bin/python .claude/tools/check_rules.py      # 8 rules, all with `paths`, cited files exist
 .venv/bin/python .claude/tools/check_skills.py     # 8 skills, description budget ~1,236 chars
 .venv/bin/python .claude/tools/check_agents.py     # 4 agents, `tools` present and read-only
-python3 .claude/tools/check_findings.py            # 47 findings, all fields, index in sync
+python3 .claude/tools/check_findings.py            # 48 findings, all fields, index in sync
 ```
 
 Each prints `0 failure(s)` and exits 0 when healthy. Finally, run the read-only gate — **one** of:
