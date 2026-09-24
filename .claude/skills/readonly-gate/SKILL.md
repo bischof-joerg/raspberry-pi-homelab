@@ -14,9 +14,10 @@ allowed-tools:
 
 # Read-only validation gate
 
-The local gate from IN4: Claude runs this, the operator runs `make ci`. **Validate first, commit
-afterwards.** Every mutating equivalent (`make precommit`, `check`, `ci`, `format`, `ruff-fix`) is
-operator-only because it writes files — see `CLAUDE.md` §7.
+The local gate from IN4 in its non-mutating form. **Validate first, commit afterwards.** Since
+Phase 8 Claude may also run `make ci` (`CLAUDE.md` §7). Use this skill instead when nothing may be
+rewritten: in plan mode, before `make ci` to see the pristine state, or when a fixer rewrite would
+blur what the increment changed.
 
 Precondition: `.venv` exists. Never create or update it.
 
@@ -67,8 +68,7 @@ diff /tmp/claude-gate-before.txt /tmp/claude-gate-after.txt && echo "OK: no side
 ## Acceptance
 
 Form A must print `OK: no side effects`; in Form B the final `diff` must be empty. **Any difference
-is a C2 violation and must be reported**, not worked around — it means a supposedly read-only
-command wrote to the tree. An extra run such as `-m lint` belongs **inside** the before/after
+must be reported**, not worked around — it means a supposedly read-only command wrote to the tree. An extra run such as `-m lint` belongs **inside** the before/after
 window, otherwise its side effects go unchecked.
 
 `allowed-tools` pre-approves the individual commands. Whether the single compound call of Form A

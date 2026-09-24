@@ -34,7 +34,7 @@ within the same scope, or `git revert` via a branch and PR (IN8).
 - Out of scope:
 - Tests first: <new/changed test files and what each asserts>
 - Implementation steps:
-- Local gate: Claude read-only gate result / operator `make ci` result
+- Local gate: `make ci` result (run by Claude) plus the resulting `git diff` if fixers rewrote files
 - Proposed commit message:
 - Branch: <feat|fix|chore|docs>/<short-name>
 - Proposed PR title/description:

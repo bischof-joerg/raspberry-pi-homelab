@@ -18,6 +18,7 @@ REQUIRED_SERVICES = {
     "node-exporter",
     "cadvisor",
     "victorialogs",
+    "vector",
 }
 
 OPTIONAL_SERVICES = {}

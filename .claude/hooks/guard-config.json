@@ -1,6 +1,29 @@
 {
-  "mode": "transition",
+  "mode": "operate",
   "self_protect": true,
+  "operate_write_excludes": [
+    "secrets",
+    "logs",
+    ".vscode",
+    "ChatGPTHint.txt",
+    "Todo.txt",
+    ".git",
+    ".venv"
+  ],
+  "operate_extra_make_targets": [
+    "precommit",
+    "test",
+    "tests",
+    "ci",
+    "check",
+    "ci-doctor",
+    "ci-precommit",
+    "ci-tests",
+    "format",
+    "ruff",
+    "ruff-fix"
+  ],
+  "operate_ruff_fix_allowed": true,
   "max_nesting_depth": 5,
   "write_dir": ".claude",
   "self_protected_paths": ["hooks", "settings.json", "settings.local.json", ".gitignore"],

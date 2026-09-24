@@ -22,7 +22,7 @@ with** the implementation, never afterwards.
 - **Put the test in the layer that matches when it can fail.** A check that needs a running
   container is `postdeploy`, never `precommit`.
 - **Never let a test write into the repository.** Use `tmp_path`. A test that leaves a file behind
-  breaks the read-only gate and is a C2 violation.
+  breaks the read-only gate's side-effect check and pollutes every later run.
 - **Make the failure message actionable**: what was expected, what was found, and the fix. The
   existing suite uses a `❌` prefix plus a `Fix:` line — follow it.
 - **Reuse the helpers** instead of re-implementing them: `tests/_helpers.py` (`REPO_ROOT`, `run`),

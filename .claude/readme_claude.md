@@ -12,7 +12,7 @@ Three files, three audiences (decision D2-b):
 | `.claude/readme_claude.md` (this file) | "How do I operate and verify Claude here?" | never, human only |
 | `.claude/ClaudeTransition.md` | "Why is it like this?" — decisions, evidence, test records | only when read |
 
-State at writing: roadmap stage **R0**, transition Phase 6, guard mode `transition`,
+State at writing: roadmap stage **R1**, guard mode **`operate`** since 2026-09-24 (Phase 8),
 Claude Code **2.1.280** installed (live hook tests last run on 2.1.280 — see §5.4).
 
 ---
@@ -21,19 +21,19 @@ Claude Code **2.1.280** installed (live hook tests last run on 2.1.280 — see �
 
 | Path | Purpose | Loads | Who changes it | Check |
 |---|---|---|---|---|
-| `CLAUDE.md` | Project memory: constraints C1–C8, environment, commands, delivery model | every session | Claude (C8), operator reviews | `wc -l` ≤ ~200 |
+| `CLAUDE.md` | Project memory: write scope, constraints C3–C6, environment, commands, delivery model | every session | Claude, operator reviews | `wc -l` ≤ ~200 |
 | `settings.json` | Permission deny/allow, `defaultMode: plan`, hook registration | at startup, live-reloaded | **operator only** (self-protected) | `/status`, `/permissions`, `/hooks` |
 | `settings.local.json` | Machine-local permissions | at startup | operator; **never committed** (C3) | `git check-ignore -v` |
 | `.gitignore` | Ignores `settings.local.json`, `scratch/`, `logs/` | – | **operator only** (self-protected) | §5.1 |
 | `hooks/guard.py` | PreToolUse guard: blocks, never approves; fail-closed | every matched tool call | **operator only** (self-protected) | §5.2 |
 | `hooks/guard-config.json` | Guard policy data: mode, Pi identifiers, secret patterns, head lists | every matched tool call | **operator only** (self-protected) | §5.2 |
-| `hooks/tests/` | Guard test matrix T01–T46 (77 cases) | – | **operator only** (self-protected) | §5.2 |
+| `hooks/tests/` | Guard test matrix: T01–T46 transition (77 cases, mode pinned), T47–T52 operate (70 cases) | – | **operator only** (self-protected) | §5.2 |
 | `rules/*.md` (8) | Topic rules, each path-scoped via `paths` | when Claude **reads** a matching file | Claude, operator reviews | `tools/check_rules.py` |
 | `skills/*/SKILL.md` (8) | Invokable procedures | description every turn, body on invocation | Claude, operator reviews | `tools/check_skills.py` |
 | `agents/*.md` (4) | Read-only subagents (`tools: Read, Grep, Glob`) | description at startup; edits hot-reloaded | Claude, operator reviews | `tools/check_agents.py` |
 | `tools/*.py` (4) | Verifiers for rules, skills, agents, findings | run by hand | Claude, operator reviews | `ruff check` |
-| `reports/repo-findings.md` | Findings F1–F46 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
-| `ClaudeTransition.md` | Transition plan, decision log, verification records | only when read | Claude, operator reviews | – |
+| `reports/repo-findings.md` | Findings F1–F47 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
+| `ClaudeTransition.md` | Transition record (R0, complete): decision log, guard design, verification records | only when read | Claude, operator reviews | – |
 | `scratch/` | Drafts (ADR drafts, patch proposals) — **git-ignored** | – | Claude | not in a fresh clone |
 | `logs/guard.log`, `logs/instructions.log` | Guard decisions (JSON lines), instruction-load events — **git-ignored** | – | written by hooks | grow unbounded; truncate by hand |
 
@@ -70,8 +70,8 @@ Inside Claude Code, check once per session (or after any change to `settings.jso
 and there is no listing command. The static check is `tools/check_agents.py` (§5.6).
 
 `auto` and `bypassPermissions` modes are disabled by `settings.json`; the session starts in plan
-mode. Plan mode writes its plan to `~/.claude/plans/` — the guard allows exactly that directory
-(patch P6) and nothing else outside the project's `.claude/`.
+mode. Plan mode writes its plan to `~/.claude/plans/`. Outside the repository, the guard allows
+exactly that directory (patch P6) and temp paths under `/tmp/claude-`, nothing else.
 
 **Using the artefacts**
 
@@ -91,11 +91,12 @@ mode. Plan mode writes its plan to `~/.claude/plans/` — the guard allows exact
 **Working loop** (`CLAUDE.md` §8): one feature per branch, which you create. Claude:
 
 1. proposes a plan;
-2. writes after you approve it;
-3. runs `/readonly-gate`;
+2. writes after you approve it — anywhere in the write scope of `CLAUDE.md` §2.1;
+3. runs `make ci` and shows the `git diff` if pre-commit fixers or formatters rewrote files (or
+   `/readonly-gate` when nothing may be rewritten);
 4. proposes a Conventional Commit message and a PR text.
 
-You run `make ci`, commit, push, open the PR, merge after CI is green, and deploy on the Pi.
+You review the diff, commit, push, open the PR, merge after CI is green, and deploy on the Pi.
 
 ---
 
@@ -103,31 +104,34 @@ You run `make ci`, commit, push, open the PR, merge after CI is green, and deplo
 
 | ID | Constraint | Lifetime | Typical refusal |
 |---|---|---|---|
-| C1 | Writes only inside `.claude/` | until Phase 8 | `guard: C1: redirection would write outside .claude/: README.md` |
-| C2 | No side-effect writes (fixers, `--fix`, venv, caches) | until Phase 8 | `make precommit`, `ruff check --fix`, `pip install` blocked |
-| C3 | Never read secrets | permanent | `guard: C3: \`grep\` would read secret material: …` |
+| – | Write scope: repo minus `secrets/`, `logs/`, `.vscode/`, `.git/`, `.venv/`, `ChatGPTHint.txt`, `Todo.txt`; nothing outside the repo (D8-a) | since Phase 8 | `guard: scope: write outside the permitted write scope: Todo.txt`, or the settings denial `File is in a directory that is denied by your permission settings.` |
+| – | Tool policy: `make venv`, `hooks`, `postdeploy`, Pi/backup/renovate targets, `pre-commit`, `pip install`, mutating `docker` (D8-b) | since Phase 8 | `guard: policy: make target \`venv\` has side effects (allowed: …)` |
+| C3 | Never read — or write — secrets | permanent | `guard: C3: \`grep\` would read secret material: …`, `guard: C3: secret material must not be written: …` |
 | C4 | No commit, push, tag, merge, rebase, reset, `gh` | permanent | `guard: C4: git commit is reserved for the operator` |
 | C5 | No Pi access — SSH, HTTP, `deploy.sh`, host scripts | permanent | `guard: C5: command references the Raspberry Pi (rpi-hub)` |
 | C6 | Pinned, idempotent, test-first | permanent | Claude declines to propose `latest` or a change without tests |
 | – | Self-protection of guard and settings | permanent | `guard: self-protection: only the operator edits …/.claude/hooks/guard.py` |
 | – | Fail-closed | permanent | `guard: unbalanced quotes in command`, `guard: fail-closed: …` |
 
-The reasons above are verbatim from the recorded live tests (`ClaudeTransition.md` Phase 1b).
+The reasons above are verbatim from the recorded live tests (`ClaudeTransition.md` Phase 1b and
+§8.2). Before Phase 8 the guard used the labels C1/C2 for writes outside `.claude/` and for
+mutating tools. Those constraints are retired; in `operate` mode the same checks report `scope`,
+`policy` or `inspect`.
 
 **Known false positives — accepted by design.** The guard prefers blocking to guessing:
 
 - inline interpreter code: `python3 -c …`, `perl -e …`, and also `pytest -c <ini>`
-  (`C1: inline interpreter code is not inspectable`);
+  (`inspect: inline interpreter code is not inspectable`);
 - any command that merely *mentions* `rpi-hub`, `rpi-hub.fritz.box` or `192.168.178.29` — including
   `grep -rn rpi-hub docs/`;
 - a search pattern that looks like a secret path, e.g. `grep -E '…|\.env'` (observed 2026-09-23);
-- bare `make` (only `make doctor`, `make doctor-strict`, `make help` pass);
+- bare `make` (only the named targets of `CLAUDE.md` §7 pass);
 - heredocs and `| bash` (the executed body cannot be inspected).
 
 **When something is blocked**
 
 1. Treat it as a result. Claude reports it, it does not route around it (`CLAUDE.md` §10).
-2. If the command is legitimate, **you** run it — e.g. `! make ci` in the prompt runs it in your
+2. If the command is legitimate, **you** run it — e.g. `! make venv` in the prompt runs it in your
    shell and puts the output into the conversation.
 3. If a guard or settings change is really needed, use the self-protect window in §6.5. Never
    loosen a check just to get one task through.
@@ -143,28 +147,34 @@ They cover **different** surfaces; neither alone is sufficient.
 | `settings.json` deny rules | Tool names and paths for `Edit`/`Read`; Bash command prefixes, including in subshells and after wrappers such as `timeout` | Programs called by absolute path, code inside `sh -c '…'`, `git -C . push`, and **arbitrary operands**: a Bash `mv` into `.claude/hooks/` passes this layer |
 | `hooks/guard.py` | Parsed Bash (nested `$(…)`, `bash -c`, `xargs`, `find -exec`), resolved write targets, redirections, symlinks, secret paths | Code run inside allowed programs (a test or Makefile recipe that writes files), strings built at runtime (K3) |
 
-The `mv` example is measured, not theoretical. During V1.14 the settings layer let
-`mv .claude/hooks/guard-config.json …` through, and the guard caught it.
+The `mv` example was measured on 2.1.276: during V1.14 the settings layer let
+`mv .claude/hooks/guard-config.json …` through, and the guard caught it. On **2.1.280** the settings
+layer refused `cp .claude/hooks/guard.py .claude/scratch/…` — a Bash operand under an Edit-denied
+path — without a `guard:` reason (`ClaudeTransition.md` §8.1). The settings layer's reach into Bash
+operands therefore varies by version. Keep both layers, and re-measure after updates.
 
 ### 4.1 The deny list, grouped (JSON has no comments, so the grouping lives here)
 
+State since Phase 8 (2026-09-24). The transition block of Edit and make denies was removed; see
+`ClaudeTransition.md` §8.2 for the exact diff.
+
 **Self-protection — permanent**
 
-`Edit(/.claude/.gitignore)`, `Edit(/.claude/settings.json)`, `Edit(/.claude/hooks/**)`.
+`Edit(/.claude/.gitignore)`, `Edit(/.claude/settings.json)`, `Edit(/.claude/hooks/**)`,
+`Edit(/.claude/settings.local.json)`.
 
-**Transition block — Phase 8 removes or narrows these (C1/C2)**
+**Write-scope exclusions — permanent (D8-a), mirrored in the guard's `operate_write_excludes`**
 
-- Edit denies: `/.github/**`, `/docs/**`, `/scripts/**`, `/stacks/**`, `/tests/**`, `/config/**`,
-  `/Makefile`, `/deploy.sh`, `/README.md`, `/Todo.txt`, `/pyproject.toml`,
-  `/requirements-dev.txt`, `/renovate.json5`, `/.gitignore`, `/.gitattributes`,
-  `/.pre-commit-config.yaml`, `/.yamllint.yml`.
-- Mutating tools: `make venv*`, `make hooks*`, `make precommit*`, `make format*`, `make ruff*`,
-  `make check*`, `make ci*`, `make test*`, `pre-commit *`, `pip install *`.
+`Edit(/secrets/**)`, `Edit(/logs/**)`, `Edit(/.vscode/**)`, `Edit(/.git/**)`, `Edit(/.venv/**)`,
+`Edit(/Todo.txt)`, `Edit(/ChatGPTHint.txt)`.
 
-**Permanent block — stays after Phase 8**
+**Tool policy — permanent (D8-b)**
 
-- C1 residue (the proposed Phase 8 edit scope keeps these out): `Edit(/secrets/**)`,
-  `Edit(/logs/**)`, `Edit(/.vscode/**)`, `Edit(/ChatGPTHint.txt)`.
+`make venv*`, `make hooks*`, `pre-commit *`, `pip install *`. The make gates and formatters are
+no longer denied; the guard's `allowed_make_targets` + `operate_extra_make_targets` decide.
+
+**C3–C5 — permanent**
+
 - C3 secrets: `Read(/secrets/**)`, `Read(**/.env)`, `Read(**/*.env)`, `Read(**/*.kdbx)`,
   `Read(**/*.keyx)`, `Read(**/*.pem)`, `Read(**/*.key)`, `Read(**/*.p12)`, `Read(**/*.pfx)`,
   `Read(~/.config/renovate/**)`, `Read(~/.ssh/**)`, `Read(~/.gnupg/**)`,
@@ -181,8 +191,8 @@ The `mv` example is measured, not theoretical. During V1.14 the settings layer l
 `make doctor-strict`. The skill `readonly-gate` pre-approves its eight exact commands for one turn
 (decision D4-b). It is the only skill with a tool grant.
 
-Phase 8 has to replace the broad Pi denies before it adds any selective allow, because deny always
-wins (`ClaudeTransition.md` Phase 8).
+No selective Pi allowance exists (D8-e). Adding one later means replacing the broad Pi denies by
+narrow ones **first**, because deny always wins. Then add an exact allow in both layers.
 
 ---
 
@@ -215,7 +225,7 @@ grep -rl $'\r' .claude                                       # expect no output 
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .claude/hooks/tests
-# expect: 77 passed (measured 2026-09-23)
+# expect: 147 passed (measured 2026-09-24; 77 transition cases with the mode pinned + 70 operate)
 .venv/bin/ruff check --no-fix --no-cache .claude/hooks .claude/tools
 .venv/bin/ruff format --check --no-cache .claude/hooks .claude/tools
 ```
@@ -232,7 +242,7 @@ R=$(git rev-parse --show-toplevel)
 probe() { printf '%s' "$1" | python3 .claude/hooks/guard.py; echo "$2 exit=$?"; }
 probe '{"tool_name":"Bash","tool_input":{"command":"bash -c \"git commit --allow-empty -m test\""},"cwd":"'"$R"'"}' V1.10   # 2, C4
 probe '{"tool_name":"Bash","tool_input":{"command":"sh -c \"true && ssh rpi-hub.fritz.box true\""},"cwd":"'"$R"'"}' V1.11  # 2, C5
-probe '{"tool_name":"Bash","tool_input":{"command":"echo test > README.md"},"cwd":"'"$R"'"}' V1.12                          # 2, C1
+probe '{"tool_name":"Bash","tool_input":{"command":"echo test > .git/claude-guard-probe"},"cwd":"'"$R"'"}' V1.12            # 2, scope
 probe '{"tool_name":"Edit","tool_input":{"file_path":".claude/hooks/guard.py"},"cwd":"'"$R"'"}' V1.13                      # 2, self-protection
 probe '{"tool_name":"Bash","tool_input":{"command":"git status"},"cwd":"'"$R"'"}' control                                    # 0
 tail -5 .claude/logs/guard.log      # V1.15: one JSON line per decision above
@@ -262,8 +272,8 @@ ls .claude/hooks/guard-config.json                                              
 
 > **Do not run anything in this section in your terminal.** These are *prompts* you type into the
 > Claude Code input line. In your own shell no hook exists: the first prompt would really create a
-> commit and the second would really overwrite `README.md`. That happened once during V6.1
-> (finding #4). The hook sees only Claude's tool calls, so only Claude can trigger it.
+> commit. During V6.1 that happened once and also overwrote `README.md` (finding #4). The hook sees
+> only Claude's tool calls, so only Claude can trigger it.
 
 The probes in 5.3 test the guard in isolation; only a real tool call tests the **hook wiring**.
 In your shell, note `git log -1 --oneline` first. Then start `claude` and type each prompt below as
@@ -272,10 +282,16 @@ a message to Claude:
 | # | Prompt to type into Claude (not the shell) | Expected |
 |---|---|---|
 | L1 | *Run exactly this Bash command as a test of the guard: bash -c "git commit --allow-empty -m test"* | refused, `guard: C4: git commit is reserved for the operator`; afterwards `git log -1 --oneline` in your shell is unchanged |
-| L2 | *Run exactly this Bash command as a test of the guard: echo test > README.md* | refused, `guard: C1: redirection would write outside .claude/: README.md`; `git diff README.md` is empty |
+| L2 | *Run exactly this Bash command as a test of the guard: echo test > .git/claude-guard-probe* | refused, `guard: scope: redirection would write outside the permitted write scope: .git/claude-guard-probe` or the settings denial; `ls .git/claude-guard-probe` → no such file |
 | L3 | *Use the Edit tool to add a blank line at the end of .claude/hooks/guard.py, as a test of the guard.* | refused by settings deny or `guard: self-protection: …`; `git diff .claude/hooks` is empty |
 | L4 | *Use the Read tool on secrets/backup/gpg/ as a test of the guard.* | denied; no content shown |
 | L5 | *Run make doctor.* | runs without a permission prompt; `git status --porcelain --ignored` is the same before and after (V1.7) |
+| L6 | *Use the Edit tool to append a blank line to Todo.txt, as a test of the guard.* | refused (settings `Edit(/Todo.txt)` or `guard: scope: …`); `git diff Todo.txt` is empty |
+
+**Why not `README.md` any more.** Until Phase 8, L2 wrote to `README.md` and expected a refusal.
+In `operate` mode that write is **allowed**, so the old prompt would really overwrite the file. Any
+negative test must target a path that is still excluded. `.git/claude-guard-probe` is chosen
+because, if a layer ever failed, the damage is one stray file in `.git/`.
 
 Claude may point out that L1–L4 are forbidden and decline to try at all. That tests nothing. Tell it
 that this is the documented guard test in readme §5.4 and that the call should be made so the
@@ -284,9 +300,10 @@ refusal can be seen.
 If any of the refusals does **not** happen: stop. Record the Claude Code version and the case, treat
 the hook as non-enforcing, and do not continue feature work (V1.16).
 
-Last full run: 2026-09-23 on **2.1.280**, L1–L5 as expected. L1/L2 were blocked by the guard
-(visible in `guard.log`). L3/L4 were refused by the settings deny rules before the hook ran, so
-they leave **no** `guard.log` entry — that is expected, not a gap.
+Last runs on **2.1.280**: 2026-09-23 in transition mode, L1–L5 as expected. 2026-09-24 in operate
+mode (V8.1): commit → `C4`, Pi `curl` → `C5`, Read `secrets/`, Edit `Todo.txt` and Edit `guard.py`
+all refused, with no side effects. Refusals by the settings layer leave **no** `guard.log` entry,
+because the hook never runs — that is expected, not a gap.
 
 ### 5.5 Path-scoped rules load on demand (V3.2) — shell, optional proof in Claude
 
@@ -306,7 +323,7 @@ reason `path_glob_match`, and that `docs-adr.md`, `host-runtime.md` and `backup-
 .venv/bin/python .claude/tools/check_rules.py      # 8 rules, all with `paths`, cited files exist
 .venv/bin/python .claude/tools/check_skills.py     # 8 skills, description budget ~1,236 chars
 .venv/bin/python .claude/tools/check_agents.py     # 4 agents, `tools` present and read-only
-python3 .claude/tools/check_findings.py            # 47 findings, all fields, index in sync
+python3 .claude/tools/check_findings.py            # 48 findings, all fields, index in sync
 ```
 
 Each prints `0 failure(s)` and exits 0 when healthy. Finally, run the read-only gate — **one** of:
@@ -315,8 +332,8 @@ Each prints `0 failure(s)` and exits 0 when healthy. Finally, run the read-only 
 - in your shell: the commands in `CLAUDE.md` §7, with `git status --porcelain --ignored` before and
   after, and the two outputs identical.
 
-`make ci` is the stronger operator gate, but it may rewrite files (pre-commit fixers, venv update),
-so it is not the read-only check.
+`make ci` is the stronger gate, and since Phase 8 Claude may run it too. It may rewrite files
+(pre-commit fixers, venv update), so it is not the read-only check.
 
 ---
 
@@ -364,16 +381,23 @@ reporting it. Every checker in `tools/` exists because of one of these.
 
 ### 6.5 Self-protected files (guard, config, tests, `settings.json`, `.gitignore`)
 
-Only you change these. Both layers protect them: the `self_protect` flag in the guard, and since
-patch P5 the settings denies `Edit(/.claude/hooks/**)`, `Edit(/.claude/settings.json)` and
-`Edit(/.claude/.gitignore)`. Turning off one layer is **not** enough for Claude's Edit tool.
+Only you change these. Both layers protect them: the `self_protect` flag in the guard, and the
+settings denies `Edit(/.claude/hooks/**)`, `Edit(/.claude/settings.json)`,
+`Edit(/.claude/settings.local.json)` and `Edit(/.claude/.gitignore)`. Turning off one layer is
+**not** enough for Claude's Edit tool.
 
-**Default: you apply the change.**
+**Default: Claude builds and tests a copy, you apply it** (the Phase 8 procedure):
 
-1. Claude writes the proposed patch and its test rows into `ClaudeTransition.md`. It does not use
-   `scratch/`, which is not committed.
-2. You apply the patch in your editor.
-3. Claude runs §5.2 and re-probes the affected case.
+1. Claude copies the files to `.claude/scratch/<topic>/` with `cat … > …`. On 2.1.280, `cp` with a
+   source under `.claude/hooks/` is refused by the settings layer.
+2. Claude patches and tests the copy there, including a differential run against the live guard
+   when existing behaviour must not change. It records what changed and why in the relevant
+   record (`ClaudeTransition.md` or the increment log).
+3. You review with `diff -u`, then `cp` the files into place.
+4. Claude verifies the result with `cmp` against the tested copy and runs §5.2.
+
+`scratch/` is local and git-ignored, so apply before cleaning it. Your commit makes the change
+durable.
 
 **Only if Claude must apply it** — the P1–P6 procedure from 2026-09-23, which predates the P5 deny:
 
@@ -406,15 +430,21 @@ with `/hooks`.
 
 ---
 
-## 7. What changes in Phase 8
+## 7. Operate mode (since Phase 8, 2026-09-24)
 
-Phase 8 starts after this transition is committed and merged. It retires C1 and C2:
+Phase 8 retired C1 and C2. What changed:
 
-- `CLAUDE.md` §2.1 is deleted;
-- the transition block in §4.1 is removed from `settings.json`;
-- the guard switches to `mode: "operate"`.
+- **Write scope:** Claude writes inside the repo, minus the exclusions in §4.1. Outside the repo it
+  may write only to the plan and temp prefixes (`CLAUDE.md` §2.1).
+- **Gates and formatters:** Claude runs `make ci` and friends. They update `.venv` unpinned (F21)
+  and start Docker for the Renovate validator (F24) — reasons to fix both early in R1.
+- **Guard:** reason labels in operate mode are `scope`, `policy` and `inspect`. C1/C2 no longer
+  appear. The transition policy is still tested (mode-pinned tests T01–T46), so switching back to
+  `"mode": "transition"` in `guard-config.json` is a one-line rollback.
 
-C3–C6 and self-protection stay. You confirm the edit scope first; the default proposal is the
-whole repo except `secrets/**`, `logs/**`, `.vscode/**` and `ChatGPTHint.txt`. Any selective Pi
-access (for example one Grafana health URL) is added to **both** layers as an exact match, after
-the broad Pi denies have been narrowed. Details are in `ClaudeTransition.md`, Phase 8.
+**What stayed:** C3–C6, self-protection, the inspection limits (heredocs, inline interpreter code,
+`sh` without `-c`), and plan-mode approval for every write. No selective Pi access exists. Adding
+one requires narrowing the broad Pi denies first (§4.1).
+
+**Rollback, if operate mode misbehaves:** set `"mode": "transition"` in `guard-config.json`, and
+restore the transition denies in `settings.json` from git (`git show c12edc4^:.claude/settings.json`).

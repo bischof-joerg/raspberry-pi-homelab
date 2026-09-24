@@ -1,12 +1,13 @@
 ---
 name: adr-draft
-description: Draft an architecture decision record into .claude/scratch/ for operator review. Use when a decision constrains later work.
+description: Draft an architecture decision record into docs/architecture/adr/ with status Proposed. Use when a decision constrains later work.
 ---
 
 # ADR draft
 
-Writes to `.claude/scratch/ADR-NNNN-<kebab-title>.md`. The operator moves it into
-`docs/architecture/adr/` once accepted — an ADR is accepted by a person, not by a file being saved.
+Writes `docs/architecture/adr/ADR-NNNN-<kebab-title>.md` with **Status: Proposed**, on the current
+feature branch, after the operator has approved the plan. Only the operator moves the status to
+Accepted — an ADR is accepted by a person, not by a file being saved.
 
 ## When an ADR is warranted
 
@@ -61,5 +62,6 @@ The test or check that proves the decision holds. A decision nobody checks is a 
 
 ## Output
 
-Draft to `.claude/scratch/`, then summarise in chat: the decision in one sentence, the main cost,
-and the open questions the operator must resolve before status moves to Accepted.
+Write the file to `docs/architecture/adr/`, then summarise in chat: the decision in one sentence,
+the main cost, and the open questions the operator must resolve before status moves to Accepted.
+If the decision is still exploratory, draft to `.claude/scratch/` instead and say so.
