@@ -1894,6 +1894,77 @@ selective service allowances), and C6 (versioned, idempotent, test-first) remain
       an exact allowlist entry in `guard-config.json` (host, port, path, method GET only).
 - [ ] Record each allowance in this document with reason and date.
 
+#### 8.0 Operator decisions (2026-09-24)
+
+| ID | Question | Decision |
+|---|---|---|
+| D8-a | Edit scope | Whole repository except `secrets/`, `logs/`, `.vscode/`, `ChatGPTHint.txt`, **`Todo.txt`**; nothing outside the repository except the plan and temp prefixes. Claude **added** `.git/` (a write to `.git/hooks/` would run code on the operator's next commit) and `.venv/` (`CLAUDE.md` §7: never create it directly) — **confirmed by the operator 2026-09-24**. |
+| D8-b | make targets | `precommit`, `test`/`tests`, `ci`, `check`, `ci-doctor`, `ci-precommit`, `ci-tests`. All of them update `.venv` through the `venv` dependency and run pre-commit incl. Docker (F24); `CLAUDE.md` §7 is reworded accordingly. `venv`, `venv-clean`, `hooks`, Pi/backup/restore/renovate targets stay blocked. |
+| D8-c | Formatters | Allowed: `make format`, `make ruff-fix`, `make ruff`, `ruff check --fix`, `ruff format`. |
+| D8-d | Who applies self-protected changes | The operator (readme §6.5 default). Claude develops and tests in `.claude/scratch/p8/`. |
+| D8-e | Selective Pi allowances | None. The broad Pi denies stay; V8.3 is n/a until an allowance is actually needed. |
+
+**Why the guard needed code, not only config.** In the pre-Phase-8 guard, mode `operate` meant
+"everything except the self-protected files" (`is_write_allowed`, `check_file_tool`): writes to
+`~/.bashrc`, `~/.ssh/config` or `secrets/` would have passed the guard, and the settings layer
+only has *Read* denies for the home paths. D8-a would not have been enforced at all.
+
+#### 8.1 Patches P7–P10 (developed and tested 2026-09-24; operator applies)
+
+Developed on copies in `.claude/scratch/p8/hooks/`. The copies were made with `cat … >`, because
+`cp .claude/hooks/guard.py .claude/scratch/…` was **denied by the settings layer** on 2.1.280 (no
+`guard:` reason). The `Edit(/.claude/hooks/**)` deny apparently now covers `cp` operands — V1.14 on
+2.1.276 had shown the opposite for `mv`. Recorded as observed, cause [I].
+
+| Patch | File | Change |
+|---|---|---|
+| P7 | `tests/test_guard.py`, `tests/test_guard_operands.py` | Every call passes `--config` with a copy of the real config and `mode: transition` pinned (module-scoped autouse fixture). The 77 cases keep testing the transition policy after the switch. `test_guard_operands.py` locates the guard relative to its own file, as `test_guard.py` does, instead of via `tests._helpers.REPO_ROOT`. |
+| P8 | `guard.py` | New `in_write_scope()`: transition = `<root>/.claude/`; operate = inside `<root>`, not under `operate_write_excludes`, not a secret path (C3 now also blocks *writes* of secret material). Used by `is_write_allowed` (Bash targets, redirections) and `check_file_tool` (Write/Edit). Operate reasons: `scope: …` and `C3: …`. `label()` renames C1/C2 in operate mode to `inspect`/`policy`, because those constraints no longer exist there. Transition wording is byte-identical. `make` allows `operate_extra_make_targets` in operate mode only. H7 docstring updated. |
+| P9 | `guard.py` | `check_ruff` passes everything when mode is operate **and** `operate_ruff_fix_allowed` is `true`. |
+| P10 | new `tests/test_guard_operate.py` | T47 file-tool scope (21 cases), T48 Bash write scope (10), T49 make/tool policy (22), T50 C3/C4/C5 unchanged (10 + Read), T51 inspection limits stay and name no C1/C2/transition (4), T52 operate keys inert in transition (2). The policy is passed explicitly, so the tests pin the *decided* policy independent of the real config. |
+
+`guard-config.json` is **not** changed in 8.1. It stays `transition`, so the patches change
+nothing observable until 8.2.
+
+**Verification (Claude, 2026-09-24):**
+- `pytest .claude/scratch/p8/hooks/tests` → **147 passed** (77 existing + 70 new); `ruff check` →
+  `All checks passed!`; `ruff format --check` → `4 files already formatted`.
+- Differential check `.claude/scratch/p8/compare_transition.py`: original and patched guard
+  against the real (transition) config on 29 inputs covering every changed message → **0
+  differences** in exit code or stderr.
+- One test expectation of Claude's was wrong on the first run: a Write into `secrets/` reports
+  `C3`, not `scope`. The guard's answer is the better one, so the test was corrected.
+
+**Apply (operator, WSL shell, repo root, on `chore/r0-phase8-operate-mode`):**
+
+```bash
+diff -u .claude/hooks/guard.py .claude/scratch/p8/hooks/guard.py | less      # review
+diff -u .claude/hooks/tests/test_guard.py .claude/scratch/p8/hooks/tests/test_guard.py
+diff -u .claude/hooks/tests/test_guard_operands.py .claude/scratch/p8/hooks/tests/test_guard_operands.py
+less .claude/scratch/p8/hooks/tests/test_guard_operate.py
+cp .claude/scratch/p8/hooks/guard.py .claude/hooks/guard.py
+cp .claude/scratch/p8/hooks/tests/test_guard.py .claude/scratch/p8/hooks/tests/test_guard_operands.py \
+   .claude/scratch/p8/hooks/tests/test_guard_operate.py .claude/hooks/tests/
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider -q .claude/hooks/tests   # 147 passed
+```
+
+`scratch/` is local and git-ignored. The diffs become durable with the operator's commit of 8.1.
+
+**Applied 2026-09-24 (operator).** Claude verified afterwards: all four files byte-identical to the
+tested scratch versions (`cmp`); `.claude/hooks/tests` → **147 passed**; read-only gate Form A →
+ruff `All checks passed!`, `48 files already formatted`, yamllint and ShellCheck clean,
+`8 passed, 4 deselected`, `7 passed, 1 skipped`, `OK: no side effects`. The guard itself is live
+and still `transition` — every call in this session passed through the patched code.
+
+#### 8.2 The switch — not yet started
+
+Config values for `guard-config.json` (operator), exactly as tested in P10:
+`"mode": "operate"`, `"operate_write_excludes": ["secrets", "logs", ".vscode", "ChatGPTHint.txt",
+"Todo.txt", ".git", ".venv"]`, `"operate_extra_make_targets": ["precommit", "test", "tests", "ci",
+"check", "ci-doctor", "ci-precommit", "ci-tests", "format", "ruff", "ruff-fix"]`,
+`"operate_ruff_fix_allowed": true`. The `settings.json` change and the artefact updates follow
+once 8.1 is committed.
+
 Verification:
 - V8.1 Negative tests V1.4 (commit, ssh) and V1.8 (non-allowed Pi calls) still denied.
 - V8.2 Positive test: Claude edits a file under `tests/` after approval.

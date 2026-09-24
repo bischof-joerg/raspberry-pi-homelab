@@ -18,13 +18,21 @@ from pathlib import Path
 
 import pytest
 
-from tests._helpers import REPO_ROOT
-
-GUARD = REPO_ROOT / ".claude" / "hooks" / "guard.py"
-CONFIG = REPO_ROOT / ".claude" / "hooks" / "guard-config.json"
+HOOKS_DIR = Path(__file__).resolve().parents[1]
+GUARD = HOOKS_DIR / "guard.py"
+CONFIG = HOOKS_DIR / "guard-config.json"
 
 PASS = 0
 BLOCK = 2
+
+# P7: default config for every call, with the mode pinned to transition (see test_guard.py).
+TRANSITION_CONFIG: Path | None = None
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _pin_transition_mode(tmp_path_factory: pytest.TempPathFactory) -> None:
+    global TRANSITION_CONFIG
+    TRANSITION_CONFIG = write_config(tmp_path_factory.mktemp("config"))
 
 
 @pytest.fixture(scope="module")
@@ -53,7 +61,7 @@ def fixture_repo(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 def write_config(tmp_path: Path, **overrides: object) -> Path:
     config = json.loads(CONFIG.read_text(encoding="utf-8"))
-    config.update(overrides)
+    config.update({"mode": "transition", **overrides})
     target = tmp_path / "guard-config.json"
     target.write_text(json.dumps(config), encoding="utf-8")
     return target
@@ -63,9 +71,7 @@ def run_guard(
     repo: Path, tool: str, tool_input: dict, config: Path | None = None
 ) -> tuple[int, str]:
     event = {"tool_name": tool, "tool_input": tool_input, "cwd": str(repo)}
-    argv = [sys.executable, str(GUARD)]
-    if config is not None:
-        argv += ["--config", str(config)]
+    argv = [sys.executable, str(GUARD), "--config", str(config or TRANSITION_CONFIG)]
     result = subprocess.run(
         argv,
         input=json.dumps(event),

@@ -24,6 +24,24 @@ CONFIG = HOOKS_DIR / "guard-config.json"
 BLOCK = 2
 PASS = 0
 
+# P7: every call runs against a copy of the real config with the mode pinned, so the matrix
+# keeps testing the transition policy after the operator switches guard-config.json to operate.
+TRANSITION_CONFIG: Path | None = None
+
+
+def pinned_config(directory: Path, mode: str = "transition", **overrides: object) -> Path:
+    config = json.loads(CONFIG.read_text(encoding="utf-8"))
+    config.update({"mode": mode, **overrides})
+    target = directory / f"guard-config-{mode}.json"
+    target.write_text(json.dumps(config), encoding="utf-8")
+    return target
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _pin_transition_mode(tmp_path_factory: pytest.TempPathFactory) -> None:
+    global TRANSITION_CONFIG
+    TRANSITION_CONFIG = pinned_config(tmp_path_factory.mktemp("config"))
+
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
@@ -64,9 +82,7 @@ def bash(repo: Path, command: str) -> int:
 
 
 def _run(repo: Path, payload: str, config: Path | None = None) -> int:
-    argv = [sys.executable, str(GUARD)]
-    if config is not None:
-        argv += ["--config", str(config)]
+    argv = [sys.executable, str(GUARD), "--config", str(config or TRANSITION_CONFIG)]
     env = os.environ | {"CLAUDE_PROJECT_DIR": str(repo), "PYTHONDONTWRITEBYTECODE": "1"}
     result = subprocess.run(
         argv,
@@ -100,10 +116,7 @@ def test_t04_write_through_symlink_out_of_claude(repo: Path) -> None:
 
 
 def test_t05_self_protection_blocks_guard_edit(repo: Path, tmp_path: Path) -> None:
-    config = json.loads(CONFIG.read_text(encoding="utf-8"))
-    config["self_protect"] = True
-    protected = tmp_path / "guard-config-self-protect.json"
-    protected.write_text(json.dumps(config), encoding="utf-8")
+    protected = pinned_config(tmp_path, self_protect=True)
     assert guard(repo, "Edit", {"file_path": ".claude/hooks/guard.py"}, protected) == BLOCK
 
 

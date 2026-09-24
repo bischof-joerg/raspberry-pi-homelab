@@ -14,7 +14,10 @@ Design rules H1-H8 of `.claude/ClaudeTransition.md` section 5.4:
   H4 Project root from `CLAUDE_PROJECT_DIR`, else `git rev-parse --show-toplevel`, else block.
   H5 Policy data lives in `guard-config.json`, logic lives here.
   H6 Every decision is appended to `.claude/logs/guard.log` as one JSON line.
-  H7 Mode `transition` enforces C1-C5; mode `operate` drops the C1/C2 path restrictions.
+  H7 Mode `transition` enforces C1-C5. Mode `operate` (Phase 8) replaces the C1 write
+     restriction by a write *scope* - inside the project root, minus `operate_write_excludes`
+     and minus secret paths - and adds `operate_extra_make_targets` and
+     `operate_ruff_fix_allowed`. C3-C5, self-protection and the inspection limits stay.
   H8 Tokenising uses `shlex`; `$( )`, backticks and process substitutions are extracted
      first by the balanced-delimiter scanner below and then inspected recursively.
 
@@ -138,6 +141,23 @@ def matches_allowed_prefix(ctx: Context, path: Path) -> bool:
     return False
 
 
+def in_write_scope(ctx: Context, path: Path) -> bool:
+    """True when `path` (already resolved) lies inside the write scope of the current mode.
+
+    transition: only `<root>/.claude/`.
+    operate:    `<root>/` minus `operate_write_excludes` minus secret paths. Nothing outside the
+                project root - the home directory in particular stays closed.
+    """
+    if ctx.transition:
+        return is_inside(path, ctx.write_dir)
+    if not is_inside(path, ctx.root):
+        return False
+    for entry in ctx.get("operate_write_excludes", []):
+        if is_inside(path, (ctx.root / str(entry)).resolve()):
+            return False
+    return not is_secret(ctx, str(path))
+
+
 def is_write_allowed(ctx: Context, raw: str) -> bool:
     """True when writing to `raw` is permitted under the current mode."""
     if raw in ctx.names("null_targets"):
@@ -147,9 +167,26 @@ def is_write_allowed(ctx: Context, raw: str) -> bool:
         return True
     if is_self_protected(ctx, path):
         return False
-    if not ctx.transition:
-        return True
-    return is_inside(path, ctx.write_dir)
+    return in_write_scope(ctx, path)
+
+
+def scope_violation(ctx: Context, what: str, target: str) -> Blocked:
+    """The block reason for a write outside the scope, worded for the current mode.
+
+    The transition wording is kept byte-identical to the Phase 1b record (V1.12 and others).
+    """
+    if ctx.transition:
+        return Blocked(f"C1: {what} outside .claude/: {target}")
+    if is_secret(ctx, target):
+        return Blocked(f"C3: {what} into secret material: {target}")
+    return Blocked(f"scope: {what} outside the permitted write scope: {target}")
+
+
+def label(ctx: Context, transition_label: str) -> str:
+    """Constraint label for inspection and policy blocks: C1/C2 exist only in transition."""
+    if ctx.transition:
+        return transition_label
+    return "policy" if transition_label == "C2" else "inspect"
 
 
 def is_secret(ctx: Context, raw: str) -> bool:
@@ -433,11 +470,13 @@ def write_targets(ctx: Context, words: list[str], head: str) -> list[str]:
 def check_write_operands(ctx: Context, words: list[str], head: str) -> None:
     for target in write_targets(ctx, words, head):
         if target == "{}":
-            raise Blocked(f"C1: `{head}` would write to the files matched by `find`")
+            raise Blocked(
+                f"{label(ctx, 'C1')}: `{head}` would write to the files matched by `find`"
+            )
         if is_self_protected(ctx, resolve(ctx, target)):
             raise Blocked(f"self-protection: only the operator edits {target}")
         if not is_write_allowed(ctx, target):
-            raise Blocked(f"C1: `{head}` would write outside .claude/: {target}")
+            raise scope_violation(ctx, f"`{head}` would write", target)
 
 
 def check_secret_operands(ctx: Context, words: list[str], head: str) -> None:
@@ -457,13 +496,15 @@ def check_redirections(ctx: Context, tokens: list[str]) -> list[str]:
     while index < len(tokens):
         token = tokens[index]
         if token in ("<<", "<<<"):
-            raise Blocked("C1: here-documents are not inspectable during the transition")
+            if ctx.transition:
+                raise Blocked("C1: here-documents are not inspectable during the transition")
+            raise Blocked("inspect: here-documents are not inspectable")
         if token in REDIRECT_OPS or re.fullmatch(r"[0-9]*(>>|>\||>&|&>>|&>|>|<)", token):
             if words and words[-1].isdigit():
                 words.pop()
             target = tokens[index + 1] if index + 1 < len(tokens) else None
             if target is None:
-                raise Blocked("C1: redirection without a target")
+                raise Blocked(f"{label(ctx, 'C1')}: redirection without a target")
             index += 2
             if token.endswith("&") or target.startswith("&") or target.isdigit():
                 continue
@@ -474,7 +515,7 @@ def check_redirections(ctx: Context, tokens: list[str]) -> list[str]:
             if is_self_protected(ctx, resolve(ctx, target)):
                 raise Blocked(f"self-protection: only the operator edits {target}")
             if not is_write_allowed(ctx, target):
-                raise Blocked(f"C1: redirection would write outside .claude/: {target}")
+                raise scope_violation(ctx, "redirection would write", target)
             continue
         if token in ("(", ")", "|", "||", "&&", "&", ";"):
             index += 1
@@ -500,12 +541,14 @@ def analyse_segment(ctx: Context, tokens: list[str], depth: int) -> None:
         operand = first_operand(words)
         if operand is not None:
             check_pi_script(ctx, operand)
-        raise Blocked("C1/C5: shell invocation without `-c` hides the executed code")
+        raise Blocked(
+            f"{label(ctx, 'C1/C5')}: shell invocation without `-c` hides the executed code"
+        )
 
     if base in ctx.names("interpreter_heads"):
         inline = ctx.names("interpreter_inline_flags")
         if any(word in inline for word in words[1:]):
-            raise Blocked(f"C1: inline interpreter code is not inspectable: {base}")
+            raise Blocked(f"{label(ctx, 'C1')}: inline interpreter code is not inspectable: {base}")
 
     if base in ctx.names("nested_exec_heads"):
         analyse_nested(ctx, base, words, depth)
@@ -529,7 +572,7 @@ def analyse_segment(ctx: Context, tokens: list[str], depth: int) -> None:
         raise Blocked(f"C5: host mutation command is denied: {base}")
 
     if base in ctx.names("denied_heads"):
-        raise Blocked(f"C2: command has side effects and is denied: {base}")
+        raise Blocked(f"{label(ctx, 'C2')}: command has side effects and is denied: {base}")
 
     if base == "make":
         check_make(ctx, words)
@@ -542,7 +585,7 @@ def analyse_segment(ctx: Context, tokens: list[str], depth: int) -> None:
     if base in ("pip", "pip3"):
         subcommand = first_operand(words)
         if subcommand not in ctx.names("allowed_pip_subcommands"):
-            raise Blocked(f"C2: pip {subcommand} modifies the environment")
+            raise Blocked(f"{label(ctx, 'C2')}: pip {subcommand} modifies the environment")
         return
 
     if base == "ruff":
@@ -595,7 +638,9 @@ def analyse_nested(ctx: Context, base: str, words: list[str], depth: int) -> Non
                 if inner:
                     analyse_bash(ctx, shlex.join(inner), depth + 1)
         if "-delete" in words:
-            raise Blocked("C1: `find -delete` removes files outside .claude/")
+            if ctx.transition:
+                raise Blocked("C1: `find -delete` removes files outside .claude/")
+            raise Blocked("inspect: `find -delete` removes files that cannot be checked")
         return
     if base == "watch":
         rest = [word for word in words[1:] if not word.startswith("-")]
@@ -613,13 +658,16 @@ def analyse_nested(ctx: Context, base: str, words: list[str], depth: int) -> Non
 
 def check_make(ctx: Context, words: list[str]) -> None:
     allowed = ctx.names("allowed_make_targets")
+    if not ctx.transition:
+        allowed |= ctx.names("operate_extra_make_targets")
+    tag = label(ctx, "C2")
     targets = [word for word in words[1:] if not word.startswith("-") and "=" not in word]
     if not targets:
-        raise Blocked("C2: bare `make` runs the default target and modifies the tree")
+        raise Blocked(f"{tag}: bare `make` runs the default target and modifies the tree")
     for target in targets:
         if target not in allowed:
             raise Blocked(
-                f"C2: make target `{target}` has side effects (allowed: {sorted(allowed)})"
+                f"{tag}: make target `{target}` has side effects (allowed: {sorted(allowed)})"
             )
 
 
@@ -635,25 +683,29 @@ def check_docker(ctx: Context, words: list[str]) -> None:
             break
         inner = rest[index] if index < len(rest) else None
         if inner not in ctx.names("allowed_docker_compose_subcommands"):
-            raise Blocked(f"C2: `docker compose {inner}` changes runtime state")
+            raise Blocked(f"{label(ctx, 'C2')}: `docker compose {inner}` changes runtime state")
         return
     if subcommand not in ctx.names("allowed_docker_subcommands"):
-        raise Blocked(f"C2: `docker {subcommand}` is not a read-only docker command")
+        raise Blocked(
+            f"{label(ctx, 'C2')}: `docker {subcommand}` is not a read-only docker command"
+        )
 
 
 def check_ruff(ctx: Context, words: list[str]) -> None:
+    if not ctx.transition and ctx.get("operate_ruff_fix_allowed", False) is True:
+        return
     subcommand = first_operand(words)
     flags = set(words[1:])
     if subcommand == "check" and "--no-fix" in flags:
         return
     if subcommand == "format" and ({"--check", "--diff"} & flags):
         return
-    raise Blocked("C2: ruff may only run as `check --no-fix` or `format --check`")
+    raise Blocked(f"{label(ctx, 'C2')}: ruff may only run as `check --no-fix` or `format --check`")
 
 
 def analyse_bash(ctx: Context, command: str, depth: int = 0) -> None:
     if depth > int(ctx.get("max_nesting_depth", 5)):
-        raise Blocked("C1: command nesting is too deep to inspect safely")
+        raise Blocked(f"{label(ctx, 'C1')}: command nesting is too deep to inspect safely")
     if depth == 0:
         raw_scan(ctx, command)
     stripped, bodies = extract_substitutions(command)
@@ -683,8 +735,13 @@ def check_file_tool(ctx: Context, tool_input: dict) -> None:
         raise Blocked(f"self-protection: only the operator edits {raw}")
     if matches_allowed_prefix(ctx, path):
         return
-    if ctx.transition and not is_inside(path, ctx.write_dir):
+    if in_write_scope(ctx, path):
+        return
+    if ctx.transition:
         raise Blocked(f"C1: writes are restricted to .claude/ during the transition: {raw}")
+    if is_secret(ctx, str(path)):
+        raise Blocked(f"C3: secret material must not be written: {raw}")
+    raise Blocked(f"scope: write outside the permitted write scope: {raw}")
 
 
 def check_read_tool(ctx: Context, tool_name: str, tool_input: dict) -> None:
