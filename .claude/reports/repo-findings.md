@@ -86,7 +86,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F45 | UFW very likely does not govern the published ports | Exposure | High | open | c |
 | F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | open | b |
 | F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | open | h |
-| F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | partly | a |
+| F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | addressed | a |
 | F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | open | h |
 
 ## Secrets and credentials
@@ -116,7 +116,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Done 2026-09-25: all four volumes removed individually (`docker volume rm`, no `prune`); `docker volume ls` is empty. **Open:** prevent recurrence — extend `test_56` to fail on dangling volumes and on any volume carrying a `com.docker.compose.project` label. Optionally let `deploy.sh` run `up -d --renew-anon-volumes`, so compose never carries anonymous volumes over to a recreated container; that changes the deploy for every service and belongs to group d/e.
 - **Test:** `tests/postdeploy/test_56_monitoring_no_volume_mounts.py` — add a check over `docker volume ls` (dangling, compose project label).
 - **Acceptance:** `docker volume ls` on the Pi is empty (measured 2026-09-25), and the extended test fails as soon as a dangling or compose-labelled volume appears.
-- **Resolution (2026-09-25):** stricter than proposed (operator decision, variant a): `test_host_has_no_docker_volumes` in `tests/postdeploy/test_56_monitoring_no_volume_mounts.py` fails on **any** Docker volume on the Pi and reports names and labels only; parsing in `tests/_lib/docker_volumes.py`, proven by `tests/guards/test_40_volume_offenders.py`; enforcement recorded in ADR-0008. `--renew-anon-volumes` remains an open option for group d/e. Pi acceptance pending deploy.
+- **Resolution (2026-09-25):** stricter than proposed (operator decision, variant a): `test_host_has_no_docker_volumes` in `tests/postdeploy/test_56_monitoring_no_volume_mounts.py` fails on **any** Docker volume on the Pi and reports names and labels only; parsing in `tests/_lib/docker_volumes.py`, proven by `tests/guards/test_40_volume_offenders.py`; enforcement recorded in ADR-0008. `--renew-anon-volumes` remains an open option for group d/e. **Accepted 2026-09-25** after merge `acdd38b` (PR #20): postdeploy 60 passed, 4 skipped, including `test_host_has_no_docker_volumes`. The failing direction is proven statically by `test_40`, not on the Pi (no experiments on the deploy target).
 
 ### F31 – Grafana admin credentials default to empty
 
@@ -473,7 +473,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 
 ### F49 – Postdeploy as root writes `__pycache__` into the Pi checkout
 
-- **Evidence:** `deploy.sh:293` runs `POSTDEPLOY_ON_TARGET=1 make postdeploy` as root; the `postdeploy` target in `Makefile` sets no `PYTHONDONTWRITEBYTECODE`. Deploy logs on 2026-09-25: `repo-ownership: mismatch detected` at 13:33 and 13:46, `OK` at 12:44 and 13:50; an operator `find . -xdev ! -user admin` at 13:50 found nothing. The pattern matches pytest recompiling only postdeploy test modules that changed in the preceding pull [I — confirm with the same `find` right after a deploy whose pull changed `tests/postdeploy`]. [V 2026-09-25]
+- **Evidence:** `deploy.sh:293` runs `POSTDEPLOY_ON_TARGET=1 make postdeploy` as root; the `postdeploy` target in `Makefile` sets no `PYTHONDONTWRITEBYTECODE`. Deploy logs on 2026-09-25: `repo-ownership: mismatch detected` at 13:33 and 13:46, `OK` at 12:44 and 13:50; an operator `find . -xdev ! -user admin` at 13:50 found nothing. Confirmed after the deploy of merge `acdd38b` at 14:25 (its pull added a `tests/_lib` module and changed `test_56`): the same `find` listed exactly two root-owned files, `/home/admin/iac/raspberry-pi-homelab/tests/_lib/__pycache__/docker_volumes.cpython-313.pyc` and `/home/admin/iac/raspberry-pi-homelab/tests/postdeploy/__pycache__/test_56_monitoring_no_volume_mounts.cpython-313-pytest-8.3.5.pyc`, both 14:25; the next deploy at 14:27 logged `repo-ownership: mismatch detected; fixing to admin:admin`, after which the list was empty. [V 2026-09-25]
 - **Impact:** Every deploy that changes a postdeploy test leaves root-owned files in the checkout; the next deploy's `fix_repo_ownership_if_needed` silently resets them. That routine reset would also hide a real ownership drift.
 - **Proposed fix:** Set `PYTHONDONTWRITEBYTECODE=1` for the postdeploy run (in `deploy.sh` or the `Makefile` target — decide when fixing).
 - **Test:** `tests/guards` — static check that the postdeploy invocation sets `PYTHONDONTWRITEBYTECODE=1`.
