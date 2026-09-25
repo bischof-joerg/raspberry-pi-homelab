@@ -116,6 +116,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Done 2026-09-25: all four volumes removed individually (`docker volume rm`, no `prune`); `docker volume ls` is empty. **Open:** prevent recurrence — extend `test_56` to fail on dangling volumes and on any volume carrying a `com.docker.compose.project` label. Optionally let `deploy.sh` run `up -d --renew-anon-volumes`, so compose never carries anonymous volumes over to a recreated container; that changes the deploy for every service and belongs to group d/e.
 - **Test:** `tests/postdeploy/test_56_monitoring_no_volume_mounts.py` — add a check over `docker volume ls` (dangling, compose project label).
 - **Acceptance:** `docker volume ls` on the Pi is empty (measured 2026-09-25), and the extended test fails as soon as a dangling or compose-labelled volume appears.
+- **Resolution (2026-09-25):** stricter than proposed (operator decision, variant a): `test_host_has_no_docker_volumes` in `tests/postdeploy/test_56_monitoring_no_volume_mounts.py` fails on **any** Docker volume on the Pi and reports names and labels only; parsing in `tests/_lib/docker_volumes.py`, proven by `tests/guards/test_40_volume_offenders.py`; enforcement recorded in ADR-0008. `--renew-anon-volumes` remains an open option for group d/e. Pi acceptance pending deploy.
 
 ### F31 – Grafana admin credentials default to empty
 

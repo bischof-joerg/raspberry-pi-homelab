@@ -75,3 +75,19 @@ Mitigations:
    - docker compose config
    - docker inspect <container> to confirm mount Type=bind
    - service logs and health checks
+
+## Enforcement
+
+Checked on every deploy by `tests/postdeploy/test_56_monitoring_no_volume_mounts.py`:
+
+- `test_monitoring_containers_have_no_volume_mounts`: no monitoring container has a mount of type
+  `volume`.
+- `test_host_has_no_docker_volumes`: no Docker volume of any kind exists on the Pi. The Pi is a
+  deploy target only, so a dangling volume is drift. On 2026-09-25 three volumes left by earlier
+  compose project names were found, one holding an old SMTP password (finding F48) — the
+  project-name risk named under Rationale.
+
+The parsing logic of the host check is proven statically in
+`tests/guards/test_40_volume_offenders.py`. An image `VOLUME` that a service leaves uncovered also
+creates an anonymous volume; for the Alertmanager renderer that is checked in
+`tests/guards/test_32_alertmanager_renderer_container.py`.
