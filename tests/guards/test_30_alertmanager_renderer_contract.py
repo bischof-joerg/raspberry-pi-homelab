@@ -64,12 +64,38 @@ def test_alertmanager_runs_as_nobody_nogroup() -> None:
     )
 
 
-def test_renderer_group_matches_alertmanager_group() -> None:
+def test_renderer_keeps_primary_group_root() -> None:
+    # R1.1 deploy failure: with user "0:65534" and cap_drop ALL, `apk add` cannot chown the
+    # installed files to root:root and exits 10 ("failed to preserve …: owner").
     user = str(_services()[RENDERER].get("user", ""))
-    assert user.split(":")[-1] == ALERTMANAGER_GID and ":" in user, (
-        f"❌ {RENDERER} user is {user!r}; its group must be {ALERTMANAGER_GID} (F26).\n"
-        f'Fix: user: "0:{ALERTMANAGER_GID}" so the rendered files get the Alertmanager group '
+    assert user == "0:0", (
+        f"❌ {RENDERER} user is {user!r}, expected '0:0' (F26, F8).\n"
+        "Fix: keep the primary group 0 while the renderer runs `apk add` without CAP_CHOWN; "
+        "get the Alertmanager group via group_add instead."
+    )
+
+
+def test_renderer_can_hand_files_to_alertmanager_group() -> None:
+    service = _services()[RENDERER]
+    groups = [str(g) for g in service.get("group_add", [])]
+    assert ALERTMANAGER_GID in groups, (
+        f"❌ {RENDERER} group_add is {groups!r}; it must contain {ALERTMANAGER_GID} (F26).\n"
+        f'Fix: group_add: ["{ALERTMANAGER_GID}"] - an owner may chgrp to a supplementary group '
         "without CAP_CHOWN."
+    )
+    script = _renderer_script()
+    assert re.search(rf"chgrp\s+{ALERTMANAGER_GID}\s", script), (
+        f"❌ {RENDERER} does not chgrp the rendered config to {ALERTMANAGER_GID} (F26).\n"
+        f"Fix: chgrp {ALERTMANAGER_GID} explicitly; id -g is the primary group 0."
+    )
+
+
+def test_renderer_sets_umask_after_package_install() -> None:
+    script = _renderer_script()
+    apk, umask = script.find("apk add"), script.find("umask 027")
+    assert umask != -1 and (apk == -1 or umask > apk), (
+        f"❌ {RENDERER}: umask 027 missing or set before `apk add` (F26).\n"
+        "Fix: set umask 027 after the package install, before rendering."
     )
 
 
