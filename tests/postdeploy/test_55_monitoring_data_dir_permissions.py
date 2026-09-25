@@ -6,14 +6,14 @@
 
 from __future__ import annotations
 
-import grp
 import os
-import pwd
 import stat
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+
+from tests._lib.hostids import resolve_nobody_nogroup
 
 
 def _on_target() -> bool:
@@ -28,25 +28,6 @@ def _mode_octal(path: Path) -> int:
 def _uid_gid(path: Path) -> tuple[int, int]:
     st = path.stat()
     return st.st_uid, st.st_gid
-
-
-def _resolve_nobody_nogroup() -> tuple[int, int]:
-    """
-    Mirror init-permissions behavior:
-    - user: nobody
-    - group: prefer 'nogroup' if present, else nobody's primary gid
-    """
-    try:
-        nobody = pwd.getpwnam("nobody")
-    except KeyError as e:
-        raise RuntimeError("Cannot resolve user 'nobody' on this host") from e
-
-    try:
-        nogroup = grp.getgrnam("nogroup")
-        return nobody.pw_uid, nogroup.gr_gid
-    except KeyError:
-        # Fallback to nobody's primary group id
-        return nobody.pw_uid, nobody.pw_gid
 
 
 @dataclass(frozen=True)
@@ -66,7 +47,7 @@ def _specs() -> list[DirSpec]:
     # - Vector: 65532:65532
     # - Alertmanager: nobody:<nogroup or nobody primary gid>
     # - Victoria*: default root:root, overridable via envs
-    alert_uid, alert_gid = _resolve_nobody_nogroup()
+    alert_uid, alert_gid = resolve_nobody_nogroup()
 
     vm_uid = int(os.environ.get("VICTORIAMETRICS_UID", "0"))
     vm_gid = int(os.environ.get("VICTORIAMETRICS_GID", "0"))
@@ -76,8 +57,9 @@ def _specs() -> list[DirSpec]:
     return [
         DirSpec("grafana", base / "grafana", 0o750, 472, 472),
         DirSpec("alertmanager", base / "alertmanager", 0o750, alert_uid, alert_gid),
-        # Config artifact dir rendered by config-render job; intentionally 0755 root:root
-        DirSpec("alertmanager-config", base / "alertmanager-config", 0o755, 0, 0),
+        # Config dir rendered by config-render; holds the SMTP password, so root:<alertmanager
+        # group> 0750 (F26, F26b)
+        DirSpec("alertmanager-config", base / "alertmanager-config", 0o750, 0, alert_gid),
         DirSpec("vector", base / "vector", 0o750, 65532, 65532),
         DirSpec("victoriametrics", base / "victoriametrics", 0o750, vm_uid, vm_gid),
         DirSpec("victorialogs", base / "victorialogs", 0o750, vl_uid, vl_gid),

@@ -1,7 +1,11 @@
 import os
+import stat
 import subprocess
+from pathlib import Path
 
 import pytest
+
+from tests._lib.hostids import resolve_nobody_nogroup
 
 pytestmark = pytest.mark.postdeploy
 
@@ -59,11 +63,13 @@ def test_alertmanager_config_rendered_exists_on_host_and_in_container() -> None:
     # 1) Container exists
     _run(["docker", "inspect", container])
 
-    # 2) Host config exists + non-empty
-    if not os.path.isfile(host_path):
-        raise AssertionError(f"Rendered Alertmanager config missing on host: {host_path}")
-    if os.path.getsize(host_path) <= 0:
-        raise AssertionError(f"Rendered Alertmanager config is empty on host: {host_path}")
+    # 2) Host config exists + non-empty. The dir is 0750 root:nogroup (F26b), so only root
+    #    (deploy.sh runs postdeploy as root) can look inside; step 3 covers other callers.
+    if os.access(host_dir, os.X_OK):
+        if not os.path.isfile(host_path):
+            raise AssertionError(f"Rendered Alertmanager config missing on host: {host_path}")
+        if os.path.getsize(host_path) <= 0:
+            raise AssertionError(f"Rendered Alertmanager config is empty on host: {host_path}")
 
     # 3) Container config exists + non-empty
     _run(["docker", "exec", container, "sh", "-lc", f"test -s {container_path}"])
@@ -89,6 +95,48 @@ def test_alertmanager_config_rendered_exists_on_host_and_in_container() -> None:
             f"Expected mount line: {expected}\n"
             f"Actual mounts:\n{mounts}"
         )
+
+
+def test_alertmanager_config_not_world_readable() -> None:
+    """
+    Contract (F26, F26b): the rendered config may hold the SMTP password.
+      - alertmanager.yml is root:<nogroup> 0640 on the host
+      - nothing below the config dir carries other-bits
+      - alertmanager runs with that group, so it can still read the file
+    """
+    host_dir = Path(
+        os.environ.get(
+            "ALERTMANAGER_CONFIG_HOST_DIR",
+            "/srv/data/stacks/monitoring/alertmanager-config",
+        )
+    )
+    filename = os.environ.get("ALERTMANAGER_CONFIG_FILENAME", "alertmanager.yml")
+    host_path = host_dir / filename
+    if os.geteuid() != 0:
+        pytest.skip("Needs root to inspect the 0750 config dir; deploy.sh runs postdeploy as root.")
+    _, want_gid = resolve_nobody_nogroup()
+    fix = "Fix: sudo ./deploy.sh (init-permissions + renderer reapply the mode)."
+
+    st = host_path.stat()
+    have = (stat.S_IMODE(st.st_mode), st.st_uid, st.st_gid)
+    assert have == (0o640, 0, want_gid), (
+        f"❌ {host_path}: expected 0640 0:{want_gid}, got {have[0]:04o} {have[1]}:{have[2]}\n{fix}"
+    )
+
+    exposed = [
+        str(p)
+        for p in [host_dir, *host_dir.rglob("*")]
+        if stat.S_IMODE(p.lstat().st_mode) & stat.S_IRWXO
+    ]
+    assert not exposed, "❌ Entries with other-bits set:\n" + "\n".join(exposed) + f"\n{fix}"
+
+    container = _detect_alertmanager_container()
+    ids = _run(["docker", "exec", container, "sh", "-c", 'echo "$(id -u):$(id -g)"'])
+    assert ids == f"65534:{want_gid}", (
+        f"❌ {container} runs as {ids}, expected 65534:{want_gid}; "
+        "it could not read the 0640 config.\n"
+        "Fix: align compose user: with the host nogroup gid."
+    )
 
 
 def test_alertmanager_ready_endpoint() -> None:
