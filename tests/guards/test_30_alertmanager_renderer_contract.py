@@ -10,12 +10,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 COMPOSE_FILE = REPO_ROOT / "stacks/monitoring/compose/docker-compose.yml"
 INIT_PERMISSIONS = REPO_ROOT / "stacks/monitoring/compose/init-permissions.sh"
+RENDER_SCRIPT = REPO_ROOT / "stacks/monitoring/alertmanager/render-config.sh"
+RENDER_SCRIPT_IN_CONTAINER = "/in/render-config.sh"
 
 RENDERER = "alertmanager-config-render"
 ALERTMANAGER = "alertmanager"
@@ -29,9 +32,86 @@ def _services() -> dict:
     return data["services"]
 
 
+def _as_text(value: object) -> str:
+    if value is None:
+        return ""
+    return "\n".join(map(str, value)) if isinstance(value, list) else str(value)
+
+
 def _renderer_script() -> str:
-    command = _services()[RENDERER]["command"]
-    return "\n".join(command) if isinstance(command, list) else str(command)
+    """Inline command/entrypoint plus the extracted script, so no location escapes the checks."""
+    service = _services()[RENDERER]
+    parts = [_as_text(service.get("command")), _as_text(service.get("entrypoint"))]
+    if RENDER_SCRIPT.is_file():
+        parts.append(RENDER_SCRIPT.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
+_XFAIL_R1_2 = pytest.mark.xfail(
+    strict=True, reason="R1.2: contract pinned before the fix (F36, F8)"
+)
+
+PACKAGE_INSTALL = re.compile(
+    r"\b(?:apk\s+add|apt-get\s+install|apt\s+install|yum\s+install|dnf\s+install|pip3?\s+install)\b"
+)
+
+
+@_XFAIL_R1_2
+def test_no_service_installs_packages_at_runtime() -> None:
+    offenders = [
+        name
+        for name, service in _services().items()
+        if PACKAGE_INSTALL.search(
+            _as_text(service.get("command")) + "\n" + _as_text(service.get("entrypoint"))
+        )
+    ]
+    if RENDER_SCRIPT.is_file() and PACKAGE_INSTALL.search(RENDER_SCRIPT.read_text("utf-8")):
+        offenders.append(RENDER_SCRIPT.name)
+    assert not offenders, (
+        f"❌ Runtime package installation in: {offenders} (F8).\n"
+        "Fix: use a pinned image that already contains the tools; deploys must not need a mirror."
+    )
+
+
+@_XFAIL_R1_2
+def test_renderer_runs_offline() -> None:
+    service = _services()[RENDERER]
+    assert service.get("network_mode") == "none" and "networks" not in service, (
+        f"❌ {RENDERER}: network_mode is {service.get('network_mode')!r}, "
+        f"networks is {service.get('networks')!r} (F8).\n"
+        'Fix: network_mode: "none" and no networks: - the renderer needs no network.'
+    )
+
+
+@_XFAIL_R1_2
+def test_renderer_uses_the_alertmanager_image() -> None:
+    services = _services()
+    have, want = services[RENDERER].get("image"), services[ALERTMANAGER].get("image")
+    assert have == want, (
+        f"❌ {RENDERER} image is {have!r}, expected {want!r} (F8, F36).\n"
+        "Fix: reuse the alertmanager image - it ships sh/awk and amtool, pinned and "
+        "Renovate-covered together."
+    )
+
+
+@_XFAIL_R1_2
+def test_renderer_runs_extracted_script_read_only() -> None:
+    service = _services()[RENDERER]
+    assert RENDER_SCRIPT.is_file(), f"❌ Missing {RENDER_SCRIPT} (F36).\nFix: extract the renderer."
+    assert service.get("entrypoint") == ["/bin/sh", RENDER_SCRIPT_IN_CONTAINER], (
+        f"❌ {RENDER_SCRIPT_IN_CONTAINER} not run as entrypoint: "
+        f"entrypoint={service.get('entrypoint')!r}, command={service.get('command')!r} (F36).\n"
+        f'Fix: entrypoint: ["/bin/sh", "{RENDER_SCRIPT_IN_CONTAINER}"] and no inline command.'
+    )
+    assert "command" not in service, f"❌ {RENDERER}: drop the inline command (F36)."
+    mount = f"../alertmanager/{RENDER_SCRIPT.name}:{RENDER_SCRIPT_IN_CONTAINER}:ro"
+    assert mount in service.get("volumes", []), (
+        f"❌ {RENDER_SCRIPT.name} is not mounted read-only (F36).\nFix: add volume {mount!r}."
+    )
+    assert service.get("read_only") is True, (
+        f"❌ {RENDERER} has a writable root filesystem; without apk it needs none (F8).\n"
+        "Fix: read_only: true (only the /out bind mount is written)."
+    )
 
 
 def test_renderer_does_not_swallow_errors() -> None:
