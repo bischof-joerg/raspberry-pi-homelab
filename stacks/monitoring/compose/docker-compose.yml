@@ -80,6 +80,10 @@ services:
     cap_drop: [ALL]
     # Nothing is installed any more; only the /out bind mount is written, no /tmp needed.
     read_only: true
+    # The image declares VOLUME /alertmanager; left uncovered, Docker adds an anonymous volume
+    # (ADR-0008, postdeploy test_56). A tmpfs covers it; the renderer never writes there.
+    tmpfs:
+      - /alertmanager
 
   # --- New: VictoriaMetrics single-node TSDB ---
   victoriametrics:

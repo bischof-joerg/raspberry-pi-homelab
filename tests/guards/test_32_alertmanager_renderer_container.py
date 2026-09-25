@@ -59,6 +59,8 @@ def _docker_run_args(service: dict) -> list[str]:
         args += ["--security-opt", str(opt)]
     if service.get("read_only"):
         args.append("--read-only")
+    for path in service.get("tmpfs", []):
+        args += ["--tmpfs", str(path)]
     for key, value in FIXTURE_ENV.items():
         args += ["-e", f"{key}={value}"]
     # --mount, not -v: -v silently creates a root-owned directory for a missing source file
@@ -78,11 +80,45 @@ def _docker_run_args(service: dict) -> list[str]:
     return args
 
 
-def test_renderer_succeeds_in_pinned_image_with_compose_flags() -> None:
+def _require_docker() -> None:
     if not _docker_available():
         if os.environ.get("CI") == "true":
             pytest.fail("❌ Docker is required in CI for the renderer container test.")
         pytest.skip("Docker not available; the renderer container test runs in CI.")
+
+
+def _image_volumes(image: str) -> list[str]:
+    subprocess.run(["docker", "pull", "-q", image], capture_output=True, check=False)
+    proc = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{json .Config.Volumes}}", image],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert proc.returncode == 0, f"❌ docker image inspect {image} failed:\n{proc.stderr}"
+    return sorted(yaml.safe_load(proc.stdout) or {})
+
+
+def test_renderer_covers_every_image_volume() -> None:
+    """
+    ADR-0008 (bind mounts only): an image VOLUME that compose leaves uncovered becomes an
+    anonymous Docker volume. prom/alertmanager declares VOLUME /alertmanager; the R1.2 deploy
+    failed postdeploy test_56 on exactly that.
+    """
+    _require_docker()
+    service = _renderer()
+    covered = {str(v).split(":")[1] for v in service.get("volumes", []) if ":" in str(v)}
+    covered |= {str(t).split(":")[0] for t in service.get("tmpfs", [])}
+    uncovered = [p for p in _image_volumes(str(service["image"])) if p not in covered]
+    assert not uncovered, (
+        f"❌ {RENDERER}: image VOLUME paths {uncovered} are not covered by a bind mount or "
+        "tmpfs, so Docker creates anonymous volumes (ADR-0008).\n"
+        f"Fix: add tmpfs: {uncovered} (or a bind mount) to the service."
+    )
+
+
+def test_renderer_succeeds_in_pinned_image_with_compose_flags() -> None:
+    _require_docker()
 
     missing = [str(p) for p in (TEMPLATE, RENDER_SCRIPT) if not p.is_file()]
     assert not missing, f"❌ Missing renderer inputs: {missing} (F36).\nFix: extract the renderer."
