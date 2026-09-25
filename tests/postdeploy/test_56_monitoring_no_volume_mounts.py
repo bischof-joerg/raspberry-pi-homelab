@@ -6,6 +6,9 @@
 # Container selection:
 # 1) Prefer Docker Compose label: com.docker.compose.project=<COMPOSE_PROJECT_NAME>
 # 2) Fallback: container name prefix (default "homelab-home-prod-mon-")
+#
+# A second check requires that no Docker volume exists on the host at all (F48); its parsing
+# logic is proven statically in tests/guards/test_40_volume_offenders.py.
 
 from __future__ import annotations
 
@@ -170,3 +173,38 @@ def test_monitoring_containers_have_no_volume_mounts() -> None:
             "(docker compose up -d --force-recreate <service>)."
         )
         raise AssertionError("\n".join(lines))
+
+
+@pytest.mark.postdeploy
+def test_host_has_no_docker_volumes() -> None:
+    """
+    ADR-0008 + deploy-target-only: no Docker volume of any kind may exist on the Pi.
+    Catches what the container check above cannot see: dangling volumes left by an old
+    compose project name or a removed container (F48 - one held an old SMTP password).
+    Reports names and labels only, never contents.
+    """
+    if not _on_target():
+        pytest.skip(
+            "POSTDEPLOY_ON_TARGET is not set; this test is intended to run on the Pi target."
+        )
+    from tests._lib.docker_volumes import volume_offenders
+
+    docker = _docker()
+    offenders = volume_offenders(_run([docker, "volume", "ls", "--format", "{{json .}}"]))
+    if not offenders:
+        return
+
+    lines = ["❌ Docker volumes exist on the Pi; ADR-0008 allows bind mounts only (F48).", ""]
+    for o in offenders:
+        kind = "anonymous" if o.anonymous else "named"
+        project = f" compose project={o.compose_project!r}" if o.compose_project else ""
+        lines.append(f"- {o.name} ({kind}, driver={o.driver}){project}")
+    lines += [
+        "",
+        "Fix, per volume (operator, on the Pi):",
+        "  1. sudo docker volume inspect <name>",
+        "  2. sudo docker ps -a --filter volume=<name>   # must list no container",
+        "  3. if it may hold secrets, check without printing: sudo grep -c <key> <file>",
+        "  4. sudo docker volume rm <name>               # individually, never prune",
+    ]
+    raise AssertionError("\n".join(lines))
