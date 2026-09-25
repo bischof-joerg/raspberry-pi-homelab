@@ -7,6 +7,10 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 }
 STACK_ENV_FILE="${STACK_ENV_FILE:-/etc/raspberry-pi-homelab/monitoring.env}"
 
+# Never write bytecode into the checkout: on the Pi, postdeploy runs as root (deploy.sh, and
+# run_pytest_as_root below), which left root-owned __pycache__ files behind (F49).
+export PYTHONDONTWRITEBYTECODE=1
+
 cd "$REPO_ROOT"
 
 if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
@@ -121,7 +125,8 @@ run_pytest_as_root() {
     "$@"
   )
 
-  sudo -nE env STACK_ENV_FILE="$STACK_ENV_FILE" REPO_ROOT="$REPO_ROOT" bash -lc '
+  # Set explicitly: whether sudo -E keeps the caller's environment depends on sudoers (F49).
+  sudo -nE env STACK_ENV_FILE="$STACK_ENV_FILE" REPO_ROOT="$REPO_ROOT" PYTHONDONTWRITEBYTECODE=1 bash -lc '
     set -euo pipefail
     if [[ -f "$STACK_ENV_FILE" ]]; then
       set -a

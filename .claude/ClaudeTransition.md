@@ -226,7 +226,7 @@ history of this file up to commit `2c88ea6`.
 | F46 | cadvisor's privileged mode is undocumented; docs say the opposite | High | open |
 | F47 | cadvisor doctor test never runs; its skip hides a compose error | Med | open |
 | F48 | Orphaned named alertmanager-config volumes held an old SMTP password | High | addressed |
-| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Low | open |
+| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Low | partly |
 
 ### 3.7 Security-relevant facts for Claude's boundaries [V]
 
