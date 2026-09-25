@@ -139,6 +139,33 @@ def test_alertmanager_config_not_world_readable() -> None:
     )
 
 
+def test_alertmanager_config_renderer_ran_offline_and_succeeded() -> None:
+    """
+    Contract (F8, F36): the one-shot renderer exits 0 and ran with no network at all,
+    so a deploy never depends on a package mirror.
+    """
+    out = _run(["docker", "ps", "-a", "--format", "{{.Names}}"])
+    names = [n for n in out.splitlines() if "alertmanager-config-render" in n.lower()]
+    if len(names) != 1:
+        raise AssertionError(
+            f"❌ Expected exactly one alertmanager-config-render container, found {names!r}.\n"
+            "Fix: sudo ./deploy.sh"
+        )
+    state = _run(
+        [
+            "docker",
+            "inspect",
+            names[0],
+            "--format",
+            "{{.State.ExitCode}} {{.HostConfig.NetworkMode}}",
+        ]
+    )
+    assert state == "0 none", (
+        f"❌ {names[0]}: exit code / network mode is {state!r}, expected '0 none' (F8).\n"
+        f"Fix: check `docker logs {names[0]}`; the renderer must run with network_mode: none."
+    )
+
+
 def test_alertmanager_ready_endpoint() -> None:
     """Lightweight runtime check: Alertmanager reports ready."""
     url = os.environ.get("ALERTMANAGER_READY_URL", "http://127.0.0.1:9093/-/ready")

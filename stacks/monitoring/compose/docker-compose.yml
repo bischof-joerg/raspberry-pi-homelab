@@ -40,19 +40,21 @@ services:
     tmpfs:
       - /tmp
 
-  # One-shot renderer: renders alertmanager.yml from template using envsubst and
-  # copies templates into the same volume.
+  # One-shot renderer: ../alertmanager/render-config.sh renders alertmanager.yml from the
+  # template (escaped values, amtool check-config) and copies templates into the same dir.
+  # Same image as alertmanager: it already ships sh, awk and amtool, so nothing is installed
+  # at runtime and the renderer needs no network (F8, F36).
   alertmanager-config-render:
-    image: alpine:3.24
+    image: prom/alertmanager:v0.34.0
     restart: "no"
-    # Primary group stays 0: `apk add` must chown to root:root and has no CAP_CHOWN (it exited 10
-    # with "0:65534"). The supplementary alertmanager group lets the owner chgrp the output (F26).
+    # uid 0 owns the output; the supplementary alertmanager group lets the owner chgrp it
+    # without CAP_CHOWN (F26). Primary group 0: "0:65534" broke `apk add` in R1.1.
     user: "0:0"
     group_add: ["65534"]
-    networks: [monitoring]
+    network_mode: none
 
     # Compose interpolation must not hard-fail if SMTP isn't configured yet.
-    # Strict validation happens at runtime only when ALERT_EMAIL_ENABLED=1.
+    # Strict validation happens in render-config.sh only when ALERT_EMAIL_ENABLED=1.
     environment:
       ALERT_EMAIL_ENABLED: ${ALERT_EMAIL_ENABLED:-0}
 
@@ -63,88 +65,21 @@ services:
       ALERT_SMTP_AUTH_PASSWORD: ${ALERT_SMTP_AUTH_PASSWORD:-}
       ALERT_SMTP_REQUIRE_TLS: ${ALERT_SMTP_REQUIRE_TLS:-}
 
-      # Prevent compose warnings if these appear anywhere as ${...} by accident.
-      ALERT_EMAIL_CRITICAL_YAML: ${ALERT_EMAIL_CRITICAL_YAML:-}
-      ALERT_EMAIL_WARNING_YAML: ${ALERT_EMAIL_WARNING_YAML:-}
-
     volumes:
       - /srv/data/stacks/monitoring/alertmanager-config:/out
       - ../alertmanager/alertmanager.yml.tmpl:/in/alertmanager.yml.tmpl:ro
       - ../alertmanager/templates:/in/templates:ro
+      - ../alertmanager/render-config.sh:/in/render-config.sh:ro
 
-    command:
-      - /bin/sh
-      - -lc
-      - |
-        set -euo pipefail
-        apk add --no-cache gettext
-        # The rendered config may hold the SMTP password: nothing below is for "other" (F26).
-        umask 027
-
-        if [ "$${ALERT_EMAIL_ENABLED:-0}" = "1" ]; then
-          : "$${ALERT_EMAIL_TO:?missing ALERT_EMAIL_TO}"
-          : "$${ALERT_SMTP_SMARTHOST:?missing ALERT_SMTP_SMARTHOST}"
-          : "$${ALERT_SMTP_FROM:?missing ALERT_SMTP_FROM}"
-          : "$${ALERT_SMTP_AUTH_USERNAME:?missing ALERT_SMTP_AUTH_USERNAME}"
-          : "$${ALERT_SMTP_AUTH_PASSWORD:?missing ALERT_SMTP_AUTH_PASSWORD}"
-          : "$${ALERT_SMTP_REQUIRE_TLS:?missing ALERT_SMTP_REQUIRE_TLS}"
-
-          case "$ALERT_SMTP_REQUIRE_TLS" in
-            true|false) ;;
-            *)
-              echo "ERROR: ALERT_SMTP_REQUIRE_TLS must be 'true' or 'false'" >&2
-              exit 2
-              ;;
-          esac
-
-          # Generate ready-to-insert YAML blocks (with actual values).
-          # Indentation: 4 spaces so it's valid under the receiver item.
-          ALERT_EMAIL_CRITICAL_YAML="$$(
-            printf '%s\n' "    email_configs:"
-            printf '      - to: "%s"\n' "$${ALERT_EMAIL_TO}"
-            printf '        from: "%s"\n' "$${ALERT_SMTP_FROM}"
-            printf '        smarthost: "%s"\n' "$${ALERT_SMTP_SMARTHOST}"
-            printf '        auth_username: "%s"\n' "$${ALERT_SMTP_AUTH_USERNAME}"
-            printf '        auth_password: "%s"\n' "$${ALERT_SMTP_AUTH_PASSWORD}"
-            printf '        require_tls: %s\n' "$${ALERT_SMTP_REQUIRE_TLS}"
-            printf '%s\n' "        send_resolved: true"
-          )"
-          ALERT_EMAIL_WARNING_YAML="$$ALERT_EMAIL_CRITICAL_YAML"
-        else
-          ALERT_EMAIL_CRITICAL_YAML="    webhook_configs: [] # Disabled by IAC"
-          ALERT_EMAIL_WARNING_YAML="    webhook_configs: [] # Disabled by IAC"
-        fi
-
-        export ALERT_EMAIL_CRITICAL_YAML ALERT_EMAIL_WARNING_YAML
-
-        # Render config: only substitute the two injected YAML blocks.
-        # envsubst must reference the shell variables with $ (not $$).
-        # Render to a temp file, restrict it, then rename atomically (F26).
-        envsubst '$$ALERT_EMAIL_CRITICAL_YAML $$ALERT_EMAIL_WARNING_YAML' \
-          < /in/alertmanager.yml.tmpl > /out/alertmanager.yml.tmp
-        test -s /out/alertmanager.yml.tmp
-        chgrp 65534 /out/alertmanager.yml.tmp
-        chmod 0640 /out/alertmanager.yml.tmp
-        mv -f /out/alertmanager.yml.tmp /out/alertmanager.yml
-
-        # No cp -a: preserving the repo owner needs CAP_CHOWN, which is dropped (F35).
-        mkdir -p /out/templates
-        if [ -d /in/templates ]; then
-          cp -R /in/templates/. /out/templates/
-        fi
-        chgrp -R 65534 /out/templates
-        chmod -R u=rwX,g=rX,o= /out/templates
-
-        echo "Rendered /out/alertmanager.yml and copied templates to /out/templates"
+    entrypoint: ["/bin/sh", "/in/render-config.sh"]
 
     labels:
       - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
     security_opt:
       - no-new-privileges=true
     cap_drop: [ALL]
-    read_only: false
-    # no tmpfs: - /tmp section as the alertmanager-config-render service is a one-shot initialization container (it runs once and exits).
-    # it would only add slight overhead and is not needed.
+    # Nothing is installed any more; only the /out bind mount is written, no /tmp needed.
+    read_only: true
 
   # --- New: VictoriaMetrics single-node TSDB ---
   victoriametrics:

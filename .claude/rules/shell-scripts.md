@@ -11,7 +11,10 @@ it is a production incident on the Pi.
 ## MUST
 
 - **Start with `#!/usr/bin/env bash` and `set -euo pipefail`.** 15 of 19 scripts do; the four that
-  do not are a defect, not a precedent.
+  do not are a defect, not a precedent. One deliberate exception: scripts that run **inside a
+  container image without bash** use `#!/bin/sh` with `set -eu` and avoid pipes, e.g.
+  `stacks/monitoring/alertmanager/render-config.sh` (BusyBox in `prom/alertmanager`). Such a
+  script needs a test in the real image.
 - **Pass ShellCheck** with the pinned version from `.venv` (`shellcheck-py` 0.10.0.1, identical to
   the pre-commit hook). Never judge by the system ShellCheck — it is 0.9.0 and disagrees (F21).
   Run it as `git ls-files '*.sh' | xargs -r .venv/bin/shellcheck -x`; `-x` follows sourced files.

@@ -50,9 +50,12 @@ implementation; a new stack copies its shape, not its service list.
   An inline compose comment calls this a Pi 5 necessity, but **no document records the exception and
   `docs/monitoring.md` claims the opposite** (F46). Treat it as existing practice under review, not
   as a settled decision, and do not cite it to justify a second privileged container.
-- `alertmanager-config-render` is a one-shot `alpine` renderer. It runs `apk add gettext` at
-  runtime, which is a network dependency and non-deterministic (F8) — a known defect, not a
-  pattern to copy.
+- `alertmanager-config-render` is a one-shot renderer that runs as uid 0 (`user: "0:0"`,
+  `group_add: ["65534"]`) because it must own the root-owned output directory. It has no network,
+  a read-only root filesystem and no capabilities, and it installs nothing at runtime (F8, since
+  R1.2). The pattern worth copying: extract the logic to a script and test it in the pinned
+  image (`tests/guards/test_32_alertmanager_renderer_container.py`). Never add a runtime
+  `apk add`: that coupling broke the first R1.1 deploy.
 
 ## When adding or changing a service
 
