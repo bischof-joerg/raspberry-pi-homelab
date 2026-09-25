@@ -96,7 +96,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** `chmod 0640` plus a group Alertmanager can read (it runs as `nobody`); change together with the directory mode in F26b.
 - **Test:** `tests/postdeploy/test_22_alertmanager_config_rendered.py` — assert mode `0640` and owner/group of the rendered file; `tests/guards` — assert the compose renderer script contains no `chmod 0644` for that file.
 - **Acceptance:** On the Pi, `stat -c '%a %U:%G'` on the rendered file shows `640` and a non-world group; the postdeploy test fails if the mode is widened again.
-- **Resolution (R1.1, 2026-09-25):** renderer runs as `0:65534`, writes `0640` via temp file + `mv`; alertmanager pinned to `user: "65534:65534"`. Guard `tests/guards/test_30_alertmanager_renderer_contract.py`, postdeploy `test_22`. Pi acceptance pending deploy.
+- **Resolution (R1.1, 2026-09-25):** renderer writes `0640` via temp file + `chgrp 65534` + `mv`; alertmanager pinned to `user: "65534:65534"`. Guard `tests/guards/test_30_alertmanager_renderer_contract.py`, postdeploy `test_22`. **First deploy (`2fdfb10`) failed:** with `user: "0:65534"` and `cap_drop: [ALL]`, `apk add gettext` could not chown its files to `root:root` ("failed to preserve …: owner", `10 errors`, exit 10), so alertmanager stayed `Created`. Fix-forward: renderer `user: "0:0"` + `group_add: ["65534"]` (an owner may chgrp to a supplementary group without `CAP_CHOWN`; verified on the Pi with `docker run --user 0:0 --group-add 65534 --cap-drop ALL alpine:3.24` → `0:65534`), `umask 027` after `apk add`. Pi acceptance pending deploy.
 
 ### F26b – The same password persists in every backup archive
 
@@ -135,7 +135,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 ### F8 – Renderer installs `gettext` from the network at every run
 
 - **Evidence:** `stacks/monitoring/compose/docker-compose.yml` renderer service (`apk add gettext`), image `alpine:3.24` at line 44. [V 2026-09-16]
-- **Impact:** Every deploy depends on the Alpine mirror being reachable; the installed package version is not pinned, so the renderer is non-deterministic (C6).
+- **Impact:** Every deploy depends on the Alpine mirror being reachable; the installed package version is not pinned, so the renderer is non-deterministic (C6). It also couples the renderer's user/group to package installation: the R1.1 group change broke `apk add` on deploy (see F26), which no static test could catch.
 - **Proposed fix:** Use an image that already contains `envsubst` (pinned by digest), or drop `envsubst` in favour of shell-only rendering.
 - **Test:** `tests/guards` — no `apk add`/`apt-get install` inside any compose `command`/`entrypoint`.
 - **Acceptance:** The renderer runs with networking disabled (`network_mode: none`) and still produces the file.

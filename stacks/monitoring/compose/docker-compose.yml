@@ -45,8 +45,10 @@ services:
   alertmanager-config-render:
     image: alpine:3.24
     restart: "no"
-    # uid 0 owns the output; gid = alertmanager's group, so chgrp works without CAP_CHOWN (F26).
-    user: "0:65534"
+    # Primary group stays 0: `apk add` must chown to root:root and has no CAP_CHOWN (it exited 10
+    # with "0:65534"). The supplementary alertmanager group lets the owner chgrp the output (F26).
+    user: "0:0"
+    group_add: ["65534"]
     networks: [monitoring]
 
     # Compose interpolation must not hard-fail if SMTP isn't configured yet.
@@ -75,9 +77,9 @@ services:
       - -lc
       - |
         set -euo pipefail
-        # The rendered config may hold the SMTP password: nothing here is for "other" (F26).
-        umask 027
         apk add --no-cache gettext
+        # The rendered config may hold the SMTP password: nothing below is for "other" (F26).
+        umask 027
 
         if [ "$${ALERT_EMAIL_ENABLED:-0}" = "1" ]; then
           : "$${ALERT_EMAIL_TO:?missing ALERT_EMAIL_TO}"
@@ -121,7 +123,7 @@ services:
         envsubst '$$ALERT_EMAIL_CRITICAL_YAML $$ALERT_EMAIL_WARNING_YAML' \
           < /in/alertmanager.yml.tmpl > /out/alertmanager.yml.tmp
         test -s /out/alertmanager.yml.tmp
-        chgrp "$$(id -g)" /out/alertmanager.yml.tmp
+        chgrp 65534 /out/alertmanager.yml.tmp
         chmod 0640 /out/alertmanager.yml.tmp
         mv -f /out/alertmanager.yml.tmp /out/alertmanager.yml
 
@@ -130,7 +132,7 @@ services:
         if [ -d /in/templates ]; then
           cp -R /in/templates/. /out/templates/
         fi
-        chgrp -R "$$(id -g)" /out/templates
+        chgrp -R 65534 /out/templates
         chmod -R u=rwX,g=rX,o= /out/templates
 
         echo "Rendered /out/alertmanager.yml and copied templates to /out/templates"
