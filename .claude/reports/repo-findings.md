@@ -66,7 +66,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F26 | Alertmanager SMTP password written world-readable | Secrets | High | addressed | a |
 | F26b | The same password persists in every backup archive | Secrets | High | partly | a |
 | F27 | Container uid left to image defaults for 8 of 10 services | Hardening | Med | open | f |
-| F28 | cadvisor mounts the Docker socket read-write | Privilege | High | open | b |
+| F28 | cadvisor mounts the Docker socket read-write | Privilege | High | addressed | b |
 | F29 | Config-hash label missing on 5 of 10 services | Deploy | High | open | d |
 | F30 | vector is effectively host root via the Docker socket | Privilege | High | open | b |
 | F31 | Grafana admin credentials default to empty | Secrets | High | open | c |
@@ -87,7 +87,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | open | b |
 | F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | open | h |
 | F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | addressed | a |
-| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | partly | h |
+| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | addressed | h |
 
 ## Secrets and credentials
 
@@ -179,6 +179,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** In order: (1) F28 — socket to `:ro`; (2) correct `docs/monitoring.md`; (3) write the ADR `docs-adr.md` requires for a privilege exception; (4) separately and testably, try dropping `privileged` using `--docker_only=true` (:329) and the cgroup mount (:317).
 - **Test:** `tests/guards/test_10_monitoring_compose_contract.py` — an explicit allowlist of privileged services that references the ADR; `tests/postdeploy/test_25_cadvisor_metrics.py` proves metrics still flow after each step.
 - **Acceptance:** The guard test fails for any privileged service not on the allowlist; the allowlist entry cites an existing ADR; `docs/monitoring.md` no longer contradicts the compose file.
+- **Progress (2026-09-25):** step (1) done via F28 (merge `f2a3172`); the socket is now `:ro`. The compose line numbers above predate R1.2 and have shifted (cadvisor now starts near line 251) — re-read before fixing. Next: steps (2) + (3) as one docs/ADR increment with the allowlist guard, then (4).
 
 ### F28 – cadvisor mounts the Docker socket read-write
 
@@ -187,7 +188,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Change to `:ro` as its own increment; keep only if postdeploy stays green.
 - **Test:** `tests/guards` — no `docker.sock` mount without `:ro`; `tests/postdeploy/test_25_cadvisor_metrics.py`.
 - **Acceptance:** Compose shows `:ro`; cadvisor container metrics still present after deploy.
-- **Resolution (2026-09-25):** socket mounted `:ro`; nothing else in cadvisor changed. Guard `tests/guards/test_50_docker_socket_mounts.py` (every runtime socket `:ro`, and the expected mounts exist); postdeploy `tests/postdeploy/test_25_cadvisor_metrics.py` checks `name=`-labelled container metrics live from cadvisor (not from VictoriaMetrics, whose lookback would hide a regression) and `RW=false` on the mount. **Security gain is near zero on its own:** cadvisor stays privileged, root and `pid: host`, and `:ro` never restricts the Docker API (F30). The real step is F46 (4). Pi acceptance pending deploy.
+- **Resolution (2026-09-25):** socket mounted `:ro`; nothing else in cadvisor changed. Guard `tests/guards/test_50_docker_socket_mounts.py` (every runtime socket `:ro`, and the expected mounts exist); postdeploy `tests/postdeploy/test_25_cadvisor_metrics.py` checks `name=`-labelled container metrics live from cadvisor (not from VictoriaMetrics, whose lookback would hide a regression) and `RW=false` on the mount. **Security gain is near zero on its own:** cadvisor stays privileged, root and `pid: host`, and `:ro` never restricts the Docker API (F30). The real step is F46 (4). **Accepted 2026-09-25** after merge `f2a3172` (PR #24): cadvisor recreated, postdeploy 62 passed, 4 skipped on two consecutive deploys, including `test_cadvisor_exports_named_container_metrics` against the freshly started cadvisor and `test_cadvisor_docker_socket_is_read_only`.
 
 ### F30 – vector is effectively host root via the Docker socket
 
@@ -479,7 +480,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Set `PYTHONDONTWRITEBYTECODE=1` for the postdeploy run (in `deploy.sh` or the `Makefile` target — decide when fixing).
 - **Test:** `tests/guards` — static check that the postdeploy invocation sets `PYTHONDONTWRITEBYTECODE=1`.
 - **Acceptance:** Two consecutive deploys whose pulls change `tests/postdeploy` both log `repo-ownership: OK`.
-- **Resolution (2026-09-25) — partly:** fixed in `scripts/tests/run-tests.sh`, not the `Makefile`: every test target goes through it, and it escalates to root on the Pi by itself (`run_pytest_as_root`), so a manual `make postdeploy` wrote root-owned bytecode too. It exports `PYTHONDONTWRITEBYTECODE=1` and sets it explicitly in the `sudo … env` call, independent of sudoers' handling of `-E`. Tests: `tests/guards/test_41_run_tests_no_bytecode.py` (behaviour of the plain path with a fake python; text contract for the root path). **Open:** the Pi acceptance needs a later deploy whose pull changes `tests/postdeploy`; the deploy of this fix changes none, so its `repo-ownership: OK` proves nothing. Deployed with merge `19c76ab` (PR #22) on 2026-09-25: two deploys green, both `repo-ownership: OK`, `find ! -user admin` empty — consistent, but not yet the proof.
+- **Resolution (2026-09-25) — partly:** fixed in `scripts/tests/run-tests.sh`, not the `Makefile`: every test target goes through it, and it escalates to root on the Pi by itself (`run_pytest_as_root`), so a manual `make postdeploy` wrote root-owned bytecode too. It exports `PYTHONDONTWRITEBYTECODE=1` and sets it explicitly in the `sudo … env` call, independent of sudoers' handling of `-E`. Tests: `tests/guards/test_41_run_tests_no_bytecode.py` (behaviour of the plain path with a fake python; text contract for the root path). **Open:** the Pi acceptance needs a later deploy whose pull changes `tests/postdeploy`; the deploy of this fix changes none, so its `repo-ownership: OK` proves nothing. Deployed with merge `19c76ab` (PR #22) on 2026-09-25: two deploys green, both `repo-ownership: OK`, `find ! -user admin` empty — consistent, but not yet the proof. **Accepted 2026-09-25** (operator decision) on a before/after comparison under the same condition — a pull that changes `tests/postdeploy`: before the fix (merge `acdd38b`, 14:25) `find ! -user admin` listed two root-owned `.pyc` and the next deploy logged `repo-ownership: mismatch`; with the fix (merge `f2a3172`, which changed `tests/postdeploy/test_25_cadvisor_metrics.py`, 15:09) `find` right after the deploy was empty and the next deploy (15:10) logged `repo-ownership: OK`. The `find` directly after the deploy is a more direct measurement than the two-deploy log criterion above, which was met once rather than twice.
 
 ## Documentation and ADRs
 

@@ -120,7 +120,17 @@ description = vmagent cannot scrape this target for > 1 minute.
 summary = Target down (job=victorialogs, instance=victorialogs:9428)
 Source
 
-Arbeite weiter an Findings
+Arbeite weiter an Findings:
+- lege Branch docs/r1-f46-privileged-adr an
+Antworte auf Deutsch. Wir sind in Roadmap-Stufe R1. Stand: Gruppe a ist bis auf F26b (→ R2/F9)
+abgeschlossen; F48, F49 und F28 sind addressed (letzter Merge f2a3172, Log gemergt). Lies zuerst
+.claude/ClaudeTransition.md §10.4 (Inkrement-Log) und in .claude/reports/repo-findings.md den
+Eintrag F46 inklusive „Progress“. Nächstes Inkrement: F46 Schritte (2) und (3) – docs/monitoring.md
+so korrigieren, dass es der Compose-Datei nicht widerspricht, ein ADR für die privileged-Ausnahme
+von cadvisor (vierstelliges ADR-Format laut .claude/rules/docs-adr.md) und ein Guard mit Allowlist
+privilegierter Services, die auf das ADR verweist. Schritt (4) (privileged entfernen) ist ein
+eigenes, späteres Inkrement. Branch docs/r1-f46-privileged-adr ist angelegt. Nutze /increment-plan
+und lege mir den Plan vor, bevor du etwas änderst.
 
 
 

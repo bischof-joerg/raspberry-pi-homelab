@@ -205,7 +205,7 @@ history of this file up to commit `2c88ea6`.
 | F26 | Alertmanager SMTP password written world-readable | High | addressed |
 | F26b | The same password persists in every backup archive | High | partly |
 | F27 | Container uid left to image defaults for 8 of 10 services | Med | open |
-| F28 | cadvisor mounts the Docker socket read-write | High | open |
+| F28 | cadvisor mounts the Docker socket read-write | High | addressed |
 | F29 | Config-hash label missing on 5 of 10 services | High | open |
 | F30 | vector is effectively host root via the Docker socket | High | open |
 | F31 | Grafana admin credentials default to empty | High | open |
@@ -226,7 +226,7 @@ history of this file up to commit `2c88ea6`.
 | F46 | cadvisor's privileged mode is undocumented; docs say the opposite | High | open |
 | F47 | cadvisor doctor test never runs; its skip hides a compose error | Med | open |
 | F48 | Orphaned named alertmanager-config volumes held an old SMTP password | High | addressed |
-| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Low | partly |
+| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Low | addressed |
 
 ### 3.7 Security-relevant facts for Claude's boundaries [V]
 
@@ -2175,6 +2175,7 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.10 (Phase 8) | 2026-09-24 | `7a3c7a8` (P7–P10), `c12edc4` (switch), `10839c3` (artefacts), `e72f314` (V8.2); merge `99a6347` (PR #12) | green | deploy: done, postdeploy: green (regression only) | Guard mode `operate` with an enforced write scope; tests 77 → 147; preflight 23/23; V8.1 5/5 refused live; V8.2 first write outside `.claude/`. The first `make ci` run by Claude produced F47 and new F21 evidence. A negative test (V1.12/L2) that operate mode would have made destructive was caught in 8.3. |
+| F28 cadvisor socket :ro | 2026-09-25 | `1a2f26c` (tests), `b447602` (fix); merge `f2a3172` (PR #24) | green | deploy: done twice, postdeploy green (62 passed, 4 skipped) | cadvisor recreated with the socket `:ro`; named container metrics read live from the fresh cadvisor, mount `RW=false`. Near-zero security gain alone (privileged stays; `:ro` does not restrict the API) — F46 step (1) done. Same deploy proved F49: its pull changed `tests/postdeploy/test_25`, `find ! -user admin` empty right after, next deploy `repo-ownership: OK` → F49 addressed. |
 | F49 no-bytecode | 2026-09-25 | `dca1145` (tests), `05eee19` (fix); merge `19c76ab` (PR #22) | green | deploy: done twice, postdeploy green, both `repo-ownership: OK`; `find ! -user admin` empty | Fix in `scripts/tests/run-tests.sh` (export + explicit in the sudo env call). **Not yet proof:** this pull changed no module that postdeploy imports, so nothing would have been recompiled anyway. F49 stays partly until a pull changes `tests/postdeploy`. |
 | F48 guard (host-wide no-volume check) | 2026-09-25 | `785dee5` (tests), `133b615` (helper); merge `acdd38b` (PR #20) | green | deploy: done, postdeploy: green (60 passed, 4 skipped) incl. `test_host_has_no_docker_volumes` | Variant a (operator): any Docker volume on the Pi fails; parsing proven by guards `test_40` (strict xfail first). ADR-0008 gained an Enforcement section. F48 addressed. The same deploy confirmed F49: two root-owned `.pyc` files for the changed test modules; the next deploy (14:27) logged `repo-ownership: mismatch`. |
 | R1.2-fix renderer anon volume | 2026-09-25 | `39c9e8c`; merge `44f09b0` (PR #18) | green | deploy: done, postdeploy: green (59 passed, 4 skipped) after a one-time operator cleanup | `tmpfs: [/alertmanager]` on the renderer. The first redeploy still failed `test_56`: compose carries anonymous volumes over to a recreated container; fixed once with `docker compose rm -s -f -v alertmanager-config-render`, then deploy. Measured: `HostConfig.Tmpfs {"/alertmanager":""}`, bind mounts only. Afterwards three legacy named volumes removed, one held an old SMTP password (F48); `docker volume ls` empty. `repo-ownership` OK at 13:50 — likely cause of the earlier mismatches recorded as F49. R1.2 complete. |
