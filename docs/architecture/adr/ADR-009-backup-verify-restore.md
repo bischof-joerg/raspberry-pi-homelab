@@ -319,7 +319,7 @@ These are the currently observed data directories:
 | Path | Owner/mode observed | Backup policy |
 |---|---:|---|
 | `/srv/data/stacks/monitoring/alertmanager` | `750 nobody:nogroup` | Back up and restore |
-| `/srv/data/stacks/monitoring/alertmanager-config` | `755 root:root` | Do not treat as authoritative; recreate from Git + env; include as generated diagnostics only |
+| `/srv/data/stacks/monitoring/alertmanager-config` | `750 root:nogroup`, `alertmanager.yml` `640` (was `755 root:root` / `644` until R1.1, finding F26) | Do not treat as authoritative; recreate from Git + env; include as generated diagnostics only |
 | `/srv/data/stacks/monitoring/grafana` | `750 472:472` | Back up and restore |
 | `/srv/data/stacks/monitoring/vector` | `750 65532:65532` | Back up and restore |
 | `/srv/data/stacks/monitoring/victorialogs` | `750 root:root` | Back up by default; restore by default; acceptable to lose history if explicitly selected |

@@ -214,6 +214,18 @@ Plaintext files in `manifest.json`, `checksums.sha256`, `host/*.txt`, and logs m
 | `/srv/data/stacks/monitoring/victorialogs` | Yes by default | Yes by default | Log history; not existential |
 | `/srv/data/stacks/monitoring/alertmanager-config` | Diagnostic only | No by default | Generated from Git templates and env |
 
+`alertmanager-config/alertmanager.yml` contains the SMTP password when `ALERT_EMAIL_ENABLED=1`.
+On the host it is `640 root:nogroup` in a `750 root:nogroup` directory (finding F26). Two
+consequences:
+
+- **Rotation.** Every diagnostic archive keeps the password that was valid at backup time,
+  GPG-encrypted. Rotating the SMTP password is complete only once all archives older than the
+  rotation have aged out of retention.
+- **Restore.** A restored tree may carry older, wider modes. The next `sudo ./deploy.sh` repairs
+  them: `init-permissions.sh --check` detects any other-bits below the directory and re-applies
+  the modes, and the renderer rewrites the file as `640`. A restore test in the fixture harness is
+  still open (F9).
+
 ### 6.3 Host evidence
 
 | Artifact | Backup | Restore | Notes |

@@ -202,8 +202,8 @@ history of this file up to commit `2c88ea6`.
 | F23 | Tests marked `lint` are never run by any gate | Med | open |
 | F24 | Renovate validator hook runs a floating image tag | Med | open |
 | F25 | JSON test scans git-ignored files | Low | open |
-| F26 | Alertmanager SMTP password written world-readable | High | open |
-| F26b | The same password persists in every backup archive | High | open |
+| F26 | Alertmanager SMTP password written world-readable | High | addressed |
+| F26b | The same password persists in every backup archive | High | partly |
 | F27 | Container uid left to image defaults for 8 of 10 services | Med | open |
 | F28 | cadvisor mounts the Docker socket read-write | High | open |
 | F29 | Config-hash label missing on 5 of 10 services | High | open |
@@ -212,11 +212,11 @@ history of this file up to commit `2c88ea6`.
 | F32 | Grafana runs without `read_only` on a wrong justification | Med | open |
 | F33 | vector has no healthcheck | Low | open |
 | F34 | vector joins the `apps` network without a reason | Med | open |
-| F35 | Renderer swallows errors despite `set -euo pipefail` | Med | open |
+| F35 | Renderer swallows errors despite `set -euo pipefail` | Med | addressed |
 | F36 | Renderer builds YAML without escaping | Med | open |
 | F37 | `alpine:3.24` is a floating minor tag | Med | open |
 | F38 | `depends_on` ignores existing healthchecks | Low | open |
-| F39 | German comment in the renderer script | Low | open |
+| F39 | German comment in the renderer script | Low | addressed |
 | F40 | Volume naming rule contradicted the implementation | Low | addressed |
 | F41 | No static guard for the compose hardening contract | Med | partly |
 | F42 | LAN exposure of 3000/9428 is recorded in no document | Med | partly |

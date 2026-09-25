@@ -87,6 +87,13 @@ check_one() {
   return 0
 }
 
+# True if nothing below path (inclusive) grants any permission to "other".
+no_other_bits_below() {
+  local path="$1"
+  [[ -d "$path" ]] || return 1
+  [[ -z "$(find "$path" -perm /o=rwx -print -quit)" ]]
+}
+
 main() {
   require_root
   resolve_nobody_ids
@@ -109,7 +116,8 @@ main() {
     local ok=0
     check_one "$grafana_dir" "$graf_uid" "$graf_gid" "750" || ok=1
     check_one "$alertmanager_dir" "$prom_uid" "$prom_gid" "750" || ok=1
-    check_one "$alertmanager_cfg_dir" "0" "0" "755" || ok=1
+    check_one "$alertmanager_cfg_dir" "0" "$prom_gid" "750" || ok=1
+    no_other_bits_below "$alertmanager_cfg_dir" || ok=1
     check_one "$vector_dir" "$vector_uid" "$vector_gid" "750" || ok=1
     check_one "$victoriametrics_dir" "$victoriametrics_uid" "$victoriametrics_gid" "750" || ok=1
     check_one "$victorialogs_dir" "$victorialogs_uid" "$victorialogs_gid" "750" || ok=1
@@ -141,9 +149,12 @@ main() {
   chmod 0750 "$alertmanager_dir"
   chmod -R u+rwX,g+rX,o-rwx "$alertmanager_dir"
 
-  # Rendered Alertmanager config directory (written by config-render job as root, mounted RO into alertmanager).
-  chown -R 0:0 "$alertmanager_cfg_dir"
-  chmod 0755 "$alertmanager_cfg_dir"
+  # Rendered Alertmanager config directory (written by config-render as 0:nogroup, mounted RO
+  # into alertmanager). It may hold the SMTP password: root:nogroup, nothing for "other" (F26).
+  # Also repairs files re-materialised by a restore (F26b).
+  chown -R "0:${prom_gid}" "$alertmanager_cfg_dir"
+  chmod 0750 "$alertmanager_cfg_dir"
+  chmod -R u+rwX,g+rX,o-rwx "$alertmanager_cfg_dir"
 
   # Vector data_dir (/var/lib/vector) bind-mounted from $BASE_DIR/vector.
   # Must be writable for non-root Vector (journald checkpoints/state, etc.).
