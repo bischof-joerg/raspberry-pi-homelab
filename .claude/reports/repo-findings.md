@@ -86,6 +86,8 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F45 | UFW very likely does not govern the published ports | Exposure | High | open | c |
 | F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | open | b |
 | F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | open | h |
+| F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | partly | a |
+| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | open | h |
 
 ## Secrets and credentials
 
@@ -106,6 +108,14 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Test:** `tests/postdeploy` — directory mode `0750`; backup fixture test (R2, F9) — a restored tree yields `0640` on the rendered file.
 - **Acceptance:** Directory mode is `750` after deploy; a restore dry-run in the fixture harness produces no world-readable credential file.
 - **Resolution (R1.1, 2026-09-25) — partly:** `init-permissions.sh` reconciles the directory to `0:nogroup 750` and strips other-bits recursively (its `--check` detects restore leftovers); rotation note in `docs/operations/BackupVerifyRestore.md` §6.2; postdeploy `test_55`. **Open:** the restore fixture test, which belongs to R2/F9.
+
+### F48 – Orphaned named alertmanager-config volumes held an old SMTP password
+
+- **Evidence:** measured by the operator on the Pi on 2026-09-25 (not in the repository): three dangling named volumes — `compose_alertmanager-config` (created 2026-01-03; its `/var/lib/docker/volumes/compose_alertmanager-config/_data/alertmanager.yml` 557 bytes, mode 600, `grep -c auth_password` = 1), `homelab-home-prod-mon_alertmanager-config` (created 2026-02-02; 356-byte file dated 2025-01-15, older than the volume — very likely the image's default config copied in [I]) and `monitoring_alertmanager-config` (0-byte file). No container referenced them. The repository declares no named volumes (`docs/architecture/adr/ADR-0008-bind-mounts-only.md`); `tests/postdeploy/test_56_monitoring_no_volume_mounts.py` inspects containers only, so dangling volumes are invisible to it. The anonymous volume from the R1.2 deploy (F8) was a fourth case. [V 2026-09-25]
+- **Impact:** A credential persisted outside the ADR-0007 secrets regime and outside the ADR-009 backup inventory, invisible to every test. Access was root-only (`/var/lib/docker`); the operator judged rotation unnecessary because nobody else has access to the Pi.
+- **Proposed fix:** Done 2026-09-25: all four volumes removed individually (`docker volume rm`, no `prune`); `docker volume ls` is empty. **Open:** prevent recurrence — extend `test_56` to fail on dangling volumes and on any volume carrying a `com.docker.compose.project` label. Optionally let `deploy.sh` run `up -d --renew-anon-volumes`, so compose never carries anonymous volumes over to a recreated container; that changes the deploy for every service and belongs to group d/e.
+- **Test:** `tests/postdeploy/test_56_monitoring_no_volume_mounts.py` — add a check over `docker volume ls` (dangling, compose project label).
+- **Acceptance:** `docker volume ls` on the Pi is empty (measured 2026-09-25), and the extended test fails as soon as a dangling or compose-labelled volume appears.
 
 ### F31 – Grafana admin credentials default to empty
 
@@ -131,7 +141,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Render with `envsubst` into a template that quotes values, or escape `\` and `"` before `printf`; validate the result with `amtool check-config` in the renderer.
 - **Test:** `tests/precommit` — run the renderer logic (extracted to a script) against fixture values containing `"`, `\` and `:`; parse the output with PyYAML.
 - **Acceptance:** Fixture values round-trip unchanged through render and YAML parse.
-- **Resolution (R1.2, 2026-09-25):** renderer extracted to `stacks/monitoring/alertmanager/render-config.sh` (POSIX sh). Values are emitted as double-quoted YAML scalars with `\` and `"` escaped character by character in awk; control characters (including newlines) abort with exit 2 and name the variable, never the value; `amtool check-config` validates the result in the image. Tests: `tests/guards/test_31_alertmanager_renderer_render.py` (host sh/awk round-trip), `tests/guards/test_32_alertmanager_renderer_container.py` (pinned image with the compose flags). Pi acceptance pending deploy.
+- **Resolution (R1.2, 2026-09-25):** renderer extracted to `stacks/monitoring/alertmanager/render-config.sh` (POSIX sh). Values are emitted as double-quoted YAML scalars with `\` and `"` escaped character by character in awk; control characters (including newlines) abort with exit 2 and name the variable, never the value; `amtool check-config` validates the result in the image. Tests: `tests/guards/test_31_alertmanager_renderer_render.py` (host sh/awk round-trip), `tests/guards/test_32_alertmanager_renderer_container.py` (pinned image with the compose flags). **Accepted 2026-09-25** after merge `44f09b0` (PR #18): postdeploy 59 passed, 4 skipped; alertmanager healthy with configured receivers.
 
 ### F8 – Renderer installs `gettext` from the network at every run
 
@@ -140,7 +150,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Use an image that already contains `envsubst` (pinned by digest), or drop `envsubst` in favour of shell-only rendering.
 - **Test:** `tests/guards` — no `apk add`/`apt-get install` inside any compose `command`/`entrypoint`.
 - **Acceptance:** The renderer runs with networking disabled (`network_mode: none`) and still produces the file.
-- **Resolution (R1.2, 2026-09-25):** `envsubst` replaced by awk; the renderer now uses the pinned `prom/alertmanager:v0.34.0` image (BusyBox sh/awk plus amtool) with `network_mode: none` and `read_only: true`. Guard `test_no_service_installs_packages_at_runtime` covers every service; postdeploy `test_22` asserts exit code 0 and network mode `none`. **R1.2 deploy (`07b4448`): postdeploy failed** on `test_56` - the image declares `VOLUME /alertmanager`, which the renderer left uncovered, so Docker created an anonymous volume (ADR-0008); all other 58 checks passed. Fix-forward: `tmpfs: [/alertmanager]` on the renderer; `test_renderer_covers_every_image_volume` in `tests/guards/test_32_alertmanager_renderer_container.py` checks every image VOLUME against the compose mounts. Pi acceptance pending deploy.
+- **Resolution (R1.2, 2026-09-25):** `envsubst` replaced by awk; the renderer now uses the pinned `prom/alertmanager:v0.34.0` image (BusyBox sh/awk plus amtool) with `network_mode: none` and `read_only: true`. Guard `test_no_service_installs_packages_at_runtime` covers every service; postdeploy `test_22` asserts exit code 0 and network mode `none`. **R1.2 deploy (`07b4448`): postdeploy failed** on `test_56` - the image declares `VOLUME /alertmanager`, which the renderer left uncovered, so Docker created an anonymous volume (ADR-0008); all other 58 checks passed. Fix-forward: `tmpfs: [/alertmanager]` on the renderer; `test_renderer_covers_every_image_volume` in `tests/guards/test_32_alertmanager_renderer_container.py` checks every image VOLUME against the compose mounts. The first redeploy still failed `test_56`: compose carries anonymous volumes over to a recreated container, so a one-time `docker compose rm -s -f -v alertmanager-config-render` was needed. **Accepted 2026-09-25** after merge `44f09b0` (PR #18): `test_22` (exit code 0, network mode `none`) and `test_56` green; `HostConfig.Tmpfs` is `{"/alertmanager":""}` and all mounts are bind mounts.
 
 ### F39 – German comment in the renderer script
 
@@ -368,7 +378,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Full version plus digest (with F3), or remove the image via F8.
 - **Test:** F3 guard test.
 - **Acceptance:** No compose image tag matches `^\d+\.\d+$`.
-- **Resolution (R1.2, 2026-09-25):** removed via F8 - the renderer uses `prom/alertmanager:v0.34.0`; no compose image has a two-part tag any more. A guard for the acceptance belongs to F3 (group g). The postdeploy tests still start helper containers from `alpine:3.20`; that is test tooling, not a compose image, and stays with F3.
+- **Resolution (R1.2, 2026-09-25):** removed via F8 - the renderer uses `prom/alertmanager:v0.34.0`; no compose image has a two-part tag any more. A guard for the acceptance belongs to F3 (group g). The postdeploy tests still start helper containers from `alpine:3.20`; that is test tooling, not a compose image, and stays with F3. Deployed with merge `44f09b0`; the Pi no longer pulls `alpine:3.24`.
 
 ### F4 – Renovate manages compose images only
 
@@ -460,6 +470,14 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Test:** Covered by F21's parity test extension.
 - **Acceptance:** Closed when F21's parity test includes pytest.
 
+### F49 – Postdeploy as root writes `__pycache__` into the Pi checkout
+
+- **Evidence:** `deploy.sh:293` runs `POSTDEPLOY_ON_TARGET=1 make postdeploy` as root; the `postdeploy` target in `Makefile` sets no `PYTHONDONTWRITEBYTECODE`. Deploy logs on 2026-09-25: `repo-ownership: mismatch detected` at 13:33 and 13:46, `OK` at 12:44 and 13:50; an operator `find . -xdev ! -user admin` at 13:50 found nothing. The pattern matches pytest recompiling only postdeploy test modules that changed in the preceding pull [I — confirm with the same `find` right after a deploy whose pull changed `tests/postdeploy`]. [V 2026-09-25]
+- **Impact:** Every deploy that changes a postdeploy test leaves root-owned files in the checkout; the next deploy's `fix_repo_ownership_if_needed` silently resets them. That routine reset would also hide a real ownership drift.
+- **Proposed fix:** Set `PYTHONDONTWRITEBYTECODE=1` for the postdeploy run (in `deploy.sh` or the `Makefile` target — decide when fixing).
+- **Test:** `tests/guards` — static check that the postdeploy invocation sets `PYTHONDONTWRITEBYTECODE=1`.
+- **Acceptance:** Two consecutive deploys whose pulls change `tests/postdeploy` both log `repo-ownership: OK`.
+
 ## Documentation and ADRs
 
 F46, F42 and F43 are documentation defects too; they are listed under privilege, exposure and
@@ -504,14 +522,14 @@ series per `CLAUDE.md` §8; each needs its own tests before merge.
 
 | Inc | Scope | Findings | Why this order |
 |---|---|---|---|
-| a | Alertmanager renderer: modes, errors, escaping, determinism | F26, F26b, F35, F36, F8, F39 | Live credential exposure; one service, one script |
+| a | Alertmanager renderer: modes, errors, escaping, determinism | F26, F26b, F35, F36, F8, F39, F48 | Live credential exposure; one service, one script |
 | b | Docker socket and privilege | F28, F30, F34, F46 | Host-root equivalence; F28 is a one-line first step |
 | c | LAN exposure and firewall contract | F45, F31, F42, F15 | F45 needs a Pi-side measurement first; decides F15 |
 | d | Config hash that works | F1, F2, F29, F13 | Makes every later config change actually deploy |
 | f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | One test file becomes the home of all hardening checks |
 | e | Host reconciliation ADR | F16, F17, F18, F43, F19, F20 | Needs an ADR decision before code (roadmap R1 exit) |
 | g | Supply chain | F3, F37, F4, F24, F44 | Digest pins + Renovate coverage together |
-| h | Toolchain and dead tests | F21, F22, F23, F25, F47, F11 | Low risk, quick |
+| h | Toolchain and dead tests | F21, F22, F23, F25, F47, F11, F49 | Low risk, quick |
 | i | Docs | F5, F6, F12 | Last, so they describe the fixed state |
 | R2 | Backup tests | F9 | Roadmap stage R2 |
 
