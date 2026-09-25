@@ -87,7 +87,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | open | b |
 | F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | open | h |
 | F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | addressed | a |
-| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | open | h |
+| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | partly | h |
 
 ## Secrets and credentials
 
@@ -478,6 +478,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Set `PYTHONDONTWRITEBYTECODE=1` for the postdeploy run (in `deploy.sh` or the `Makefile` target — decide when fixing).
 - **Test:** `tests/guards` — static check that the postdeploy invocation sets `PYTHONDONTWRITEBYTECODE=1`.
 - **Acceptance:** Two consecutive deploys whose pulls change `tests/postdeploy` both log `repo-ownership: OK`.
+- **Resolution (2026-09-25) — partly:** fixed in `scripts/tests/run-tests.sh`, not the `Makefile`: every test target goes through it, and it escalates to root on the Pi by itself (`run_pytest_as_root`), so a manual `make postdeploy` wrote root-owned bytecode too. It exports `PYTHONDONTWRITEBYTECODE=1` and sets it explicitly in the `sudo … env` call, independent of sudoers' handling of `-E`. Tests: `tests/guards/test_41_run_tests_no_bytecode.py` (behaviour of the plain path with a fake python; text contract for the root path). **Open:** the Pi acceptance needs a later deploy whose pull changes `tests/postdeploy`; the deploy of this fix changes none, so its `repo-ownership: OK` proves nothing.
 
 ## Documentation and ADRs
 

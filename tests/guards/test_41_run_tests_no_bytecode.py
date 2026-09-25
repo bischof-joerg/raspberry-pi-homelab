@@ -16,12 +16,8 @@ import stat
 import subprocess
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUN_TESTS = REPO_ROOT / "scripts/tests/run-tests.sh"
-
-pytestmark = pytest.mark.xfail(strict=True, reason="F49: contract pinned before the fix")
 
 
 def test_plain_path_disables_bytecode(tmp_path: Path) -> None:
