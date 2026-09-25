@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -38,7 +37,6 @@ def test_socket_mounts_exist_where_expected() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="F28: contract pinned before the fix")
 def test_runtime_sockets_are_mounted_read_only() -> None:
     writable = [
         f"{name}: {volume}" for name, volume in _socket_mounts() if volume.split(":")[-1] != "ro"

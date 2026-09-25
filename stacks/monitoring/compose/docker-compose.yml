@@ -267,7 +267,9 @@ services:
       - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
       - /sys/fs/cgroup:/sys/fs/cgroup:ro # Explicit cgroup v2 mount
       - /:/rootfs:ro
-      - /var/run/docker.sock:/var/run/docker.sock:rw
+      # Read-only (F28): least privilege for the socket file. It does NOT restrict the Docker
+      # API (F30), and this container is privileged anyway - removing that is F46.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
     command: # recommended flags for VictoriaMetrics integration + performance on Pi

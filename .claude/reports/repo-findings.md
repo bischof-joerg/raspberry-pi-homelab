@@ -187,6 +187,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Change to `:ro` as its own increment; keep only if postdeploy stays green.
 - **Test:** `tests/guards` — no `docker.sock` mount without `:ro`; `tests/postdeploy/test_25_cadvisor_metrics.py`.
 - **Acceptance:** Compose shows `:ro`; cadvisor container metrics still present after deploy.
+- **Resolution (2026-09-25):** socket mounted `:ro`; nothing else in cadvisor changed. Guard `tests/guards/test_50_docker_socket_mounts.py` (every runtime socket `:ro`, and the expected mounts exist); postdeploy `tests/postdeploy/test_25_cadvisor_metrics.py` checks `name=`-labelled container metrics live from cadvisor (not from VictoriaMetrics, whose lookback would hide a regression) and `RW=false` on the mount. **Security gain is near zero on its own:** cadvisor stays privileged, root and `pid: host`, and `:ro` never restricts the Docker API (F30). The real step is F46 (4). Pi acceptance pending deploy.
 
 ### F30 – vector is effectively host root via the Docker socket
 
