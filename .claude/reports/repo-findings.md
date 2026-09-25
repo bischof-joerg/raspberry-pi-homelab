@@ -140,7 +140,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Use an image that already contains `envsubst` (pinned by digest), or drop `envsubst` in favour of shell-only rendering.
 - **Test:** `tests/guards` — no `apk add`/`apt-get install` inside any compose `command`/`entrypoint`.
 - **Acceptance:** The renderer runs with networking disabled (`network_mode: none`) and still produces the file.
-- **Resolution (R1.2, 2026-09-25):** `envsubst` replaced by awk; the renderer now uses the pinned `prom/alertmanager:v0.34.0` image (BusyBox sh/awk plus amtool) with `network_mode: none` and `read_only: true`. Guard `test_no_service_installs_packages_at_runtime` covers every service; postdeploy `test_22` asserts exit code 0 and network mode `none`. Pi acceptance pending deploy.
+- **Resolution (R1.2, 2026-09-25):** `envsubst` replaced by awk; the renderer now uses the pinned `prom/alertmanager:v0.34.0` image (BusyBox sh/awk plus amtool) with `network_mode: none` and `read_only: true`. Guard `test_no_service_installs_packages_at_runtime` covers every service; postdeploy `test_22` asserts exit code 0 and network mode `none`. **R1.2 deploy (`07b4448`): postdeploy failed** on `test_56` - the image declares `VOLUME /alertmanager`, which the renderer left uncovered, so Docker created an anonymous volume (ADR-0008); all other 58 checks passed. Fix-forward: `tmpfs: [/alertmanager]` on the renderer; `test_renderer_covers_every_image_volume` in `tests/guards/test_32_alertmanager_renderer_container.py` checks every image VOLUME against the compose mounts. Pi acceptance pending deploy.
 
 ### F39 – German comment in the renderer script
 
