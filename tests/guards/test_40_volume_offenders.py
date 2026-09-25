@@ -11,13 +11,10 @@ import json
 
 import pytest
 
-pytestmark = pytest.mark.xfail(strict=True, reason="F48 guard: contract pinned before the helper")
+from tests._lib.docker_volumes import VolumeOffender, volume_offenders
 
 
-def _offenders(output: str):
-    # Imported here so a missing helper fails the test instead of the collection.
-    from tests._lib.docker_volumes import volume_offenders
-
+def _offenders(output: str) -> list[VolumeOffender]:
     return volume_offenders(output)
 
 

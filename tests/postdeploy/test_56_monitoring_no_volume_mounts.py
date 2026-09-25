@@ -20,6 +20,8 @@ from dataclasses import dataclass
 
 import pytest
 
+from tests._lib.docker_volumes import volume_offenders
+
 
 def _on_target() -> bool:
     return os.environ.get("POSTDEPLOY_ON_TARGET", "") == "1"
@@ -187,8 +189,6 @@ def test_host_has_no_docker_volumes() -> None:
         pytest.skip(
             "POSTDEPLOY_ON_TARGET is not set; this test is intended to run on the Pi target."
         )
-    from tests._lib.docker_volumes import volume_offenders
-
     docker = _docker()
     offenders = volume_offenders(_run([docker, "volume", "ls", "--format", "{{json .}}"]))
     if not offenders:
