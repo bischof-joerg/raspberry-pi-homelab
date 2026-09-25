@@ -26,8 +26,6 @@ RENDER_SCRIPT = ALERTMANAGER_DIR / "render-config.sh"
 TEMPLATE = ALERTMANAGER_DIR / "alertmanager.yml.tmpl"
 RENDERER = "alertmanager-config-render"
 
-pytestmark = pytest.mark.xfail(strict=True, reason="R1.2: contract pinned before the fix (F36, F8)")
-
 FIXTURE_ENV = {
     "ALERT_EMAIL_ENABLED": "1",
     "ALERT_EMAIL_TO": "ops+alerts@example.org",

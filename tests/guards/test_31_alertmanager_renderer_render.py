@@ -20,8 +20,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RENDER_SCRIPT = REPO_ROOT / "stacks/monitoring/alertmanager/render-config.sh"
 TEMPLATE = REPO_ROOT / "stacks/monitoring/alertmanager/alertmanager.yml.tmpl"
 
-pytestmark = pytest.mark.xfail(strict=True, reason="R1.2: contract pinned before the fix (F36, F8)")
-
 # Deliberately hostile but printable values: quotes, backslashes, YAML indicators, shell and
 # template metacharacters. None of them is a real credential.
 FIXTURE = {

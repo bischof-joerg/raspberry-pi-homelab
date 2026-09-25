@@ -45,7 +45,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F5 | `README.md` describes a stack that no longer exists | Docs | Low | open | i |
 | F6 | ADR numbering and titles are inconsistent | Docs | Low | open | i |
 | F7 | Missing restart policy / healthchecks | Hardening | Med | open | f |
-| F8 | Renderer installs `gettext` from the network at every run | Supply chain | Med | open | a |
+| F8 | Renderer installs `gettext` from the network at every run | Supply chain | Med | addressed | a |
 | F9 | Backup scripts have no tests although ADR-009 requires them | Backup | High | open | R2 |
 | F10 | pytest version drift between pre-commit and `.venv` | Toolchain | Low | addressed | – |
 | F11 | `.gitattributes` does not pin LF for all text types | Toolchain | Low | open | h |
@@ -74,8 +74,8 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F33 | vector has no healthcheck | Hardening | Low | open | f |
 | F34 | vector joins the `apps` network without a reason | Privilege | Med | open | b |
 | F35 | Renderer swallows errors despite `set -euo pipefail` | Secrets | Med | addressed | a |
-| F36 | Renderer builds YAML without escaping | Secrets | Med | open | a |
-| F37 | `alpine:3.24` is a floating minor tag | Supply chain | Med | open | g |
+| F36 | Renderer builds YAML without escaping | Secrets | Med | addressed | a |
+| F37 | `alpine:3.24` is a floating minor tag | Supply chain | Med | addressed | g |
 | F38 | `depends_on` ignores existing healthchecks | Hardening | Low | open | f |
 | F39 | German comment in the renderer script | Docs | Low | addressed | a |
 | F40 | Volume naming rule contradicted the implementation | Docs | Low | addressed | – |
@@ -122,7 +122,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Remove `|| true`; handle the one legitimate "source may not exist" case with an explicit `[ -e ]` test.
 - **Test:** `tests/guards` — static check that the renderer command contains no `|| true`.
 - **Acceptance:** The guard test fails on any reintroduced `|| true`; a forced failure in the renderer makes the one-shot container exit non-zero.
-- **Resolution (R1.1, 2026-09-25):** `|| true` and `2>/dev/null` removed; `cp -a` (which cannot preserve the repo owner without `CAP_CHOWN`, the error that was being swallowed) replaced by `cp -R`. Guard in `tests/guards/test_30_alertmanager_renderer_contract.py`. The forced-failure half is not tested; it needs the renderer extracted to a script (F36).
+- **Resolution (R1.1, 2026-09-25):** `|| true` and `2>/dev/null` removed; `cp -a` (which cannot preserve the repo owner without `CAP_CHOWN`, the error that was being swallowed) replaced by `cp -R`. Guard in `tests/guards/test_30_alertmanager_renderer_contract.py`. The forced-failure half is covered since R1.2: `test_control_characters_abort_without_leaking` in `tests/guards/test_31_alertmanager_renderer_render.py` asserts a non-zero exit and no output file.
 
 ### F36 – Renderer builds YAML without escaping
 
@@ -131,6 +131,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Render with `envsubst` into a template that quotes values, or escape `\` and `"` before `printf`; validate the result with `amtool check-config` in the renderer.
 - **Test:** `tests/precommit` — run the renderer logic (extracted to a script) against fixture values containing `"`, `\` and `:`; parse the output with PyYAML.
 - **Acceptance:** Fixture values round-trip unchanged through render and YAML parse.
+- **Resolution (R1.2, 2026-09-25):** renderer extracted to `stacks/monitoring/alertmanager/render-config.sh` (POSIX sh). Values are emitted as double-quoted YAML scalars with `\` and `"` escaped character by character in awk; control characters (including newlines) abort with exit 2 and name the variable, never the value; `amtool check-config` validates the result in the image. Tests: `tests/guards/test_31_alertmanager_renderer_render.py` (host sh/awk round-trip), `tests/guards/test_32_alertmanager_renderer_container.py` (pinned image with the compose flags). Pi acceptance pending deploy.
 
 ### F8 – Renderer installs `gettext` from the network at every run
 
@@ -139,6 +140,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Use an image that already contains `envsubst` (pinned by digest), or drop `envsubst` in favour of shell-only rendering.
 - **Test:** `tests/guards` — no `apk add`/`apt-get install` inside any compose `command`/`entrypoint`.
 - **Acceptance:** The renderer runs with networking disabled (`network_mode: none`) and still produces the file.
+- **Resolution (R1.2, 2026-09-25):** `envsubst` replaced by awk; the renderer now uses the pinned `prom/alertmanager:v0.34.0` image (BusyBox sh/awk plus amtool) with `network_mode: none` and `read_only: true`. Guard `test_no_service_installs_packages_at_runtime` covers every service; postdeploy `test_22` asserts exit code 0 and network mode `none`. Pi acceptance pending deploy.
 
 ### F39 – German comment in the renderer script
 
@@ -366,6 +368,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Full version plus digest (with F3), or remove the image via F8.
 - **Test:** F3 guard test.
 - **Acceptance:** No compose image tag matches `^\d+\.\d+$`.
+- **Resolution (R1.2, 2026-09-25):** removed via F8 - the renderer uses `prom/alertmanager:v0.34.0`; no compose image has a two-part tag any more. A guard for the acceptance belongs to F3 (group g). The postdeploy tests still start helper containers from `alpine:3.20`; that is test tooling, not a compose image, and stays with F3.
 
 ### F4 – Renovate manages compose images only
 

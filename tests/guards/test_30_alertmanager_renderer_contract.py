@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -47,16 +46,11 @@ def _renderer_script() -> str:
     return "\n".join(parts)
 
 
-_XFAIL_R1_2 = pytest.mark.xfail(
-    strict=True, reason="R1.2: contract pinned before the fix (F36, F8)"
-)
-
 PACKAGE_INSTALL = re.compile(
     r"\b(?:apk\s+add|apt-get\s+install|apt\s+install|yum\s+install|dnf\s+install|pip3?\s+install)\b"
 )
 
 
-@_XFAIL_R1_2
 def test_no_service_installs_packages_at_runtime() -> None:
     offenders = [
         name
@@ -73,7 +67,6 @@ def test_no_service_installs_packages_at_runtime() -> None:
     )
 
 
-@_XFAIL_R1_2
 def test_renderer_runs_offline() -> None:
     service = _services()[RENDERER]
     assert service.get("network_mode") == "none" and "networks" not in service, (
@@ -83,7 +76,6 @@ def test_renderer_runs_offline() -> None:
     )
 
 
-@_XFAIL_R1_2
 def test_renderer_uses_the_alertmanager_image() -> None:
     services = _services()
     have, want = services[RENDERER].get("image"), services[ALERTMANAGER].get("image")
@@ -94,7 +86,6 @@ def test_renderer_uses_the_alertmanager_image() -> None:
     )
 
 
-@_XFAIL_R1_2
 def test_renderer_runs_extracted_script_read_only() -> None:
     service = _services()[RENDERER]
     assert RENDER_SCRIPT.is_file(), f"❌ Missing {RENDER_SCRIPT} (F36).\nFix: extract the renderer."
@@ -145,13 +136,12 @@ def test_alertmanager_runs_as_nobody_nogroup() -> None:
 
 
 def test_renderer_keeps_primary_group_root() -> None:
-    # R1.1 deploy failure: with user "0:65534" and cap_drop ALL, `apk add` cannot chown the
-    # installed files to root:root and exits 10 ("failed to preserve …: owner").
+    # uid 0 owns /out (root:nogroup 0750). The Alertmanager group comes from group_add, not
+    # from the primary group: "0:65534" made `apk add` exit 10 on the first R1.1 deploy.
     user = str(_services()[RENDERER].get("user", ""))
     assert user == "0:0", (
-        f"❌ {RENDERER} user is {user!r}, expected '0:0' (F26, F8).\n"
-        "Fix: keep the primary group 0 while the renderer runs `apk add` without CAP_CHOWN; "
-        "get the Alertmanager group via group_add instead."
+        f"❌ {RENDERER} user is {user!r}, expected '0:0' (F26).\n"
+        "Fix: user 0:0 and get the Alertmanager group via group_add."
     )
 
 
@@ -164,18 +154,21 @@ def test_renderer_can_hand_files_to_alertmanager_group() -> None:
         "without CAP_CHOWN."
     )
     script = _renderer_script()
-    assert re.search(rf"chgrp\s+{ALERTMANAGER_GID}\s", script), (
-        f"❌ {RENDERER} does not chgrp the rendered config to {ALERTMANAGER_GID} (F26).\n"
-        f"Fix: chgrp {ALERTMANAGER_GID} explicitly; id -g is the primary group 0."
+    default_group = f'group="${{RENDER_GROUP:-{ALERTMANAGER_GID}}}"'
+    assert default_group in script and re.search(r'chgrp\s+"\$group"\s', script), (
+        f"❌ {RENDER_SCRIPT.name} does not chgrp the output to RENDER_GROUP "
+        f"(default {ALERTMANAGER_GID}) (F26).\n"
+        f'Fix: {default_group} and chgrp "$group" before the rename; id -g is the primary '
+        "group 0."
     )
 
 
-def test_renderer_sets_umask_after_package_install() -> None:
+def test_renderer_sets_restrictive_umask_before_writing() -> None:
     script = _renderer_script()
-    apk, umask = script.find("apk add"), script.find("umask 027")
-    assert umask != -1 and (apk == -1 or umask > apk), (
-        f"❌ {RENDERER}: umask 027 missing or set before `apk add` (F26).\n"
-        "Fix: set umask 027 after the package install, before rendering."
+    umask, first_write = script.find("umask 027"), script.find('>"$tmp"')
+    assert umask != -1 and first_write != -1 and umask < first_write, (
+        f"❌ {RENDER_SCRIPT.name}: umask 027 missing or set after the first write (F26).\n"
+        "Fix: set umask 027 before rendering to the temp file."
     )
 
 

@@ -184,7 +184,7 @@ history of this file up to commit `2c88ea6`.
 | F5 | `README.md` describes a stack that no longer exists | Low | open |
 | F6 | ADR numbering and titles are inconsistent | Low | open |
 | F7 | Missing restart policy / healthchecks | Med | open |
-| F8 | Renderer installs `gettext` from the network at every run | Med | open |
+| F8 | Renderer installs `gettext` from the network at every run | Med | addressed |
 | F9 | Backup scripts have no tests although ADR-009 requires them | High | open |
 | F10 | pytest version drift between pre-commit and `.venv` | Low | addressed |
 | F11 | `.gitattributes` does not pin LF for all text types | Low | open |
@@ -213,8 +213,8 @@ history of this file up to commit `2c88ea6`.
 | F33 | vector has no healthcheck | Low | open |
 | F34 | vector joins the `apps` network without a reason | Med | open |
 | F35 | Renderer swallows errors despite `set -euo pipefail` | Med | addressed |
-| F36 | Renderer builds YAML without escaping | Med | open |
-| F37 | `alpine:3.24` is a floating minor tag | Med | open |
+| F36 | Renderer builds YAML without escaping | Med | addressed |
+| F37 | `alpine:3.24` is a floating minor tag | Med | addressed |
 | F38 | `depends_on` ignores existing healthchecks | Low | open |
 | F39 | German comment in the renderer script | Low | addressed |
 | F40 | Volume naming rule contradicted the implementation | Low | addressed |
