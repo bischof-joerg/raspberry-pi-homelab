@@ -46,7 +46,8 @@ implementation; a new stack copies its shape, not its service list.
 
 ## Documented exceptions — do not "fix" these
 
-- `cadvisor` runs `privileged: true` as root, plus `pid: host` and a **writable** Docker socket.
+- `cadvisor` runs `privileged: true` as root, plus `pid: host` and the Docker socket (`:ro` since
+  F28 — which does not restrict the API, see above).
   An inline compose comment calls this a Pi 5 necessity, but **no document records the exception and
   `docs/monitoring.md` claims the opposite** (F46). Treat it as existing practice under review, not
   as a settled decision, and do not cite it to justify a second privileged container.
