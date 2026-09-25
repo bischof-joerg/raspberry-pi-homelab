@@ -32,7 +32,7 @@ Claude Code **2.1.280** installed (live hook tests last run on 2.1.280 — see �
 | `skills/*/SKILL.md` (8) | Invokable procedures | description every turn, body on invocation | Claude, operator reviews | `tools/check_skills.py` |
 | `agents/*.md` (4) | Read-only subagents (`tools: Read, Grep, Glob`) | description at startup; edits hot-reloaded | Claude, operator reviews | `tools/check_agents.py` |
 | `tools/*.py` (4) | Verifiers for rules, skills, agents, findings | run by hand | Claude, operator reviews | `ruff check` |
-| `reports/repo-findings.md` | Findings F1–F47 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
+| `reports/repo-findings.md` | Findings F1–F49 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
 | `ClaudeTransition.md` | Transition record (R0, complete): decision log, guard design, verification records | only when read | Claude, operator reviews | – |
 | `scratch/` | Drafts (ADR drafts, patch proposals) — **git-ignored** | – | Claude | not in a fresh clone |
 | `logs/guard.log`, `logs/instructions.log` | Guard decisions (JSON lines), instruction-load events — **git-ignored** | – | written by hooks | grow unbounded; truncate by hand |
