@@ -63,8 +63,8 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F23 | Tests marked `lint` are never run by any gate | Tests | Med | open | h |
 | F24 | Renovate validator hook runs a floating image tag | Supply chain | Med | open | g |
 | F25 | JSON test scans git-ignored files | Tests | Low | open | h |
-| F26 | Alertmanager SMTP password written world-readable | Secrets | High | open | a |
-| F26b | The same password persists in every backup archive | Secrets | High | open | a |
+| F26 | Alertmanager SMTP password written world-readable | Secrets | High | addressed | a |
+| F26b | The same password persists in every backup archive | Secrets | High | partly | a |
 | F27 | Container uid left to image defaults for 8 of 10 services | Hardening | Med | open | f |
 | F28 | cadvisor mounts the Docker socket read-write | Privilege | High | open | b |
 | F29 | Config-hash label missing on 5 of 10 services | Deploy | High | open | d |
@@ -73,11 +73,11 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 | F32 | Grafana runs without `read_only` on a wrong justification | Hardening | Med | open | f |
 | F33 | vector has no healthcheck | Hardening | Low | open | f |
 | F34 | vector joins the `apps` network without a reason | Privilege | Med | open | b |
-| F35 | Renderer swallows errors despite `set -euo pipefail` | Secrets | Med | open | a |
+| F35 | Renderer swallows errors despite `set -euo pipefail` | Secrets | Med | addressed | a |
 | F36 | Renderer builds YAML without escaping | Secrets | Med | open | a |
 | F37 | `alpine:3.24` is a floating minor tag | Supply chain | Med | open | g |
 | F38 | `depends_on` ignores existing healthchecks | Hardening | Low | open | f |
-| F39 | German comment in the renderer script | Docs | Low | open | a |
+| F39 | German comment in the renderer script | Docs | Low | addressed | a |
 | F40 | Volume naming rule contradicted the implementation | Docs | Low | addressed | – |
 | F41 | No static guard for the compose hardening contract | Tests | Med | partly | f |
 | F42 | LAN exposure of 3000/9428 is recorded in no document | Exposure | Med | partly | c |
@@ -96,6 +96,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** `chmod 0640` plus a group Alertmanager can read (it runs as `nobody`); change together with the directory mode in F26b.
 - **Test:** `tests/postdeploy/test_22_alertmanager_config_rendered.py` — assert mode `0640` and owner/group of the rendered file; `tests/guards` — assert the compose renderer script contains no `chmod 0644` for that file.
 - **Acceptance:** On the Pi, `stat -c '%a %U:%G'` on the rendered file shows `640` and a non-world group; the postdeploy test fails if the mode is widened again.
+- **Resolution (R1.1, 2026-09-25):** renderer runs as `0:65534`, writes `0640` via temp file + `mv`; alertmanager pinned to `user: "65534:65534"`. Guard `tests/guards/test_30_alertmanager_renderer_contract.py`, postdeploy `test_22`. Pi acceptance pending deploy.
 
 ### F26b – The same password persists in every backup archive
 
@@ -104,6 +105,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Directory to `0750` with the Alertmanager-readable group in `init-permissions.sh`; document "rotation completes after retention" in `docs/operations/BackupVerifyRestore.md`; ensure restore re-applies the F26 mode.
 - **Test:** `tests/postdeploy` — directory mode `0750`; backup fixture test (R2, F9) — a restored tree yields `0640` on the rendered file.
 - **Acceptance:** Directory mode is `750` after deploy; a restore dry-run in the fixture harness produces no world-readable credential file.
+- **Resolution (R1.1, 2026-09-25) — partly:** `init-permissions.sh` reconciles the directory to `0:nogroup 750` and strips other-bits recursively (its `--check` detects restore leftovers); rotation note in `docs/operations/BackupVerifyRestore.md` §6.2; postdeploy `test_55`. **Open:** the restore fixture test, which belongs to R2/F9.
 
 ### F31 – Grafana admin credentials default to empty
 
@@ -120,6 +122,7 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Proposed fix:** Remove `|| true`; handle the one legitimate "source may not exist" case with an explicit `[ -e ]` test.
 - **Test:** `tests/guards` — static check that the renderer command contains no `|| true`.
 - **Acceptance:** The guard test fails on any reintroduced `|| true`; a forced failure in the renderer makes the one-shot container exit non-zero.
+- **Resolution (R1.1, 2026-09-25):** `|| true` and `2>/dev/null` removed; `cp -a` (which cannot preserve the repo owner without `CAP_CHOWN`, the error that was being swallowed) replaced by `cp -R`. Guard in `tests/guards/test_30_alertmanager_renderer_contract.py`. The forced-failure half is not tested; it needs the renderer extracted to a script (F36).
 
 ### F36 – Renderer builds YAML without escaping
 
@@ -143,7 +146,8 @@ The R1 column is a suggested grouping into increments (see the end of this file)
 - **Impact:** Violates decision E6 (English only); minor.
 - **Proposed fix:** Translate while touching the renderer for F26/F35/F36.
 - **Test:** None beyond review; optionally `tests/guards` flags umlauts in `stacks/**`.
-- **Acceptance:** `grep -nP '[äöüÄÖÜß]'` over `stacks/` returns nothing.
+- **Acceptance:** `grep -nP '[äöüÄÖÜß]'` over `stacks/` returns nothing. *(Corrected 2026-09-25: this grep was already green before the fix — the comment has no umlauts. The guard checks for German words in the renderer script instead.)*
+- **Resolution (R1.1, 2026-09-25):** comment translated; `test_renderer_script_is_english_only` in `tests/guards/test_30_alertmanager_renderer_contract.py`.
 
 ### F12 – `.env.example` duplicates keys and holds host-derived values
 

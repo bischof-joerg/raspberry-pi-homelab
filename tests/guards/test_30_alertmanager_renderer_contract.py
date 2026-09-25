@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -24,10 +23,6 @@ ALERTMANAGER = "alertmanager"
 ALERTMANAGER_USER = "65534:65534"
 ALERTMANAGER_GID = "65534"
 
-_XFAIL_R1_1 = pytest.mark.xfail(
-    strict=True, reason="R1.1: contract pinned before the fix (F26, F26b, F35, F39)"
-)
-
 
 def _services() -> dict:
     data = yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))
@@ -39,7 +34,6 @@ def _renderer_script() -> str:
     return "\n".join(command) if isinstance(command, list) else str(command)
 
 
-@_XFAIL_R1_1
 def test_renderer_does_not_swallow_errors() -> None:
     script = _renderer_script()
     bad = [p for p in ("|| true", "2>/dev/null") if p in script]
@@ -49,7 +43,6 @@ def test_renderer_does_not_swallow_errors() -> None:
     )
 
 
-@_XFAIL_R1_1
 def test_renderer_writes_config_0640_and_nothing_world_readable() -> None:
     script = _renderer_script()
     widening = re.findall(r"chmod\s+(?:-R\s+)?(?:0?644|[ugo]*[ao][ugo]*\+r\w*)", script)
@@ -63,7 +56,6 @@ def test_renderer_writes_config_0640_and_nothing_world_readable() -> None:
     )
 
 
-@_XFAIL_R1_1
 def test_alertmanager_runs_as_nobody_nogroup() -> None:
     user = _services()[ALERTMANAGER].get("user")
     assert user == ALERTMANAGER_USER, (
@@ -72,7 +64,6 @@ def test_alertmanager_runs_as_nobody_nogroup() -> None:
     )
 
 
-@_XFAIL_R1_1
 def test_renderer_group_matches_alertmanager_group() -> None:
     user = str(_services()[RENDERER].get("user", ""))
     assert user.split(":")[-1] == ALERTMANAGER_GID and ":" in user, (
@@ -82,7 +73,6 @@ def test_renderer_group_matches_alertmanager_group() -> None:
     )
 
 
-@_XFAIL_R1_1
 def test_renderer_script_is_english_only() -> None:
     script = _renderer_script()
     german = re.findall(r"\b(?:muss|nicht|und|ansprechen)\b|[äöüÄÖÜß]", script)
@@ -92,7 +82,6 @@ def test_renderer_script_is_english_only() -> None:
     )
 
 
-@_XFAIL_R1_1
 def test_init_permissions_restricts_alertmanager_config_dir() -> None:
     text = INIT_PERMISSIONS.read_text(encoding="utf-8")
     expected = [

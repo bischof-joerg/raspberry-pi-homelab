@@ -10,6 +10,8 @@ services:
   alertmanager:
     image: prom/alertmanager:v0.34.0
     restart: unless-stopped
+    # nobody:nogroup, explicit: the rendered config is 0640 root:nogroup (F26).
+    user: "65534:65534"
     networks: [monitoring]
     ports:
       - "127.0.0.1:9093:9093"
@@ -43,6 +45,8 @@ services:
   alertmanager-config-render:
     image: alpine:3.24
     restart: "no"
+    # uid 0 owns the output; gid = alertmanager's group, so chgrp works without CAP_CHOWN (F26).
+    user: "0:65534"
     networks: [monitoring]
 
     # Compose interpolation must not hard-fail if SMTP isn't configured yet.
@@ -71,6 +75,8 @@ services:
       - -lc
       - |
         set -euo pipefail
+        # The rendered config may hold the SMTP password: nothing here is for "other" (F26).
+        umask 027
         apk add --no-cache gettext
 
         if [ "$${ALERT_EMAIL_ENABLED:-0}" = "1" ]; then
@@ -110,20 +116,24 @@ services:
         export ALERT_EMAIL_CRITICAL_YAML ALERT_EMAIL_WARNING_YAML
 
         # Render config: only substitute the two injected YAML blocks.
-        # envsubst muss die Shell-Variablen mit $ (nicht $$) ansprechen
+        # envsubst must reference the shell variables with $ (not $$).
+        # Render to a temp file, restrict it, then rename atomically (F26).
         envsubst '$$ALERT_EMAIL_CRITICAL_YAML $$ALERT_EMAIL_WARNING_YAML' \
-          < /in/alertmanager.yml.tmpl > /out/alertmanager.yml
+          < /in/alertmanager.yml.tmpl > /out/alertmanager.yml.tmp
+        test -s /out/alertmanager.yml.tmp
+        chgrp "$$(id -g)" /out/alertmanager.yml.tmp
+        chmod 0640 /out/alertmanager.yml.tmp
+        mv -f /out/alertmanager.yml.tmp /out/alertmanager.yml
 
-        chmod 0644 /out/alertmanager.yml
-
+        # No cp -a: preserving the repo owner needs CAP_CHOWN, which is dropped (F35).
         mkdir -p /out/templates
         if [ -d /in/templates ]; then
-          cp -a /in/templates/. /out/templates/ 2>/dev/null || true
+          cp -R /in/templates/. /out/templates/
         fi
-        chmod -R a+rX /out/templates || true
+        chgrp -R "$$(id -g)" /out/templates
+        chmod -R u=rwX,g=rX,o= /out/templates
 
         echo "Rendered /out/alertmanager.yml and copied templates to /out/templates"
-        test -s /out/alertmanager.yml
 
     labels:
       - "homelab.config-hash=${MONITORING_CONFIG_HASH:-unset}"
