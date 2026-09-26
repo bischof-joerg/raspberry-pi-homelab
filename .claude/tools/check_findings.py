@@ -4,13 +4,18 @@
 Every finding entry (`### F<n> - title`) must carry non-empty **Evidence**, **Test** and
 **Acceptance** fields. Every repository path cited in backticks on the Evidence line must exist,
 and a path written as `path` (absent) must NOT exist -- some findings are about a missing file,
-and that claim is checked too. The set of entry IDs must equal both the report's own index table
-and the index in ClaudeTransition.md section 3.6, so the three cannot drift apart.
+and that claim is checked too. The set of entry IDs must equal the report's own index table.
+
+The R1 group table in .claude/roadmap.md section 6 must agree with the index: every ID it lists
+exists; an ID under "Open" is not `addressed`, one under "Done" is; every finding that is not
+`addressed` sits under "Open" of exactly one group, and every `addressed` finding with a group sits
+under "Done" of it; the group matches the index's R1 column. So "what is still open" stays complete.
 
 What this cannot do: prove that a cited file *says* what the finding claims. That needs a human
-read, and is the lesson recorded in ClaudeTransition.md 5.2.
+read, and is the lesson recorded in ClaudeTransition.md 5.2 (archive).
 
-Run: python3 .claude/tools/check_findings.py   (stdlib only, read-only, exit 1 on any failure)
+Run: python3 .claude/tools/check_findings.py [REPORT [ROADMAP]]
+     (stdlib only, read-only, exit 1 on any failure; the optional paths serve negative controls)
 """
 
 from __future__ import annotations
@@ -20,8 +25,10 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-REPORT = ROOT / ".claude" / "reports" / "repo-findings.md"
-PLAN = ROOT / ".claude" / "ClaudeTransition.md"
+REPORT = (
+    pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / ".claude/reports/repo-findings.md"
+)
+ROADMAP = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / ".claude/roadmap.md"
 
 REQUIRED = ("Evidence", "Impact", "Proposed fix", "Test", "Acceptance")
 ENTRY = re.compile(r"^### (F\d+b?) ", re.MULTILINE)
@@ -94,15 +101,61 @@ dupes = sorted({f for f in entry_ids if entry_ids.count(f) > 1})
 if dupes:
     fail(f"duplicate entries: {dupes}")
 
-own_index = INDEX_ROW.findall(section(report, "## Index", "\n## "))
-plan_index = INDEX_ROW.findall(section(PLAN.read_text(encoding="utf-8"), "### 3.6", "### 3.7"))
-for label, ids in (("report index", own_index), ("ClaudeTransition.md 3.6", plan_index)):
-    if set(ids) != set(entry_ids):
-        missing = sorted(set(entry_ids) - set(ids))
-        extra = sorted(set(ids) - set(entry_ids))
-        fail(f"{label} differs from entries: missing {missing}, extra {extra}")
+index_text = section(report, "## Index", "\n## ")
+own_index = INDEX_ROW.findall(index_text)
+if set(own_index) != set(entry_ids):
+    missing = sorted(set(entry_ids) - set(own_index))
+    extra = sorted(set(own_index) - set(entry_ids))
+    fail(f"report index differs from entries: missing {missing}, extra {extra}")
 
-counts = f"{len(entry_ids)} entries, {len(own_index)} report index rows"
-print(f"{counts}, {len(plan_index)} rows in ClaudeTransition.md 3.6")
+# Index row: | ID | Title | Area | Sev | Status | R1 |
+status: dict[str, str] = {}
+group_of: dict[str, str] = {}
+for line in index_text.splitlines():
+    if INDEX_ROW.match(line):
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        status[cells[0]], group_of[cells[0]] = cells[-2], cells[-1]
+
+# Roadmap row: | Group | Scope | Open | Done | Why |
+GROUP_ROW = re.compile(r"^\| ([a-z]|R\d) \|", re.MULTILINE)
+FID = re.compile(r"\bF\d+b?\b")
+groups_text = section(ROADMAP.read_text(encoding="utf-8"), "## 6.", "\n## 7.")
+open_seen: dict[str, list[str]] = {}
+done_seen: dict[str, list[str]] = {}
+for line in groups_text.splitlines():
+    if not GROUP_ROW.match(line):
+        continue
+    cells = [c.strip() for c in line.strip().strip("|").split("|")]
+    group = cells[0]
+    for column, want_done, seen in (
+        (cells[2], False, open_seen),
+        (cells[3], True, done_seen),
+    ):
+        for fid in FID.findall(column):
+            seen.setdefault(fid, []).append(group)
+            if fid not in status:
+                fail(f"roadmap group {group}: unknown finding {fid}")
+                continue
+            if (status[fid] == "addressed") != want_done:
+                where = "Done" if want_done else "Open"
+                fail(f"roadmap group {group}: {fid} is '{status[fid]}' but listed under {where}")
+            if group_of[fid] != group:
+                fail(f"roadmap group {group}: {fid} has R1 group '{group_of[fid]}' in the index")
+
+for fid in entry_ids:
+    if fid not in status:
+        continue
+    seen = done_seen if status[fid] == "addressed" else open_seen
+    if status[fid] == "addressed" and group_of[fid] in {"–", "-", ""}:
+        continue
+    groups = seen.get(fid, [])
+    if len(groups) != 1:
+        where = "Done" if status[fid] == "addressed" else "Open"
+        fail(
+            f"{fid} ({status[fid]}) must be under {where} of exactly one roadmap group, found {groups}"
+        )
+
+print(f"{len(entry_ids)} entries, {len(own_index)} report index rows")
+print(f"{len(open_seen)} open and {len(done_seen)} done findings in the roadmap groups")
 print(f"{failures} failure(s)")
 sys.exit(1 if failures else 0)

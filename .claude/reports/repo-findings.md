@@ -1,14 +1,15 @@
 # Repository findings – raspberry-pi-homelab
 
-- **Status:** handed over 2026-09-23 (Phase 6 of `.claude/ClaudeTransition.md`), input for roadmap
-  stage **R1**.
-- **Nature:** proposals. Nothing here has been fixed by Claude — C1 forbade it during the
-  transition. Each entry is written so that it can become one increment (`increment-plan` skill).
-- **Single source of truth.** This file holds the full entries; `ClaudeTransition.md` §3.6 keeps a
-  one-line index only. Change a finding here, then keep the index in step.
+- **Status:** handed over 2026-09-23 (Phase 6 of the transition, now archived in
+  `.claude/ClaudeTransition.md`); worked off in roadmap stage **R1** since 2026-09-25.
+- **Nature:** each entry is written so that it can become one increment (`increment-plan` skill).
+  Fixed entries keep their history in a **Resolution** line and carry status `addressed`.
+- **Single source of truth.** This file holds the full entries and the index below. The grouping
+  into R1 increments, with what is open and done per group, lives in `.claude/roadmap.md` §6.
 - **Mechanical check (V6.2):** `python3 .claude/tools/check_findings.py` — every entry has
   Evidence, Impact, Proposed fix, Test and Acceptance; every cited repo path exists; a path marked
-  *(absent)* really is absent; the IDs here, in the index below and in §3.6 are the same set.
+  *(absent)* really is absent; the IDs here and in the index are the same set; the roadmap groups
+  agree with the index's status and R1 columns.
 
 ## How to read an entry
 
@@ -23,7 +24,7 @@
 Verification dates: F1–F24 were first recorded 2026-09-16 on a Windows copy of the repository
 (decision E1) and partly re-verified later; the date given is the latest read. On 2026-09-23 only
 the findings whose status could plausibly have changed were re-read (F5, F10, F14, F21, F22, F23).
-Re-verifying **every** entry against `main` is the R1 exit criterion (`ClaudeTransition.md` §10.3);
+Re-verifying **every** entry against `main` is the R1 exit criterion (`.claude/roadmap.md` §4);
 line numbers drift, so re-read before fixing.
 
 Caution carried over from the transition (§5.2 there): three times a Claude artefact cited a
@@ -34,7 +35,7 @@ the cited lines before acting on any entry.
 
 Severity: **High** = credential exposure, host-root equivalence, or a safety mechanism that does
 not work; **Med** = drift, fragility or a missing test for a real contract; **Low** = hygiene.
-The R1 column is a suggested grouping into increments (see the end of this file).
+The R1 column is the grouping into increments; per-group status and order in `.claude/roadmap.md` §6.
 
 | ID | Title | Area | Sev | Status | R1 |
 |---|---|---|---|---|---|
@@ -519,22 +520,8 @@ deploy because their fix starts in code and ends in the document.
 - **Test:** None.
 - **Acceptance:** Closed — rule, `CLAUDE.md` and ADR-0008 agree.
 
-## Suggested R1 increments
+## R1 increments
 
-Security first, then the mechanisms other fixes depend on. One increment = one branch commit
-series per `CLAUDE.md` §8; each needs its own tests before merge.
-
-| Inc | Scope | Findings | Why this order |
-|---|---|---|---|
-| a | Alertmanager renderer: modes, errors, escaping, determinism | F26, F26b, F35, F36, F8, F39, F48 | Live credential exposure; one service, one script |
-| b | Docker socket and privilege | F28, F30, F34, F46 | Host-root equivalence; F28 is a one-line first step |
-| c | LAN exposure and firewall contract | F45, F31, F42, F15 | F45 needs a Pi-side measurement first; decides F15 |
-| d | Config hash that works | F1, F2, F29, F13 | Makes every later config change actually deploy |
-| f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | One test file becomes the home of all hardening checks |
-| e | Host reconciliation ADR | F16, F17, F18, F43, F19, F20 | Needs an ADR decision before code (roadmap R1 exit) |
-| g | Supply chain | F3, F37, F4, F24, F44 | Digest pins + Renovate coverage together |
-| h | Toolchain and dead tests | F21, F22, F23, F25, F47, F11, F49 | Low risk, quick |
-| i | Docs | F5, F6, F12 | Last, so they describe the fixed state |
-| R2 | Backup tests | F9 | Roadmap stage R2 |
-
-Closed or nothing left to do: F10, F14, F40.
+The grouping into increments, their order and what is open or done per group moved to
+`.claude/roadmap.md` §6 on 2026-09-26. `tools/check_findings.py` keeps it consistent with the
+index above.

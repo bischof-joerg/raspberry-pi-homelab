@@ -1,3 +1,5 @@
+Read `.claude/roadmap.md` and plan the next increment with `/increment-plan`
+
 ____ TODO STACK _____
 
 test/-lib/paths.py einführen?
@@ -22,25 +24,6 @@ Thema CI / Update Automation / Renovation angehen. Erkläre mir den Setup, den W
 Skripte für Backup und Restore erstellen
 Backup: erkennt automatisch alle *.env ohne .example
 Restore-Guard: Warnung, wenn .env.example existiert, aber .env fehlt
-
-Service sauber dokumentieren unter docs/services - erstellen von
-- docs/services/<service>.md
-- docs/services/<service>_dod.md ()
-
-Template für die Services Dokumentation erarbeiten - pro Service ein
-- docs/services/<service>.md
-- docs/services/<service>_dod.md
-Was sollte in die diese beiden Dateien rein?
-- docs/services/<service>.md
-	- Use case
-	- Analyse
-	- State
-	...
-- docs/services/<service>_dod.md
-	- siehe OneNote "Service Classes"
-	- siehe OneNote "DoD Services Template"
-
-
 
 Traefik einführen
 
@@ -95,33 +78,46 @@ vector update auf version image: timberio/vector:0.58.0-debian mit runtime issue
     reverted to image: timberio/vector:0.53.0-debian
 
 
-# Nach Claude Transitions
-Verbessere den Stack:
-- Wie mit Grafana dashbords umgehen: Download und Formatierung mit bestehenden skripten, Review der Scripte nach neuer Grafana version
-- Konsistenz der ADRs mit Claude regeln überprüfen
-- Doku template für Services verbessern und pro Stack in eigenem Verzeichnis pro stack mit template einführen für monitoring unter docs\services\monitoring\
-	- Empfehlung für template erarbeiten
-Reviewe den implementierten Stack - sind alle Regeln und Guidelines umgesetzt oder gibt es weiter Findings
+# Nach Claude Transitions mit Findings:
+
+
 Wie Fehler auf dem PI mit Hilfe von Claude analysieren? Was sind mögliche Ansätze um Logs zu analysieren, was ist Deine Empfehlung?
+
+Doku template für Services verbessern und pro Stack in eigenem Verzeichnis pro stack mit template einführen für monitoring unter docs\services\monitoring\
+Service sauber dokumentieren unter docs/services - erstellen von
+- docs/services/<service>.md
+- docs/services/<service>_dod.md ()
+
+Template für die Services Dokumentation erarbeiten - pro Service ein
+- docs/services/<service>.md
+- docs/services/<service>_dod.md
+Was sollte in die diese beiden Dateien rein?
+- docs/services/<service>.md
+	- Use case
+	- Analyse
+	- State
+	...
+- docs/services/<service>_dod.md
+	- siehe OneNote "Service Classes"
+	- siehe OneNote "DoD Services Template"
+
+
+Weitere Findings?:
+Review des upgrade und update planes der Pi Laufzeit? Soll dieses Thema nach der Implementierung von Backup angegangen werden?
+Review: Gibt es im Respository einen Ansatz zum kontrollierten aktualisieren der WSL und .venv Umgebung? Wann sollte dies angegangen werden?
+Review den im .Claude implementierten Ansatz: Gibt es Verbesserungsbedarf und weitergehende Empfehlung für einen effizienteren und effektiveren Einsatz von Claude?
+Verbessere den Stack:
+- Wie mit Grafana dashbords umgehen: Download und Formatierung mit bestehenden Skripten in scripts/grafana siehe Beschreibung in stacks/monitoring/grafana/grafana_dashboards.md
+- Review der Scripte und des dokumentierten Workflows
+- sollte die Datei stacks/monitoring/grafana/grafana_dashboards.md nach docs/operations verschoben werden?
+- macht es Sinn die Aktualisierung von Grafana Dashboards, oder neue Dashboards mit einem Claude Mitteln - skill, rule, subagent - zu implmentieren und die Anhalte sowie den Ansatz nach bei neuen Grafana versionen zu analysieren und gegebenenfalls zu verbessern. Vor allem neue Major Versionen von Grafana kamen in der Vergangenheit mit inkompatiblen Änderung in Grafana und den Dashbaoards.
+Konsistenz der ADRs mit Claude regeln überprüfen
+Reviewe den implementierten Stack - sind alle Regeln und Guidelines umgesetzt oder gibt es weiter Findings?
 Checke all Dokumente im Ordner \docs sowie die root Datei README.md auf Aktualität. Bei Inkonsistenzen zum Implementierungsstand oder den Richtlinien, mache entsprechende Verbesserungen die ich dann reviewe.
 
-# Immer wieder victoriologs instance down alerts. Hilf mir diese zu analysieren? Liegt ein Problem vor oder ist der alert zu scharf (cannot scrape for >1 minute)
-1 alert for alertname=InstanceDown job=victorialogs severity=critical
-View in Alertmanager
-[1] Firing
-Labels
-alertname = InstanceDown
-alertgroup = general
-instance = victorialogs:9428
-job = victorialogs
-severity = critical
-Annotations
-description = vmagent cannot scrape this target for > 1 minute.
-summary = Target down (job=victorialogs, instance=victorialogs:9428)
-Source
+Macht es nicht Sinn die Findings von der ClaudeTransition.md zu separieren einen eigenen Feature-Backlog zusammen mit den Implementierungsphasen? Wenn ja, was wäre ein effizienter Vorschlag dies umzusetzen?
 
 Arbeite weiter an Findings:
-- lege Branch docs/r1-f46-privileged-adr an
 Antworte auf Deutsch. Wir sind in Roadmap-Stufe R1. Stand: Gruppe a ist bis auf F26b (→ R2/F9)
 abgeschlossen; F48, F49 und F28 sind addressed (letzter Merge f2a3172, Log gemergt). Lies zuerst
 .claude/ClaudeTransition.md §10.4 (Inkrement-Log) und in .claude/reports/repo-findings.md den
@@ -150,6 +146,20 @@ Antworte auf Deutsch. Wir sind in Roadmap-Stufe R1. Starte mit Inkrement 1 aus
 .claude/reports/repo-findings.md (Findings F26, F26b, F35: SMTP-Passwort world-readable). branch switch auf fix/r1-alertmanager-secret-mode durchgeführt.
 Nutze /increment-plan und lege mir den Plan vor, bevor du etwas änderst.
 
+# Immer wieder victoriologs instance down alerts. Hilf mir diese zu analysieren? Liegt ein Problem vor oder ist der alert zu scharf (cannot scrape for >1 minute)
+1 alert for alertname=InstanceDown job=victorialogs severity=critical
+View in Alertmanager
+[1] Firing
+Labels
+alertname = InstanceDown
+alertgroup = general
+instance = victorialogs:9428
+job = victorialogs
+severity = critical
+Annotations
+description = vmagent cannot scrape this target for > 1 minute.
+summary = Target down (job=victorialogs, instance=victorialogs:9428)
+Source
 
 
 # Claud Transition

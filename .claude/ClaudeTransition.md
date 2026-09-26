@@ -1,5 +1,11 @@
 # Claude Transition Plan – raspberry-pi-homelab
 
+> **ARCHIVED 2026-09-26 — historical record of roadmap stage R0, no longer maintained.**
+> The living plan — delivery rules IN1–IN13, increment template, roadmap R1–R4, the R1 findings
+> groups and the increment log from R1 on — is `.claude/roadmap.md`. Findings are in
+> `.claude/reports/repo-findings.md`. Sections 3.6 and 10.1–10.4 below are pointer stubs; the
+> guard design (§5.4) stays here because `.claude/hooks/` cites it.
+
 - **Status:** **R0 COMPLETE, PHASES 0–8** (v2.6, 2026-09-24). Phase 8 was merged via PR #12, merge
   commit `99a6347`. The guard runs in mode **`operate`**, and V8.1/V8.2 passed. Roadmap stage is now
   **R1**, highest severity first (plan: `.claude/reports/repo-findings.md`, index and R1 table).
@@ -169,64 +175,10 @@ Cross-cutting [V]: external networks `monitoring` and `apps` (bootstrapped by
 
 ### 3.6 Findings backlog (for the human operator – NOT to be fixed by Claude during transition)
 
-**Index only since Phase 6 (2026-09-23).** The full entries — evidence with `file:line`, impact,
-proposed fix, test and acceptance criterion — live in `.claude/reports/repo-findings.md`, which is
-the single source of truth. This index must list the same IDs; `.claude/tools/check_findings.py`
-fails if it does not. The earlier full table (with the evidence as first recorded) is in the git
-history of this file up to commit `2c88ea6`.
-
-| ID | Finding | Sev | Status |
-|---|---|---|---|
-| F1 | Config hash is driven by a single runtime file | High | open |
-| F2 | Hash list names a missing file and two unmounted ones | Med | open |
-| F3 | Images pinned by tag, not by digest | Med | open |
-| F4 | Renovate manages compose images only | Med | open |
-| F5 | `README.md` describes a stack that no longer exists | Low | open |
-| F6 | ADR numbering and titles are inconsistent | Low | open |
-| F7 | Missing restart policy / healthchecks | Med | open |
-| F8 | Renderer installs `gettext` from the network at every run | Med | addressed |
-| F9 | Backup scripts have no tests although ADR-009 requires them | High | open |
-| F10 | pytest version drift between pre-commit and `.venv` | Low | addressed |
-| F11 | `.gitattributes` does not pin LF for all text types | Low | open |
-| F12 | `.env.example` duplicates keys and holds host-derived values | Low | open |
-| F13 | Compose mounts a templates directory that does not exist | Med | open |
-| F14 | DevWorkflow committed before `make ci` | Low | addressed |
-| F15 | UFW is not reconciled on deploy | Med | open |
-| F16 | Network bootstrap on deploy skips subnet/bridge validation | Med | open |
-| F17 | `daemon.json` applied before the network it references exists | Med | open |
-| F18 | Any `daemon.json` change restarts Docker during deploy | Med | open |
-| F19 | Host-specific literals in reconciliation scripts | Low | open |
-| F20 | `ensure-journald-read.sh` default user does not match its use | Low | open |
-| F21 | Toolchain drift between `.venv` and pre-commit | Med | partly |
-| F22 | Three diverging sources of dev dependencies | Med | open |
-| F23 | Tests marked `lint` are never run by any gate | Med | open |
-| F24 | Renovate validator hook runs a floating image tag | Med | open |
-| F25 | JSON test scans git-ignored files | Low | open |
-| F26 | Alertmanager SMTP password written world-readable | High | addressed |
-| F26b | The same password persists in every backup archive | High | partly |
-| F27 | Container uid left to image defaults for 8 of 10 services | Med | open |
-| F28 | cadvisor mounts the Docker socket read-write | High | addressed |
-| F29 | Config-hash label missing on 5 of 10 services | High | open |
-| F30 | vector is effectively host root via the Docker socket | High | open |
-| F31 | Grafana admin credentials default to empty | High | open |
-| F32 | Grafana runs without `read_only` on a wrong justification | Med | open |
-| F33 | vector has no healthcheck | Low | open |
-| F34 | vector joins the `apps` network without a reason | Med | open |
-| F35 | Renderer swallows errors despite `set -euo pipefail` | Med | addressed |
-| F36 | Renderer builds YAML without escaping | Med | addressed |
-| F37 | `alpine:3.24` is a floating minor tag | Med | addressed |
-| F38 | `depends_on` ignores existing healthchecks | Low | open |
-| F39 | German comment in the renderer script | Low | addressed |
-| F40 | Volume naming rule contradicted the implementation | Low | addressed |
-| F41 | No static guard for the compose hardening contract | Med | partly |
-| F42 | LAN exposure of 3000/9428 is recorded in no document | Med | partly |
-| F43 | ADR-0001 promises subnet validation the deploy path skips | Med | open |
-| F44 | Stale image tag in a Markdown example | Low | open |
-| F45 | UFW very likely does not govern the published ports | High | open |
-| F46 | cadvisor's privileged mode is undocumented; docs say the opposite | High | open |
-| F47 | cadvisor doctor test never runs; its skip hides a compose error | Med | open |
-| F48 | Orphaned named alertmanager-config volumes held an old SMTP password | High | addressed |
-| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Low | addressed |
+**Archived 2026-09-26.** This index duplicated the one in `.claude/reports/repo-findings.md` and
+was dropped; the report's index is the only one, and the open/done status per R1 group is in
+`.claude/roadmap.md` §6. The index as it stood at archiving (F1–F49) is in the git history of this
+file up to commit `89f4a40`.
 
 ### 3.7 Security-relevant facts for Claude's boundaries [V]
 
@@ -2111,63 +2063,19 @@ stage are **increments** `R<stage>.<n>`.
 
 ### 10.1 Delivery rules (permanent, apply from R0 on)
 
-| ID | Rule |
-|---|---|
-| IN1 | Exactly one feature is in progress at any time. A new feature starts only after the previous one is deployed and its postdeploy tests are green. |
-| IN2 | A feature is split into increments. Each increment is small enough to review in one sitting, changes one concern, and leaves the system deployable. Splits that create an undeployable intermediate state are not allowed. |
-| IN3 | Every increment ships with matching tests: static tests (`tests/precommit` or `tests/guards`) for repo-level contracts, and postdeploy tests (`tests/postdeploy`) for runtime behaviour. Tests are written or extended **before or together with** the implementation. |
-| IN4 | Local gate before commit: Claude runs the non-mutating gate (5.3, later the operate-mode equivalent); operator runs `make ci`. Validate first, commit afterwards (resolves F14). |
-| IN5 | Claude proposes a Conventional Commit message and a short change summary. The operator reviews the diff and commits personally. Claude never commits, pushes, or deploys (C4, C5). |
-| IN6 | Deployment is manual by the operator: on the Pi `git pull --ff-only`, then `sudo ./deploy.sh` (which runs `make postdeploy`). |
-| IN7 | An increment is **done** only when: CI green, deploy succeeded, postdeploy green, increment log updated (10.4). |
-| IN8 | If deploy or postdeploy fails: no new increment. Either fix forward within the same increment scope or roll back with `git revert` (via branch + PR per IN11/IN12) + pull + deploy. |
-| IN9 | Every increment that adds or changes persistent data, host secrets, ports, UFW rules, Docker networks, or host configuration also updates: backup inventory (ADR-009 §4/§5, from R2 on), `.env.example`, reconciliation scripts (3.8) and their postdeploy checks, network/firewall docs, and Renovate package rules. |
-| IN10 | Version pins only (no `latest`); new images go through the pinning rule and Renovate coverage in the same increment. |
-| IN11 | One feature = one short-lived branch from current `main` (`feat/…`, `fix/…`, `chore/…`, `docs/…`). Increments are commits on that branch. Branch is deleted after merge. |
-| IN12 | Operator pushes the branch and opens a pull request; CI (`ci.yml`, trigger `pull_request`) must be green before merge. Claude proposes PR title and description but does not create the PR (`gh` denied). |
-| IN13 | Only `main` is deployed. On the Pi: `git switch main` (once), `git pull --ff-only`, `sudo ./deploy.sh`. Feature branches are never checked out on the Pi. For a multi-increment feature, the operator either merges after each deployable increment or merges once at feature end; in both cases every merged state must pass IN7. |
+**Moved 2026-09-26** to `.claude/roadmap.md` §2 (IDs IN1–IN13 unchanged).
 
 ### 10.2 Increment template (output of skill `increment-plan`)
 
-```markdown
-## R<stage>.<n> – <title>
-- Feature: <feature this increment belongs to>
-- Goal (one sentence):
-- Scope: files expected to change
-- Out of scope:
-- Tests first: <new/changed test files and what each asserts>
-- Implementation steps:
-- Local gate: Claude read-only gate result / operator `make ci` result
-- Proposed commit message:
-- Branch: <feat|fix|chore|docs>/<short-name>
-- Proposed PR title/description:
-- Pi steps (after merge to main): git pull --ff-only; sudo ./deploy.sh
-- Acceptance: <observable postdeploy criteria>
-- Rollback: git revert <merge-or-commit> on a fix branch → PR → merge → Pi: git pull --ff-only; sudo ./deploy.sh
-- Backup/docs/Renovate impact (IN9):
-```
+**Moved 2026-09-26** to `.claude/roadmap.md` §3.
 
 ### 10.3 Roadmap
 
-| Stage | Feature | Entry criteria | Exit criteria |
-|---|---|---|---|
-| **R0** | Claude transition: Phases 0–7 of this document, then Phase 8 (retire C1/C2) | This plan approved | All transition verifications recorded; guard in `operate` mode; operator-confirmed edit scope |
-| **R1** | Review of the existing implementation, including host/runtime/network reconciliation (3.8) | R0 done | Findings F1–F24 re-verified and extended; decision (ADR) on which host state `deploy.sh` reconciles vs. which stays manual (UFW, network attributes, daemon.json restart policy); prioritised backlog; each accepted finding scheduled as its own increment |
-| **R2** | Backup: finish implementation and tests (ADR-009) | R1 done or at least R1 findings affecting backup fixed | `make backup`, `make backup_verify` on the Pi green; fixture tests from ADR-009 §14.2 green in CI; restore dry-run and one non-critical live restore proven (§14.3); open GPG steps (doc step 6 ff.) completed |
-| **R3** | Core stack: Traefik with automated Let's Encrypt | R2 done (backup covers new state) | `stacks/core/compose/` deployed; valid LE certificates with automatic renewal; existing LAN UIs routed via Traefik; postdeploy tests for routing, TLS, redirects, and cert expiry; backup inventory extended |
-| **R4.1** | App stack: Stirling PDF | R3 done | Per-app stack under `stacks/apps/stirling-pdf/`, behind Traefik, tests, docs, Renovate rule enabled |
-| **R4.2** | App stack: AdGuard Home | R4.1 done | Same as R4.1 plus DNS-specific tests |
-| **R4.3** | App stack: Home Assistant | R4.2 done | Same as R4.1 plus backup of HA data verified by restore test |
-
-Prerequisites that must be clarified at the start of the respective stage (not blocking R0):
-
-- **R3 – Let's Encrypt with a LAN-only Pi:** `rpi-hub.fritz.box` is not a publicly registered domain, so no public CA can validate it. Two challenge options exist: HTTP-01 requires Let's Encrypt to fetch a token from the host over HTTP, which needs public reachability; DNS-01 proves control via a TXT record and only makes sense for automation if the DNS provider offers an API (https://letsencrypt.org/docs/challenge-types/). For a LAN-only Pi, DNS-01 with a public domain is the likely path. Open: which domain (`Todo.txt` mentions an existing domain at WebHostOne), whether that provider is supported by Traefik's ACME DNS providers (not yet verified), and how local name resolution for the public names is done (e.g. AdGuard rewrites later in R4.2, or FritzBox DNS).
-- **R3 – Firewall:** Traefik adds inbound 80/443 (and possibly removes direct LAN exposure of 3000/9428). This depends on the R1 decision on UFW reconciliation (F15).
-- **R3 – deploy.sh:** currently deploys only the monitoring stack. Multi-stack deployment (order, per-stack env files, per-stack config hash) is a design decision (ADR) at the start of R3.
-- **R4.2 – AdGuard Home:** needs port 53 on the Pi and a decision on how clients use it (FritzBox DNS setting); conflicts with any existing local DNS listener must be checked on the Pi.
-- **R4.3 – Home Assistant:** device discovery commonly relies on host networking, which conflicts with the explicit-network rule (hint §7). Needs an ADR exception or an alternative before implementation.
+**Moved 2026-09-26** to `.claude/roadmap.md` §4 (stages, entry/exit criteria, R3/R4 prerequisites).
 
 ### 10.4 Increment log
+
+R0 rows only, frozen. From R1 on, the log is `.claude/roadmap.md` §7.
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
@@ -2175,13 +2083,6 @@ Prerequisites that must be clarified at the start of the respective stage (not b
 | R0.0b workflow docs merge (`docs/r0-workflow-docs`) | 2026-09-17 | 6fa74937cd4b48190d0117fd44d7bd319a07f369 | green |  tests: passed, deploy: done | interlinked the documents |
 | R0.1 (Phase 0) | 2026-09-17 | 48d17669ce91be0484babbfbfcf0db41b8c32e2f | green | tests: passed, deploy: done | Ruleset verified (1a, 1b); test 4 failed: auto-delete head branches was disabled, enabled 2026-09-17, verify on next PR. Row was labelled "Phase 1a" by mistake; its evidence is Phase 0 (branch protection, toolchain record). |
 | R0.10 (Phase 8) | 2026-09-24 | `7a3c7a8` (P7–P10), `c12edc4` (switch), `10839c3` (artefacts), `e72f314` (V8.2); merge `99a6347` (PR #12) | green | deploy: done, postdeploy: green (regression only) | Guard mode `operate` with an enforced write scope; tests 77 → 147; preflight 23/23; V8.1 5/5 refused live; V8.2 first write outside `.claude/`. The first `make ci` run by Claude produced F47 and new F21 evidence. A negative test (V1.12/L2) that operate mode would have made destructive was caught in 8.3. |
-| F28 cadvisor socket :ro | 2026-09-25 | `1a2f26c` (tests), `b447602` (fix); merge `f2a3172` (PR #24) | green | deploy: done twice, postdeploy green (62 passed, 4 skipped) | cadvisor recreated with the socket `:ro`; named container metrics read live from the fresh cadvisor, mount `RW=false`. Near-zero security gain alone (privileged stays; `:ro` does not restrict the API) — F46 step (1) done. Same deploy proved F49: its pull changed `tests/postdeploy/test_25`, `find ! -user admin` empty right after, next deploy `repo-ownership: OK` → F49 addressed. |
-| F49 no-bytecode | 2026-09-25 | `dca1145` (tests), `05eee19` (fix); merge `19c76ab` (PR #22) | green | deploy: done twice, postdeploy green, both `repo-ownership: OK`; `find ! -user admin` empty | Fix in `scripts/tests/run-tests.sh` (export + explicit in the sudo env call). **Not yet proof:** this pull changed no module that postdeploy imports, so nothing would have been recompiled anyway. F49 stays partly until a pull changes `tests/postdeploy`. |
-| F48 guard (host-wide no-volume check) | 2026-09-25 | `785dee5` (tests), `133b615` (helper); merge `acdd38b` (PR #20) | green | deploy: done, postdeploy: green (60 passed, 4 skipped) incl. `test_host_has_no_docker_volumes` | Variant a (operator): any Docker volume on the Pi fails; parsing proven by guards `test_40` (strict xfail first). ADR-0008 gained an Enforcement section. F48 addressed. The same deploy confirmed F49: two root-owned `.pyc` files for the changed test modules; the next deploy (14:27) logged `repo-ownership: mismatch`. |
-| R1.2-fix renderer anon volume | 2026-09-25 | `39c9e8c`; merge `44f09b0` (PR #18) | green | deploy: done, postdeploy: green (59 passed, 4 skipped) after a one-time operator cleanup | `tmpfs: [/alertmanager]` on the renderer. The first redeploy still failed `test_56`: compose carries anonymous volumes over to a recreated container; fixed once with `docker compose rm -s -f -v alertmanager-config-render`, then deploy. Measured: `HostConfig.Tmpfs {"/alertmanager":""}`, bind mounts only. Afterwards three legacy named volumes removed, one held an old SMTP password (F48); `docker volume ls` empty. `repo-ownership` OK at 13:50 — likely cause of the earlier mismatches recorded as F49. R1.2 complete. |
-| R1.2 Alertmanager renderer (F36, F8, F37) | 2026-09-25 | `bc37ada` (tests), `bdb6a80` (fix); merge `07b4448` (PR #17) | green | deploy: containers up, **postdeploy failed** — `test_56`: anonymous volume on the renderer from the image's `VOLUME /alertmanager`; 58 other checks passed incl. `test_22` (exit 0, network none) | IN8 fix-forward on `fix/r1-2-renderer-anon-volume`: `tmpfs: [/alertmanager]`, plus an image-VOLUME coverage test. The dangling volume `de74cbca…` is removed by the operator after that deploy. Deploy also logged `repo-ownership: mismatch detected` (cause unknown). |
-| R1.1-fix renderer group | 2026-09-25 | `99fcdd7`; merge `2657096` (PR #15) | green | deploy: done, postdeploy: green (58 passed, 4 skipped) | Renderer `0:0` + `group_add 65534`. Measured on the Pi: dir `750 root:nogroup`, file `640 root:nogroup`; second run `init-permissions: skipped (already correct)`. F26, F35, F39 accepted; F26b partly (restore fixture → R2/F9). |
-| R1.1 Alertmanager secret mode (F26, F26b, F35, F39) | 2026-09-25 | `5993245` (tests), `bf1693a` (fix); merge `2fdfb10` | green | **deploy failed** — renderer exit 10 (`apk add` cannot chown with primary group 65534 and no `CAP_CHOWN`); alertmanager left `Created`; postdeploy not reached | IN8 fix-forward on `fix/r1-alertmanager-render-group`: renderer `user: "0:0"` + `group_add: ["65534"]`. The fix row follows after its deploy. |
 | R0.9 (Phase 7) | 2026-09-24 | `c9d2c5dbcf2ee94389335c42d636a312c3c75597` (merge, PR #10) | green | deploy: done, postdeploy: green | Handover: `make ci` green, V7.1/V7.2 passed. R0.2–R0.8 were delivered together in this merge, so their CI and deploy columns refer to it. |
 | R0.2 (Phase 1a) | 2026-09-18 | `ecfc0ba`, merged in `c9d2c5d` | green | done via R0.9 (`.claude/` has no runtime effect) | Safety foundation built: `.gitignore`, `settings.json`, `guard.py`, `guard-config.json`, 35 guard tests. V1.1/V1.9 green, V1.3b negative (5.2.1 D-f). Hook not yet registered — that is Phase 1b. |
 | R0.8 (Phase 6) | 2026-09-23 … 24 | `ea6f7bb`, `e963151`, merged in `c9d2c5d` | green | done via R0.9 | `readme_claude.md` (operator guide incl. grouped deny list), `reports/repo-findings.md` (47 findings, five fields each, R1 grouping a–i), verifiers moved to tracked `tools/` (D6-a, three latent ruff errors fixed) plus `check_findings.py`; §3.6 reduced to an index (D6-b). V6.2 passed with negative controls. **V6.1 passed 2026-09-24** after the operator walkthrough, which found and fixed seven readme/skill defects (#1–#7), including one that caused a real test commit and a README overwrite. V1.10–V1.16 re-confirmed on 2.1.280. |

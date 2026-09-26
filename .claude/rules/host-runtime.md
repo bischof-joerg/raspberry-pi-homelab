@@ -56,4 +56,4 @@ difference between a fix that holds and one that is silently undone.
 `deploy.sh`, `scripts/host/`, `scripts/host-runtime/`, `scripts/network/`,
 `stacks/core/docker/daemon.json`, `tests/postdeploy/test_35_network_and_ufw.py`,
 `docs/operations/runtime-updates.md`, `docs/architecture/adr/ADR-0001-networking-and-firewall.md`.
-Findings F15–F19 in `.claude/ClaudeTransition.md`.
+Findings F15–F19 in `.claude/reports/repo-findings.md`.
