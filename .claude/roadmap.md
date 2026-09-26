@@ -1,6 +1,6 @@
 # Roadmap – raspberry-pi-homelab
 
-The living plan for roadmap stages R1–R5: where the work stands, the rules every increment follows,
+The living plan for roadmap stages R1–R6: where the work stands, the rules every increment follows,
 the open findings by group, and the increment log. `.claude/CLAUDE.md` is always loaded; this file
 is read at the start of any work session. The Claude transition (R0) is complete and archived in
 `.claude/ClaudeTransition.md` — historical record only, no longer maintained.
@@ -18,7 +18,8 @@ is read at the start of any work session. The Claude transition (R0) is complete
   pip, idempotent `make venv`, one source of dev dependencies. Every later increment relies on
   `make ci` as evidence, and today each gate run may upgrade tools within version ranges.
 - **Stages re-planned on 2026-09-26:** a new R2 (quality and lifecycle, §9) sits between R1 and
-  backup; backup, core and apps moved to R3, R4 and R5.
+  backup (now R3); a new R4 (service standard, §9.7) follows backup; core and apps moved to R5
+  and R6.
 - **Starting a new session:** read `.claude/CLAUDE.md`, this file, and the findings named in the next
   increment. Then plan with the `increment-plan` skill and present the plan before writing.
 
@@ -75,18 +76,19 @@ of an increment is recorded on a short `docs/` branch after its deploy.
 | **R1** | Review of the existing implementation, including host/runtime/network reconciliation | R0 done | Every finding re-verified against `main`; decision (ADR) on which host state `deploy.sh` reconciles vs. which stays manual (UFW, network attributes, daemon.json restart policy); each accepted finding fixed or scheduled as its own increment |
 | **R2** | Quality and lifecycle: ADRs ↔ rules, dev-environment lifecycle, stack review against the rules, Grafana dashboard lifecycle, documentation (§9) | R1 done | Exit criteria of R2.1, R2d, R2a, R2c and R2b in §9 met |
 | **R3** | Backup: finish implementation and tests (ADR-009); then the Pi runtime lifecycle (R3b, §9) | R2 done, or at least the findings affecting backup fixed | `make backup`, `make backup_verify` on the Pi green; fixture tests from ADR-009 §14.2 green in CI; restore dry-run and one non-critical live restore proven (§14.3); open GPG steps (doc step 6 ff.) completed; first increment after that: the Grafana major upgrade (R2c.6); exit criteria of R3b in §9 met |
-| **R4** | Core stack: Traefik with automated Let's Encrypt | R3 done (backup covers new state) | `stacks/core/compose/` deployed; valid LE certificates with automatic renewal; existing LAN UIs routed via Traefik; postdeploy tests for routing, TLS, redirects, and cert expiry; backup inventory extended |
-| **R5.1** | App stack: Stirling PDF | R4 done | Per-app stack under `stacks/apps/stirling-pdf/`, behind Traefik, tests, docs, Renovate rule enabled |
-| **R5.2** | App stack: AdGuard Home | R5.1 done | Same as R5.1 plus DNS-specific tests |
-| **R5.3** | App stack: Home Assistant | R5.2 done | Same as R5.1 plus backup of HA data verified by restore test |
+| **R4** | Service standard: templates, rule, skill and guard for service documentation and a class-based Definition of Done; every existing monitoring service documented and checked against it (§9.7) | R3 done (backup and restore state is proven and can be documented) | Exit criteria in §9.7 met |
+| **R5** | Core stack: Traefik with automated Let's Encrypt — the first new service under the R4 standard | R4 done | `stacks/core/compose/` deployed; valid LE certificates with automatic renewal; existing LAN UIs routed via Traefik; postdeploy tests for routing, TLS, redirects, and cert expiry; backup inventory extended; service docs and DoD per R4 |
+| **R6.1** | App stack: Stirling PDF | R5 done | Per-app stack under `stacks/apps/stirling-pdf/`, behind Traefik, tests, docs, Renovate rule enabled; service docs and DoD per R4 |
+| **R6.2** | App stack: AdGuard Home | R6.1 done | Same as R6.1 plus DNS-specific tests |
+| **R6.3** | App stack: Home Assistant | R6.2 done | Same as R6.1 plus backup of HA data verified by restore test |
 
 Prerequisites to clarify at the start of the respective stage:
 
-- **R4 – Let's Encrypt with a LAN-only Pi:** `rpi-hub.fritz.box` is not a publicly registered domain, so no public CA can validate it. HTTP-01 needs public reachability; DNS-01 proves control via a TXT record and only makes sense for automation if the DNS provider offers an API (https://letsencrypt.org/docs/challenge-types/). For a LAN-only Pi, DNS-01 with a public domain is the likely path. Open: which domain (`Todo.txt` mentions an existing domain at WebHostOne), whether that provider is supported by Traefik's ACME DNS providers (not yet verified), and how local name resolution for the public names is done (AdGuard rewrites in R5.2, or FritzBox DNS).
-- **R4 – Firewall:** Traefik adds inbound 80/443 (and possibly removes direct LAN exposure of 3000/9428). This depends on the R1 decision on UFW reconciliation (F15, F45).
-- **R4 – deploy.sh:** currently deploys only the monitoring stack. Multi-stack deployment (order, per-stack env files, per-stack config hash) is an ADR decision at the start of R4.
-- **R5.2 – AdGuard Home:** needs port 53 on the Pi and a decision on how clients use it (FritzBox DNS setting); conflicts with any existing local DNS listener must be checked on the Pi.
-- **R5.3 – Home Assistant:** device discovery commonly relies on host networking, which conflicts with the explicit-network rule. Needs an ADR exception or an alternative before implementation.
+- **R5 – Let's Encrypt with a LAN-only Pi:** `rpi-hub.fritz.box` is not a publicly registered domain, so no public CA can validate it. HTTP-01 needs public reachability; DNS-01 proves control via a TXT record and only makes sense for automation if the DNS provider offers an API (https://letsencrypt.org/docs/challenge-types/). For a LAN-only Pi, DNS-01 with a public domain is the likely path. Open: which domain (`Todo.txt` mentions an existing domain at WebHostOne), whether that provider is supported by Traefik's ACME DNS providers (not yet verified), and how local name resolution for the public names is done (AdGuard rewrites in R6.2, or FritzBox DNS).
+- **R5 – Firewall:** Traefik adds inbound 80/443 (and possibly removes direct LAN exposure of 3000/9428). This depends on the R1 decision on UFW reconciliation (F15, F45).
+- **R5 – deploy.sh:** currently deploys only the monitoring stack. Multi-stack deployment (order, per-stack env files, per-stack config hash) is an ADR decision at the start of R5.
+- **R6.2 – AdGuard Home:** needs port 53 on the Pi and a decision on how clients use it (FritzBox DNS setting); conflicts with any existing local DNS listener must be checked on the Pi.
+- **R6.3 – Home Assistant:** device discovery commonly relies on host networking, which conflicts with the explicit-network rule. Needs an ADR exception or an alternative before implementation.
 
 ## 5. Decisions in force
 
@@ -99,7 +101,8 @@ Full text in `.claude/ClaudeTransition.md` §2 (archive).
 | Q1 | C1/C2 (write only in `.claude/`) were transition-only and retired in Phase 8; C3–C6 are permanent. |
 | Q7, Q8 | Guard: Python stdlib, `shlex` tokenising; unclassified Bash commands pass to deny rules and plan-mode approval. |
 | D1 | One feature at a time in small, tested increments; the operator commits, pulls on the Pi and deploys. |
-| D2 | Roadmap R0 → R1 → R2 → R3 → R4 → R5 (§4); the original R2–R4 became R3–R5 when R2 was inserted (operator, 2026-09-26). |
+| D2 | Roadmap R0 → R1 → R2 → R3 → R4 → R5 → R6 (§4). On 2026-09-26 the operator inserted R2 (quality and lifecycle) and R4 (service standard); the original R2 backup, R3 core and R4 apps became R3, R5 and R6. |
+| — | Service standard (operator, 2026-09-26): per service `docs/services/<stack>/<service>.md` and `<service>_dod.md` from `docs/services/_template.md` and `_template_dod.md`; classification in YAML front matter with five dimensions (lifecycle, state per ADR-009, exposure, privilege, criticality) checked by a guard against compose; one rule `service-docs.md`, one skill `service-doc` (modes onboard/review), no new subagent. |
 | — | ADRs are the decision; a rule that deviates is corrected. An ADR changes only on the operator's decision, by a dated amendment or "Superseded by", never by rewriting; renaming to the four-digit form (F6) touches file name and title only (operator, 2026-09-26). |
 | Q9 | Short-lived branch per feature, CI on the pull request, only `main` is deployed. |
 
@@ -133,7 +136,7 @@ R1 onwards, newest first. R0 rows stay in `.claude/ClaudeTransition.md` §10.4 (
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
-| Roadmap document | 2026-09-26 | pending | pending | no runtime effect | `.claude/roadmap.md` created; `ClaudeTransition.md` archived; §3.6 index duplicate dropped, `check_findings.py` checks the §6 group table instead. Same branch: stage R2 inserted (§9), R2–R4 renumbered to R3–R5, group i → R2b, F4 → R2d, F21/F22 pulled forward, findings F50–F55 added. |
+| Roadmap document | 2026-09-26 | pending | pending | no runtime effect | `.claude/roadmap.md` created; `ClaudeTransition.md` archived; §3.6 index duplicate dropped, `check_findings.py` checks the §6 group table instead. Same branch: stage R2 inserted (§9), R2–R4 renumbered to R3–R5, group i → R2b, F4 → R2d, F21/F22 pulled forward, findings F50–F55 added; then stage R4 (service standard, §9.7) inserted, core → R5, apps → R6. |
 | F28 cadvisor socket :ro | 2026-09-25 | `1a2f26c` (tests), `b447602` (fix); merge `f2a3172` (PR #24) | green | deploy: done twice, postdeploy green (62 passed, 4 skipped) | cadvisor recreated with the socket `:ro`; named container metrics read live from the fresh cadvisor, mount `RW=false`. Near-zero security gain alone (privileged stays; `:ro` does not restrict the API) — F46 step (1) done. Same deploy proved F49: its pull changed `tests/postdeploy/test_25`, `find ! -user admin` empty right after, next deploy `repo-ownership: OK` → F49 addressed. |
 | F49 no-bytecode | 2026-09-25 | `dca1145` (tests), `05eee19` (fix); merge `19c76ab` (PR #22) | green | deploy: done twice, postdeploy green, both `repo-ownership: OK`; `find ! -user admin` empty | Fix in `scripts/tests/run-tests.sh` (export + explicit in the sudo env call). **Not yet proof:** this pull changed no module that postdeploy imports, so nothing would have been recompiled anyway. F49 stays partly until a pull changes `tests/postdeploy`. |
 | F48 guard (host-wide no-volume check) | 2026-09-25 | `785dee5` (tests), `133b615` (helper); merge `acdd38b` (PR #20) | green | deploy: done, postdeploy: green (60 passed, 4 skipped) incl. `test_host_has_no_docker_volumes` | Variant a (operator): any Docker volume on the Pi fails; parsing proven by guards `test_40` (strict xfail first). ADR-0008 gained an Enforcement section. F48 addressed. The same deploy confirmed F49: two root-owned `.pyc` files for the changed test modules; the next deploy (14:27) logged `repo-ownership: mismatch`. |
@@ -159,7 +162,7 @@ Each has a home in a rule or a test; listed here so a new session sees them at o
 - **Pi-side facts come from the operator.** Measured values (`stat`, `find`, `docker volume ls`) go
   into the findings as evidence with the date; never infer them.
 
-## 9. Stage plans R2 and R3b
+## 9. Stage plans R2, R3b and R4
 
 Planned with the operator on 2026-09-26. Increment numbers are provisional; each block is planned
 in detail with the `increment-plan` skill when it starts. Within R2 the order is
@@ -254,7 +257,7 @@ guidelines. Last in R2, so they describe the state after R2a/R2c.
 |---|---|---|
 | R2b.1 | `README.md` | F5 |
 | R2b.2 | ADRs: numbering, titles, content vs implementation | F6, F43 |
-| R2b.3 | `docs/monitoring.md`, `docs/services/` | F42, rest of F46 |
+| R2b.3 | `docs/monitoring.md`, `docs/services/` — content only; the move into `docs/services/monitoring/` and the templates come in R4 | F42, rest of F46 |
 | R2b.4 | `docs/architecture/networking-and-firewall-model.md` | outcome of R1 groups c/e |
 | R2b.5 | `docs/operations/`: DevWorkflow, git-branch-workflow, runtime-updates (path `~/iac/…`, "Last verified", plan vs script — F55), renovate | F44, F55 |
 | R2b.6 | Backup docs and ADR-009, consistency only (content follows in R3) | — |
@@ -288,3 +291,62 @@ Exit: scripts covered by stub tests; apply executes only the reviewed plan and r
 fresh verified backup; Docker packages settled by ADR; one full cycle logged with postdeploy green;
 version state recorded machine-readably. IN9: R3b.2/R3b.3 add host state files — update the backup
 inventory (ADR-009 §4/§5) and `.claude/rules/host-runtime.md`.
+
+### 9.7 R4 — Service standard (documentation and Definition of Done)
+
+Goal: introducing and reviewing a service follows one checked standard. Existing services are
+documented first; Traefik (R5) is the first new service built under it.
+
+**Layout.** Templates `docs/services/_template.md` and `docs/services/_template_dod.md`; per stack
+`docs/services/<stack>/README.md` (stack overview, data flow) and `_profile.md` (stack-specific DoD
+items — for monitoring: the vmagent → victoriametrics → vmalert → alertmanager chain, retention,
+rule-change process); per service `docs/services/<stack>/<service>.md` and `<service>_dod.md`.
+`docs/services/vector.md` moves to `docs/services/monitoring/vector.md`; `docs/monitoring.md`
+becomes the monitoring `README.md`.
+
+**Service doc** (understanding and fault analysis): summary with classification and "Last
+verified: date + commit"; facts checked against compose (image pin, user, capabilities, networks,
+port bindings, mounts with mode and owner, variable names only, config files, limits,
+`depends_on`, healthcheck); data flow; state and backup class per ADR-009; configuration and
+whether the config hash covers it (F1/F29); observability (health signal, at least three key
+metrics with interpretation, a LogsQL example, dashboards, alerts); operations (start/stop,
+upgrade, rollback); troubleshooting table (symptom → read-only check → cause → fix, known failure
+modes from the log and findings); security (surface, exceptions with ADR); tests; references.
+
+**DoD** — reviewed against the operator's first draft (sections S1–S9 kept, S10 lifecycle end
+added):
+- YAML front matter declares exactly one value per dimension: `lifecycle` (long-running |
+  one-shot), `state` (authoritative | regenerable | stateless — as in ADR-009), `exposure` (none |
+  host-local | lan-direct | ingress), `privilege` (unprivileged | runtime-socket | privileged — above
+  unprivileged requires an ADR), `criticality` (critical | non-critical, with written criteria).
+- One decision table "class → mandatory sections", kept once in the template.
+- Every mandatory item carries **evidence** of one kind: a test (preferred), a dated measurement,
+  or a doc section. No evidence means open.
+- Items already enforced repo-wide point to `.claude/reports/rule-coverage.md` (R2a) instead of
+  restating them; the DoD holds only what is service-specific.
+- Added from R1 experience: config hash covers the config; Renovate rule; backup-inventory entry
+  (IN9); firewall rule if exposed; resource limits; dependencies with `depends_on` conditions;
+  secret rotation, including "complete only after backup retention" (F26b); decommissioning
+  (data, backups, volumes — F48).
+- Items without a mechanism (image vulnerability scan, rate limiting, TLS lifecycle) are optional
+  with a reason, or mandatory only once the mechanism or stage exists; an image scanner is its own
+  topic, not introduced through the DoD.
+- Acceptance per IN7 (CI, deploy, postdeploy, log row), not "one successful deployment".
+
+**Claude artefacts.** Rule `service-docs.md` (paths `docs/services/**`, `stacks/**/compose/**`):
+templates are binding; a service change updates its docs in the same increment; evidence, not
+claims. Skill `service-doc` with modes *onboard* (new service: docs from templates, classification,
+derived DoD, increment plan) and *review* (existing service against compose, tests and DoD → gap
+list → findings); it uses the existing agents `compose-reviewer`, `security-reviewer`,
+`test-author`, `docs-steward`. No new subagent. `new-stack-proposal` requires both documents.
+
+| Inc | Content | Deploy |
+|---|---|---|
+| R4.1 | Templates, monitoring `README.md` and `_profile.md`, moves of `vector.md` and `monitoring.md` | no |
+| R4.2 | Guard `tests/guards/test_70_service_docs.py` (strict xfail per missing service): docs exist for every compose service; front matter consistent with compose (stateful ⇔ bind mount under `/srv/data`, exposure ⇔ port bindings, privilege ⇔ `privileged` or runtime socket); every mandatory DoD item has evidence. Rule `service-docs.md` | no |
+| R4.3 | Skill `service-doc`; `new-stack-proposal` updated | no |
+| R4.4 … R4.8 | The ten monitoring services (nine long-running plus the one-shot renderer) in packages of two or three; each package lifts its xfail markers and yields a DoD gap list | no |
+| R4.9 … | Fixes for gaps that are mandatory and High; others fixed or assigned to a later stage (group column) | as needed |
+
+Exit: guard green for every compose service; no open gap that is mandatory and High; IN7 met for
+the fix increments.

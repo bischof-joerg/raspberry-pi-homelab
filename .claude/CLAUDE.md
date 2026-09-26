@@ -94,8 +94,8 @@ exist; `vector/` was added. The map above is the reality.
 |---|---|
 | monitoring | **implemented** — VictoriaMetrics, vmagent, vmalert, VictoriaLogs, Vector, Alertmanager, Grafana, node-exporter, cAdvisor |
 | backup | **in progress** — ADR-009, public-key GPG model, scripts exist, **no tests yet** (F9); roadmap stage R3 |
-| core (Traefik + Let's Encrypt) | planned, roadmap stage R4 |
-| apps (Stirling PDF, AdGuard Home, Home Assistant) | planned, roadmap stage R5 |
+| core (Traefik + Let's Encrypt) | planned, roadmap stage R5 |
+| apps (Stirling PDF, AdGuard Home, Home Assistant) | planned, roadmap stage R6 |
 
 ## 7. Commands
 
@@ -154,7 +154,7 @@ One feature at a time, delivered in small increments, each with its own tests (D
   host configuration must also update the backup inventory, `.env.example`, the reconciliation
   scripts and their postdeploy checks, the network/firewall docs, and the Renovate rules.
 
-The full delivery rules (IN1–IN13), the roadmap R1–R5, the current stage and next increment, the
+The full delivery rules (IN1–IN13), the roadmap R1–R6, the current stage and next increment, the
 R1 findings groups and the increment log are in **`.claude/roadmap.md` — read it at the start of
 every work session.** R0 (the Claude transition) is complete; `.claude/ClaudeTransition.md` is its
 archived record.
