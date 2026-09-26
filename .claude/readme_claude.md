@@ -32,8 +32,9 @@ Claude Code **2.1.280** installed (live hook tests last run on 2.1.280 — see �
 | `skills/*/SKILL.md` (8) | Invokable procedures | description every turn, body on invocation | Claude, operator reviews | `tools/check_skills.py` |
 | `agents/*.md` (4) | Read-only subagents (`tools: Read, Grep, Glob`) | description at startup; edits hot-reloaded | Claude, operator reviews | `tools/check_agents.py` |
 | `tools/*.py` (4) | Verifiers for rules, skills, agents, findings | run by hand | Claude, operator reviews | `ruff check` |
-| `reports/repo-findings.md` | Findings F1–F49 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
-| `ClaudeTransition.md` | Transition record (R0, complete): decision log, guard design, verification records | only when read | Claude, operator reviews | – |
+| `reports/repo-findings.md` | Findings F1–F55 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
+| `roadmap.md` | Living plan: status and next increment, delivery rules IN1–IN13, roadmap R1–R6 with stage plans, findings groups, increment log | read at session start | Claude, operator reviews | `tools/check_findings.py` (groups) |
+| `ClaudeTransition.md` | **Archive** (R0, complete, since 2026-09-26 not maintained): decision log, guard design §5.4, verification records | only when read | nobody; frozen | – |
 | `scratch/` | Drafts (ADR drafts, patch proposals) — **git-ignored** | – | Claude | not in a fresh clone |
 | `logs/guard.log`, `logs/instructions.log` | Guard decisions (JSON lines), instruction-load events — **git-ignored** | – | written by hooks | grow unbounded; truncate by hand |
 
@@ -72,6 +73,11 @@ and there is no listing command. The static check is `tools/check_agents.py` (§
 `auto` and `bypassPermissions` modes are disabled by `settings.json`; the session starts in plan
 mode. Plan mode writes its plan to `~/.claude/plans/`. Outside the repository, the guard allows
 exactly that directory (patch P6) and temp paths under `/tmp/claude-`, nothing else.
+
+**Resuming work:** a first message such as *"Read `.claude/roadmap.md` and plan the next increment
+with `/increment-plan`."* is enough — §1 of the roadmap names the current stage and the next
+increment, so no hand-written resume prompt is needed. Keep that section current when recording
+an increment.
 
 **Using the artefacts**
 
@@ -392,7 +398,7 @@ settings denies `Edit(/.claude/hooks/**)`, `Edit(/.claude/settings.json)`,
    source under `.claude/hooks/` is refused by the settings layer.
 2. Claude patches and tests the copy there, including a differential run against the live guard
    when existing behaviour must not change. It records what changed and why in the relevant
-   record (`ClaudeTransition.md` or the increment log).
+   record (the increment log in `roadmap.md` §7).
 3. You review with `diff -u`, then `cp` the files into place.
 4. Claude verifies the result with `cmp` against the tested copy and runs §5.2.
 
@@ -415,18 +421,20 @@ with `/hooks`.
 
 ### 6.6 Findings (`reports/repo-findings.md`)
 
-- The report is the source of truth. `ClaudeTransition.md` §3.6 is an index, and must list the
-  same IDs.
-- New finding: add an entry with all five fields, a row in the report index, and a row in §3.6. Then
-  run `tools/check_findings.py`.
+- The report is the source of truth, with its own index. The R1 grouping (open/done per group)
+  is in `roadmap.md` §6.
+- New finding: add an entry with all five fields and a row in the report index. If its status is
+  not `addressed`, add it under "Open" of its group in `roadmap.md` §6. Then run
+  `tools/check_findings.py`, which checks both.
+- Finding fixed: set the index status to `addressed` and move it from "Open" to "Done" of its group.
 - Mark a missing file as `` `path` (absent) ``. The checker verifies that it really is absent.
 
 ### 6.7 After a Claude Code update
 
-1. `claude --version`, and record it in `ClaudeTransition.md`.
+1. `claude --version`, and record it as a row in the increment log (`roadmap.md` §7).
 2. Run §5 completely, including the live checks in §5.4.
 3. Skim the version notes of the settings, hooks, memory, skills and sub-agents docs. The URLs are
-   in `ClaudeTransition.md` §11.
+   in `ClaudeTransition.md` §11 (archive, still valid as a link list).
 
 ---
 

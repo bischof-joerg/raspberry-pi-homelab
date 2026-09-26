@@ -11,7 +11,7 @@ a whole stack is never one commit (IN2), so the proposal is the design, and the 
 
 ## Ask first, if unanswered
 
-- Which roadmap stage — R3 core (Traefik) or R4 apps (Stirling PDF, AdGuard Home, Home Assistant)?
+- Which roadmap stage — R5 core (Traefik) or R6 apps (Stirling PDF, AdGuard Home, Home Assistant)?
 - Does the stack need inbound LAN or internet exposure, and through Traefik or directly?
 - Does it hold persistent data that must enter the backup inventory?
 
@@ -51,8 +51,8 @@ mount — `:ro` is not a mitigation (F30), so a socket proxy plus an ADR is the 
 
 ## Open design questions to surface, not to decide alone
 
-R3 Traefik with a LAN-only Pi needs DNS-01 and a public domain; the provider must be supported by
-Traefik's ACME DNS providers, and that is unverified. R4.2 AdGuard needs port 53 and a decision on
-client DNS. R4.3 Home Assistant commonly wants host networking, which conflicts with the
+R5 Traefik with a LAN-only Pi needs DNS-01 and a public domain; the provider must be supported by
+Traefik's ACME DNS providers, and that is unverified. R6.2 AdGuard needs port 53 and a decision on
+client DNS. R6.3 Home Assistant commonly wants host networking, which conflicts with the
 explicit-network rule and needs an ADR exception. List these in `PROPOSAL.md` rather than picking
 an answer.

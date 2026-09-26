@@ -1,73 +1,23 @@
-____ TODO STACK _____
+Read `.claude/roadmap.md` and plan the next increment with `/increment-plan`
 
-test/-lib/paths.py einführen?
-Wenn du jetzt ohnehin noch etwas strukturieren willst, dann fülle die Datei bewusst, z.B.:
-# tests/_lib/paths.py
-from pathlib import Path
-REPO_ROOT = Path(__file__).resolve().parents[2]
-STACKS_DIR = REPO_ROOT / "stacks"
-MONITORING_DIR = STACKS_DIR / "monitoring"
-COMPOSE_FILE = MONITORING_DIR / "compose" / "docker-compose.yml"
-VMAGENT_CFG = MONITORING_DIR / "vmagent" / "vmagent.yml"
-VMALERT_CFG = MONITORING_DIR / "vmalert" / "vmalert.yml"
-ALERTMANAGER_CFG = MONITORING_DIR / "alertmanager" / "alertmanager.yml"
-Und dann konsequent in Tests verwenden.
-⚠️ Aber:
-Das ist Refactoring, kein Bugfix.
-Ich würde das nach dem ersten sauberen Deploy machen, nicht davor.
+____ TODO STACK _____
 
 
 Thema CI / Update Automation / Renovation angehen. Erkläre mir den Setup, den Workflow danach und das schrittweise umsetzen
 
-Skripte für Backup und Restore erstellen
-Backup: erkennt automatisch alle *.env ohne .example
-Restore-Guard: Warnung, wenn .env.example existiert, aber .env fehlt
-
-Service sauber dokumentieren unter docs/services - erstellen von
-- docs/services/<service>.md
-- docs/services/<service>_dod.md ()
-
-Template für die Services Dokumentation erarbeiten - pro Service ein
-- docs/services/<service>.md
-- docs/services/<service>_dod.md
-Was sollte in die diese beiden Dateien rein?
-- docs/services/<service>.md
-	- Use case
-	- Analyse
-	- State
-	...
-- docs/services/<service>_dod.md
-	- siehe OneNote "Service Classes"
-	- siehe OneNote "DoD Services Template"
-
-
-
 Traefik einführen
-
 Brauche ich eine Domäne? Wenn ja, kann ich eine existierende Domäne auf WebHostOne verwenden?
-
 Traefik mit https und automatischer Cert Rotation in Bezug auf alle Voraussetzungen erklärt bekommen und verstehen.
+
 
 Baseline Image erstellen: Monitoring Stack ohne Traefik
 Datum:
 Dokumentiere commit zu diesem Stand:
 	-  git log --oneline
 
-Skripte unter host-runtime - insbesondere upgrade-apply.sh und upgrade-plan.sh - auf Umgang mit /boot/firmware als ro mount prüfen:
-admin@rpi-hub:~/iac/raspberry-pi-homelab $ uname -a
-findmnt /boot/firmware
-sudo dpkg --audit
-sudo apt-get check
-Linux rpi-hub 6.18.29+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.29-1+rpt1 (2026-05-12) aarch64 GNU/Linux
-TARGET   SOURCE   FSTYPE OPTIONS
-/boot/firmware
-         /dev/nvme0n1p1
-                  vfat   ro,nosuid,nodev,noexec,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=ascii,shortname=mi
-Reading package lists... Done
-Building dependency tree... Done
-Reading state information... Done
-
-
+Skripte für Backup und Restore erstellen
+Backup: erkennt automatisch alle *.env ohne .example
+Restore-Guard: Warnung, wenn .env.example existiert, aber .env fehlt
 
 5. Verify the Public Key Fingerprint
 Use this check in pre-commit, CI, deploy, and backup scripts:
@@ -95,15 +45,27 @@ vector update auf version image: timberio/vector:0.58.0-debian mit runtime issue
     reverted to image: timberio/vector:0.53.0-debian
 
 
-# Nach Claude Transitions
-Verbessere den Stack:
-- Wie mit Grafana dashbords umgehen: Download und Formatierung mit bestehenden skripten, Review der Scripte nach neuer Grafana version
-- Konsistenz der ADRs mit Claude regeln überprüfen
-- Doku template für Services verbessern und pro Stack in eigenem Verzeichnis pro stack mit template einführen für monitoring unter docs\services\monitoring\
-	- Empfehlung für template erarbeiten
-Reviewe den implementierten Stack - sind alle Regeln und Guidelines umgesetzt oder gibt es weiter Findings
+# Weitere mögliche Verbesserungsthemen:
 Wie Fehler auf dem PI mit Hilfe von Claude analysieren? Was sind mögliche Ansätze um Logs zu analysieren, was ist Deine Empfehlung?
-Checke all Dokumente im Ordner \docs sowie die root Datei README.md auf Aktualität. Bei Inkonsistenzen zum Implementierungsstand oder den Richtlinien, mache entsprechende Verbesserungen die ich dann reviewe.
+Review den im .Claude implementierten Ansatz: Gibt es Verbesserungsbedarf und weitergehende Empfehlung für einen effizienteren und effektiveren Einsatz von Claude?
+
+
+_____________________________________________________________________________
+__________________________________ D O N E __________________________________
+_____________________________________________________________________________
+
+Macht es nicht Sinn die Findings von der ClaudeTransition.md zu separieren einen eigenen Feature-Backlog zusammen mit den Implementierungsphasen? Wenn ja, was wäre ein effizienter Vorschlag dies umzusetzen?
+
+Arbeit an Findings:
+Ablauf morgen:
+cd /home/micro/src/raspberry-pi-homelab
+git switch main && git pull --ff-only
+git switch -c fix/r1-alertmanager-secret-mode
+claude
+Als erste Nachricht:
+Antworte auf Deutsch. Wir sind in Roadmap-Stufe R1. Starte mit Inkrement 1 aus
+.claude/reports/repo-findings.md (Findings F26, F26b, F35: SMTP-Passwort world-readable). branch switch auf fix/r1-alertmanager-secret-mode durchgeführt.
+Nutze /increment-plan und lege mir den Plan vor, bevor du etwas änderst.
 
 # Immer wieder victoriologs instance down alerts. Hilf mir diese zu analysieren? Liegt ein Problem vor oder ist der alert zu scharf (cannot scrape for >1 minute)
 1 alert for alertname=InstanceDown job=victorialogs severity=critical
@@ -119,37 +81,6 @@ Annotations
 description = vmagent cannot scrape this target for > 1 minute.
 summary = Target down (job=victorialogs, instance=victorialogs:9428)
 Source
-
-Arbeite weiter an Findings:
-- lege Branch docs/r1-f46-privileged-adr an
-Antworte auf Deutsch. Wir sind in Roadmap-Stufe R1. Stand: Gruppe a ist bis auf F26b (→ R2/F9)
-abgeschlossen; F48, F49 und F28 sind addressed (letzter Merge f2a3172, Log gemergt). Lies zuerst
-.claude/ClaudeTransition.md §10.4 (Inkrement-Log) und in .claude/reports/repo-findings.md den
-Eintrag F46 inklusive „Progress“. Nächstes Inkrement: F46 Schritte (2) und (3) – docs/monitoring.md
-so korrigieren, dass es der Compose-Datei nicht widerspricht, ein ADR für die privileged-Ausnahme
-von cadvisor (vierstelliges ADR-Format laut .claude/rules/docs-adr.md) und ein Guard mit Allowlist
-privilegierter Services, die auf das ADR verweist. Schritt (4) (privileged entfernen) ist ein
-eigenes, späteres Inkrement. Branch docs/r1-f46-privileged-adr ist angelegt. Nutze /increment-plan
-und lege mir den Plan vor, bevor du etwas änderst.
-
-
-
-
-_____________________________________________________________________________
-__________________________________ D O N E __________________________________
-_____________________________________________________________________________
-
-Arbeit an Findings:
-Ablauf morgen:
-cd /home/micro/src/raspberry-pi-homelab
-git switch main && git pull --ff-only
-git switch -c fix/r1-alertmanager-secret-mode
-claude
-Als erste Nachricht:
-Antworte auf Deutsch. Wir sind in Roadmap-Stufe R1. Starte mit Inkrement 1 aus
-.claude/reports/repo-findings.md (Findings F26, F26b, F35: SMTP-Passwort world-readable). branch switch auf fix/r1-alertmanager-secret-mode durchgeführt.
-Nutze /increment-plan und lege mir den Plan vor, bevor du etwas änderst.
-
 
 
 # Claud Transition

@@ -24,7 +24,7 @@ within the same scope, or `git revert` via a branch and PR (IN8).
 - Prefer a first increment that makes the contract **enforceable** (a failing test, marked `xfail`)
   over one that fixes the symptom. Then remove one marker per increment.
 
-## Output — one block per increment, template from 10.2
+## Output — one block per increment, template from `.claude/roadmap.md` §3
 
 ```markdown
 ## R<stage>.<n> – <title>

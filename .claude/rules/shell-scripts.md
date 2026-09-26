@@ -48,7 +48,7 @@ fine. See `host-runtime.md` for what each one actually does.
 ## Sources
 
 `deploy.sh`, `scripts/`, `.pre-commit-config.yaml`, `.gitattributes`, `Makefile`,
-`.claude/ClaudeTransition.md` findings F19 and F21.
+findings F19 and F21 in `.claude/reports/repo-findings.md`.
 
 ## Violations
 

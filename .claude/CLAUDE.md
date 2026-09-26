@@ -93,9 +93,9 @@ exist; `vector/` was added. The map above is the reality.
 | Stack | State |
 |---|---|
 | monitoring | **implemented** — VictoriaMetrics, vmagent, vmalert, VictoriaLogs, Vector, Alertmanager, Grafana, node-exporter, cAdvisor |
-| backup | **in progress** — ADR-009, public-key GPG model, scripts exist, **no tests yet** (F9) |
-| core (Traefik + Let's Encrypt) | planned, roadmap stage R3 |
-| apps (Stirling PDF, AdGuard Home, Home Assistant) | planned, roadmap stage R4 |
+| backup | **in progress** — ADR-009, public-key GPG model, scripts exist, **no tests yet** (F9); roadmap stage R3 |
+| core (Traefik + Let's Encrypt) | planned, roadmap stage R5 |
+| apps (Stirling PDF, AdGuard Home, Home Assistant) | planned, roadmap stage R6 |
 
 ## 7. Commands
 
@@ -154,18 +154,20 @@ One feature at a time, delivered in small increments, each with its own tests (D
   host configuration must also update the backup inventory, `.env.example`, the reconciliation
   scripts and their postdeploy checks, the network/firewall docs, and the Renovate rules.
 
-Current roadmap stage: **R1** — review of the implementation and the findings in
-`.claude/reports/repo-findings.md`; F21 first. Then R2 backup → R3 core stack → R4 app stacks.
-R0 (the Claude transition) is complete; its record is `.claude/ClaudeTransition.md`.
+The full delivery rules (IN1–IN13), the roadmap R1–R6, the current stage and next increment, the
+R1 findings groups and the increment log are in **`.claude/roadmap.md` — read it at the start of
+every work session.** R0 (the Claude transition) is complete; `.claude/ClaudeTransition.md` is its
+archived record.
 
 ## 9. Where to look things up
 
 | Topic | File |
 |---|---|
-| Transition plan, decisions, findings index, guard design, test matrix | `.claude/ClaudeTransition.md` |
+| Current stage, next increment, delivery rules, roadmap, increment log | `.claude/roadmap.md` |
+| R0 archive: transition phases, decision log, guard design (§5.4), test matrix | `.claude/ClaudeTransition.md` |
 | How to work with Claude here, how to verify the safety set-up | `.claude/readme_claude.md` |
 | Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`; verifiers in `.claude/tools/` |
-| Repository findings F1–F49 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
+| Repository findings F1–F55 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
 | Architecture decisions | `docs/architecture/adr/` — ADR-0007 secrets, ADR-0008 bind mounts, ADR-009 backup |
 | Operations | `docs/operations/` — `DevWorkflow.md`, `git-branch-workflow.md`, `runtime-updates.md`, `BackupVerifyRestore.md`, `GPG_config_for_backup_encryption.md`, `renovate.md` |
 | Monitoring | `docs/monitoring.md`, `docs/services/` |
