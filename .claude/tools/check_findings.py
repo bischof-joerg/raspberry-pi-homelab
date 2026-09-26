@@ -116,8 +116,8 @@ for line in index_text.splitlines():
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         status[cells[0]], group_of[cells[0]] = cells[-2], cells[-1]
 
-# Roadmap row: | Group | Scope | Open | Done | Why |
-GROUP_ROW = re.compile(r"^\| ([a-z]|R\d) \|", re.MULTILINE)
+# Roadmap row: | Group | Scope | Open | Done | Why |  (group: R1 letter a-z, or a stage like R3, R2d)
+GROUP_ROW = re.compile(r"^\| ([a-z]|R\d[a-z]?) \|", re.MULTILINE)
 FID = re.compile(r"\bF\d+b?\b")
 groups_text = section(ROADMAP.read_text(encoding="utf-8"), "## 6.", "\n## 7.")
 open_seen: dict[str, list[str]] = {}

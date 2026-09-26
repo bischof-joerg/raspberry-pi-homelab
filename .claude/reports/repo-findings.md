@@ -42,15 +42,15 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F1 | Config hash is driven by a single runtime file | Deploy | High | open | d |
 | F2 | Hash list names a missing file and two unmounted ones | Deploy | Med | open | d |
 | F3 | Images pinned by tag, not by digest | Supply chain | Med | open | g |
-| F4 | Renovate manages compose images only | Supply chain | Med | open | g |
-| F5 | `README.md` describes a stack that no longer exists | Docs | Low | open | i |
-| F6 | ADR numbering and titles are inconsistent | Docs | Low | open | i |
+| F4 | Renovate manages compose images only | Supply chain | Med | open | R2d |
+| F5 | `README.md` describes a stack that no longer exists | Docs | Low | open | R2b |
+| F6 | ADR numbering and titles are inconsistent | Docs | Low | open | R2b |
 | F7 | Missing restart policy / healthchecks | Hardening | Med | open | f |
 | F8 | Renderer installs `gettext` from the network at every run | Supply chain | Med | addressed | a |
-| F9 | Backup scripts have no tests although ADR-009 requires them | Backup | High | open | R2 |
+| F9 | Backup scripts have no tests although ADR-009 requires them | Backup | High | open | R3 |
 | F10 | pytest version drift between pre-commit and `.venv` | Toolchain | Low | addressed | – |
 | F11 | `.gitattributes` does not pin LF for all text types | Toolchain | Low | open | h |
-| F12 | `.env.example` duplicates keys and holds host-derived values | Secrets | Low | open | i |
+| F12 | `.env.example` duplicates keys and holds host-derived values | Secrets | Low | open | R2b |
 | F13 | Compose mounts a templates directory that does not exist | Deploy | Med | open | d |
 | F14 | DevWorkflow committed before `make ci` | Docs | Low | addressed | – |
 | F15 | UFW is not reconciled on deploy | Exposure | Med | open | c |
@@ -89,6 +89,12 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | open | h |
 | F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | addressed | a |
 | F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | addressed | h |
+| F50 | The WSL layer (Python, Docker Desktop, apt) is neither documented nor checked | Toolchain | Med | open | R2d |
+| F51 | Host upgrade apply does not execute the reviewed plan | Host | High | open | R3b |
+| F52 | Mutating host-runtime scripts have no backup gate | Host | High | open | R3b |
+| F53 | host-runtime scripts are untestable off the Pi and untested | Tests | Med | open | R3b |
+| F54 | Docker packages upgrade uncontrolled inside the routine APT upgrade | Host | Med | open | R3b |
+| F55 | Plan output, audit and runtime-updates doc disagree; audit gaps pass silently | Host | Low | open | R3b |
 
 ## Secrets and credentials
 
@@ -106,9 +112,9 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Evidence:** `scripts/backup/backup.sh:383-385` archives `${STACK_DATA_ROOT}/alertmanager-config`; `stacks/monitoring/compose/init-permissions.sh:111,112,146` reconciles the directory to `0:0` mode `0755`. [V 2026-09-23]
 - **Impact:** Rotating the SMTP password is not complete until backup retention ages out; a restore re-materialises the file at `0644`; the directory is traversable by everyone. At rest the archive is GPG-encrypted, which is acceptable.
 - **Proposed fix:** Directory to `0750` with the Alertmanager-readable group in `init-permissions.sh`; document "rotation completes after retention" in `docs/operations/BackupVerifyRestore.md`; ensure restore re-applies the F26 mode.
-- **Test:** `tests/postdeploy` — directory mode `0750`; backup fixture test (R2, F9) — a restored tree yields `0640` on the rendered file.
+- **Test:** `tests/postdeploy` — directory mode `0750`; backup fixture test (R3, F9) — a restored tree yields `0640` on the rendered file.
 - **Acceptance:** Directory mode is `750` after deploy; a restore dry-run in the fixture harness produces no world-readable credential file.
-- **Resolution (R1.1, 2026-09-25) — partly:** `init-permissions.sh` reconciles the directory to `0:nogroup 750` and strips other-bits recursively (its `--check` detects restore leftovers); rotation note in `docs/operations/BackupVerifyRestore.md` §6.2; postdeploy `test_55`. **Open:** the restore fixture test, which belongs to R2/F9.
+- **Resolution (R1.1, 2026-09-25) — partly:** `init-permissions.sh` reconciles the directory to `0:nogroup 750` and strips other-bits recursively (its `--check` detects restore leftovers); rotation note in `docs/operations/BackupVerifyRestore.md` §6.2; postdeploy `test_55`. **Open:** the restore fixture test, which belongs to R3/F9 (stage R2 before the re-plan of 2026-09-26).
 
 ### F48 – Orphaned named alertmanager-config volumes held an old SMTP password
 
@@ -391,6 +397,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Enable `github-actions`, `pre-commit`, `pip_requirements` managers; pin Actions by SHA; a regex manager for the Grafana plugin.
 - **Test:** `tests/precommit` — every manager in a required list is enabled; `scripts/renovate/validate-config.sh` validates syntax.
 - **Acceptance:** A Renovate dry run (`make renovate-check`, operator) lists proposals for each manager.
+- **Re-planned (2026-09-26):** moved from group g to stage R2d (dev-environment lifecycle, `.claude/roadmap.md` §9.2). The pins in `requirements-dev.txt` and `.pre-commit-config.yaml` must move in one PR, because `tests/precommit/test_50_toolchain_version_parity.py` requires them to match; Actions digest pinning may stay with F3.
 
 ### F24 – Renovate validator hook runs a floating image tag
 
@@ -414,7 +421,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 
 - **Evidence:** `docs/architecture/adr/ADR-009-backup-verify-restore.md` DD-012 and §14.2; no backup test under `tests/`; the scripts in `scripts/backup/` already implement exit codes (`scripts/backup/common.sh:12-17`), locking and restore guards. [V 2026-09-23 via `backup-progress`]
 - **Impact:** Five of seven ADR-009 requirements are implemented but unproven; the ADR's own acceptance rule is unmet.
-- **Proposed fix:** R2 — fixture tests from ADR-009 §14.2 using the existing fixture overrides.
+- **Proposed fix:** R3 — fixture tests from ADR-009 §14.2 using the existing fixture overrides.
 - **Test:** New `tests/backup/` (or `tests/guards`) fixture suite running in CI.
 - **Acceptance:** Fixture tests for exit codes, lock contention and restore guards green in CI; `make backup`/`backup_verify` green on the Pi.
 
@@ -482,6 +489,60 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Test:** `tests/guards` — static check that the postdeploy invocation sets `PYTHONDONTWRITEBYTECODE=1`.
 - **Acceptance:** Two consecutive deploys whose pulls change `tests/postdeploy` both log `repo-ownership: OK`.
 - **Resolution (2026-09-25) — partly:** fixed in `scripts/tests/run-tests.sh`, not the `Makefile`: every test target goes through it, and it escalates to root on the Pi by itself (`run_pytest_as_root`), so a manual `make postdeploy` wrote root-owned bytecode too. It exports `PYTHONDONTWRITEBYTECODE=1` and sets it explicitly in the `sudo … env` call, independent of sudoers' handling of `-E`. Tests: `tests/guards/test_41_run_tests_no_bytecode.py` (behaviour of the plain path with a fake python; text contract for the root path). **Open:** the Pi acceptance needs a later deploy whose pull changes `tests/postdeploy`; the deploy of this fix changes none, so its `repo-ownership: OK` proves nothing. Deployed with merge `19c76ab` (PR #22) on 2026-09-25: two deploys green, both `repo-ownership: OK`, `find ! -user admin` empty — consistent, but not yet the proof. **Accepted 2026-09-25** (operator decision) on a before/after comparison under the same condition — a pull that changes `tests/postdeploy`: before the fix (merge `acdd38b`, 14:25) `find ! -user admin` listed two root-owned `.pyc` and the next deploy logged `repo-ownership: mismatch`; with the fix (merge `f2a3172`, which changed `tests/postdeploy/test_25_cadvisor_metrics.py`, 15:09) `find` right after the deploy was empty and the next deploy (15:10) logged `repo-ownership: OK`. The `find` directly after the deploy is a more direct measurement than the two-deploy log criterion above, which was met once rather than twice.
+
+### F50 – The WSL layer (Python, Docker Desktop, apt) is neither documented nor checked
+
+- **Evidence:** `docs/operations/DevWorkflow.md` covers `make venv` but not the WSL host (Python version, Docker Desktop and its WSL integration, apt/Ubuntu release); `docs/operations/runtime-updates.md` covers the Pi only; `Makefile` target `doctor` reports `FAIL: docker missing` without diagnosis or pointer. Measured 2026-09-26: `make ci` stopped in `doctor` because Docker Desktop's WSL integration was off. `.github/workflows/ci.yml` pins Python `3.12` without a patch level; WSL uses the system `python3` (3.12.3). [V 2026-09-26]
+- **Impact:** A change in the WSL environment blocks or silently alters the gate that every increment relies on, and nothing tells the operator how to recover or what is expected.
+- **Proposed fix:** R2d — `docs/operations/dev-environment-updates.md` (checklist and recovery), `make doctor` version checks (Python minor as in CI, Docker and Compose plugin present) with a pointer to the doc.
+- **Test:** `tests/doctor` — the version checks, with a clear message per missing or mismatched tool.
+- **Acceptance:** With Docker's WSL integration off, `make doctor` fails with a message naming the fix; the doc describes the update and recovery flow.
+
+## Host runtime updates
+
+Reviewed 2026-09-26 (`scripts/host-runtime/`). The structure is sound — plan/apply split, no
+automatic reboot, EEPROM separate, clean Git tree required, no `rpi-update`; the findings are about
+what the scripts do not enforce. Scheduled in R3b, after backup (`.claude/roadmap.md` §9.6).
+
+### F51 – Host upgrade apply does not execute the reviewed plan
+
+- **Evidence:** `scripts/host-runtime/upgrade-apply.sh:26-28` runs `apt-get update`, `apt-get -y full-upgrade` and `apt-get -y autoremove --purge` afresh; `scripts/host-runtime/upgrade-plan.sh:27` only simulates and stores nothing. `DEBIAN_FRONTEND=noninteractive` (`scripts/host-runtime/upgrade-apply.sh:25`) without a `Dpkg::Options` conffile policy. [V 2026-09-26]; conffile behaviour under noninteractive [I — confirm with a stubbed `dpkg` in the R3b.1 harness or the Debian docs].
+- **Impact:** What gets installed is whatever is current at apply time, not what the operator reviewed in the plan; `autoremove --purge` removes packages and their configuration that the plan never listed; a changed conffile can stall or silently replace configuration.
+- **Proposed fix:** The plan writes `package=version` plus a timestamp to a host file; apply refuses if it is missing, stale, or differs from a fresh simulation; explicit `--force-confdef --force-confold`; the plan lists the `autoremove` set.
+- **Test:** `tests/guards` with `PATH` stubs (F53) — apply refuses a missing/stale/different plan and passes the conffile options.
+- **Acceptance:** A stubbed apply with a plan that differs from the simulation exits non-zero without calling `full-upgrade`.
+
+### F52 – Mutating host-runtime scripts have no backup gate
+
+- **Evidence:** `docs/operations/runtime-updates.md:34-39` and its acceptance list require backup and backup verification first; `scripts/host-runtime/upgrade-apply.sh` and `scripts/host-runtime/eeprom-apply.sh` check only `require_pi` and `require_clean_git_tree` (`scripts/host-runtime/common.sh:29,96`). [V 2026-09-26]
+- **Impact:** The one safeguard that makes a host update reversible exists only on paper; an operator in a hurry can upgrade packages or the bootloader without a restorable backup.
+- **Proposed fix:** After R3 provides a verified-backup record: both scripts refuse unless the last verified backup is younger than a set age; an explicit override flag with a logged reason.
+- **Test:** `tests/guards` with stubs — apply refuses without, or with a stale, verification record; the override is logged.
+- **Acceptance:** Without a fresh verified backup both scripts exit non-zero before any `apt-get` or `rpi-eeprom-update -a` call.
+
+### F53 – host-runtime scripts are untestable off the Pi and untested
+
+- **Evidence:** `scripts/host-runtime/common.sh:29` `require_pi` has no test override (the backup scripts use `HOMELAB_ALLOW_NON_PI`, `.claude/rules/backup-restore.md`); no file under `tests/` or `.github/` references the scripts (search 2026-09-26). Only ShellCheck covers them via `.pre-commit-config.yaml`. [V 2026-09-26]
+- **Impact:** Every change to the scripts that mutate the host is first exercised on the Pi — the pattern that cost two fix-forward rounds in R1.
+- **Proposed fix:** A `HOMELAB_ALLOW_NON_PI` test mode and `PATH` stubs for `apt-get`, `dpkg-query`, `rpi-eeprom-update`, `docker`, `sudo`.
+- **Test:** `tests/guards/test_7x_host_runtime_*.py` — plan mutates nothing, apply refuses a dirty tree, EEPROM never runs in the routine path.
+- **Acceptance:** The guard tests run in CI and fail when, for example, `upgrade-apply.sh` calls `rpi-eeprom-update -a`.
+
+### F54 – Docker packages upgrade uncontrolled inside the routine APT upgrade
+
+- **Evidence:** `scripts/host-runtime/upgrade-apply.sh:27` `full-upgrade` includes `docker-ce`, `containerd.io` and the Compose plugin, which `scripts/host-runtime/common.sh:153-176` only reports on; no `apt-mark hold`, no separate step, no postdeploy right after. [V 2026-09-26]; that a `docker-ce`/`containerd.io` upgrade restarts the daemon and all containers [I — standard package behaviour; observe in R3b.6].
+- **Impact:** A routine security update can restart every service and change the container runtime without the deploy-time checks; related to F18.
+- **Proposed fix:** ADR in R3b: hold the Docker packages and upgrade them in a separate controlled step (stop, upgrade, start, postdeploy), or accept the restart explicitly. Postdeploy minimum versions for Docker Engine and the Compose plugin.
+- **Test:** `tests/guards` (stubs) for the chosen flow; `tests/postdeploy` minimum-version check.
+- **Acceptance:** The ADR exists; the routine path cannot change the Docker packages unnoticed; the version check is green on the Pi.
+
+### F55 – Plan output, audit and runtime-updates doc disagree; audit gaps pass silently
+
+- **Evidence:** `docs/operations/runtime-updates.md:47-54` says the plan shows disk space and failed systemd units — `scripts/host-runtime/upgrade-plan.sh` prints neither (only `scripts/host-runtime/audit-runtime.sh:49,53` does); the doc uses `~/raspberry-pi-homelab` while the Pi checkout is `~/iac/raspberry-pi-homelab` (operator deploy output, 2026-09-25); "Last verified: 2026-05-21". `scripts/host-runtime/common.sh:61` skips a section with only a warning when sudo is not available non-interactively, and many calls end in `|| true`, so an incomplete audit exits 0; no machine-readable output or version history; the EEPROM release channel is never shown (`scripts/host-runtime/eeprom-apply.sh:22`). [V 2026-09-26]
+- **Impact:** The operator reviews less than the doc promises, may follow a wrong path, and cannot tell a complete audit from a partial one or see version drift over time.
+- **Proposed fix:** R2b corrects the doc; R3b adds the missing plan output, a machine-readable audit summary (versions, EEPROM channel, reboot state) and a distinct exit code for an incomplete audit.
+- **Test:** `tests/guards` (stubs) — audit without sudo reports "incomplete" with its exit code; the plan prints disk and failed units.
+- **Acceptance:** Doc and scripts agree; an incomplete audit is distinguishable by exit code.
 
 ## Documentation and ADRs
 

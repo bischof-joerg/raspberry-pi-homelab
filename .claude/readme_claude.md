@@ -32,8 +32,8 @@ Claude Code **2.1.280** installed (live hook tests last run on 2.1.280 — see �
 | `skills/*/SKILL.md` (8) | Invokable procedures | description every turn, body on invocation | Claude, operator reviews | `tools/check_skills.py` |
 | `agents/*.md` (4) | Read-only subagents (`tools: Read, Grep, Glob`) | description at startup; edits hot-reloaded | Claude, operator reviews | `tools/check_agents.py` |
 | `tools/*.py` (4) | Verifiers for rules, skills, agents, findings | run by hand | Claude, operator reviews | `ruff check` |
-| `reports/repo-findings.md` | Findings F1–F49 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
-| `roadmap.md` | Living plan: status and next increment, delivery rules IN1–IN13, roadmap R1–R4, R1 findings groups, increment log | read at session start | Claude, operator reviews | `tools/check_findings.py` (groups) |
+| `reports/repo-findings.md` | Findings F1–F55 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
+| `roadmap.md` | Living plan: status and next increment, delivery rules IN1–IN13, roadmap R1–R5 with stage plans, findings groups, increment log | read at session start | Claude, operator reviews | `tools/check_findings.py` (groups) |
 | `ClaudeTransition.md` | **Archive** (R0, complete, since 2026-09-26 not maintained): decision log, guard design §5.4, verification records | only when read | nobody; frozen | – |
 | `scratch/` | Drafts (ADR drafts, patch proposals) — **git-ignored** | – | Claude | not in a fresh clone |
 | `logs/guard.log`, `logs/instructions.log` | Guard decisions (JSON lines), instruction-load events — **git-ignored** | – | written by hooks | grow unbounded; truncate by hand |

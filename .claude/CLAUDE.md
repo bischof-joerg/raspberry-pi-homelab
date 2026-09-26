@@ -93,9 +93,9 @@ exist; `vector/` was added. The map above is the reality.
 | Stack | State |
 |---|---|
 | monitoring | **implemented** — VictoriaMetrics, vmagent, vmalert, VictoriaLogs, Vector, Alertmanager, Grafana, node-exporter, cAdvisor |
-| backup | **in progress** — ADR-009, public-key GPG model, scripts exist, **no tests yet** (F9) |
-| core (Traefik + Let's Encrypt) | planned, roadmap stage R3 |
-| apps (Stirling PDF, AdGuard Home, Home Assistant) | planned, roadmap stage R4 |
+| backup | **in progress** — ADR-009, public-key GPG model, scripts exist, **no tests yet** (F9); roadmap stage R3 |
+| core (Traefik + Let's Encrypt) | planned, roadmap stage R4 |
+| apps (Stirling PDF, AdGuard Home, Home Assistant) | planned, roadmap stage R5 |
 
 ## 7. Commands
 
@@ -154,7 +154,7 @@ One feature at a time, delivered in small increments, each with its own tests (D
   host configuration must also update the backup inventory, `.env.example`, the reconciliation
   scripts and their postdeploy checks, the network/firewall docs, and the Renovate rules.
 
-The full delivery rules (IN1–IN13), the roadmap R1–R4, the current stage and next increment, the
+The full delivery rules (IN1–IN13), the roadmap R1–R5, the current stage and next increment, the
 R1 findings groups and the increment log are in **`.claude/roadmap.md` — read it at the start of
 every work session.** R0 (the Claude transition) is complete; `.claude/ClaudeTransition.md` is its
 archived record.
@@ -167,7 +167,7 @@ archived record.
 | R0 archive: transition phases, decision log, guard design (§5.4), test matrix | `.claude/ClaudeTransition.md` |
 | How to work with Claude here, how to verify the safety set-up | `.claude/readme_claude.md` |
 | Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`; verifiers in `.claude/tools/` |
-| Repository findings F1–F49 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
+| Repository findings F1–F55 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
 | Architecture decisions | `docs/architecture/adr/` — ADR-0007 secrets, ADR-0008 bind mounts, ADR-009 backup |
 | Operations | `docs/operations/` — `DevWorkflow.md`, `git-branch-workflow.md`, `runtime-updates.md`, `BackupVerifyRestore.md`, `GPG_config_for_backup_encryption.md`, `renovate.md` |
 | Monitoring | `docs/monitoring.md`, `docs/services/` |
