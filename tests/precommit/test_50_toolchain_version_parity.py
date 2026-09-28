@@ -8,6 +8,7 @@ diverging lint results. This test fails as soon as one side is bumped without th
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,8 @@ from tests._helpers import REPO_ROOT
 
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 REQUIREMENTS_DEV = REPO_ROOT / "requirements-dev.txt"
+PYPROJECT = REPO_ROOT / "pyproject.toml"
+MAKEFILE = REPO_ROOT / "Makefile"
 
 # pre-commit hook repository URL -> PyPI distribution name installed into .venv
 PARITY_MAP: dict[str, str] = {
@@ -82,4 +85,45 @@ def test_requirements_dev_pins_match_pre_commit_rev(hook_repo: str, package: str
     assert spec == f"=={expected}", (
         f"{package} in requirements-dev.txt is '{spec}', expected '=={expected}' "
         f"to match {hook_repo} rev {rev}. Bump both files in the same commit."
+    )
+
+
+# F22: requirements-dev.txt is the only source of dev dependencies.
+
+
+def _venv_recipe() -> str:
+    match = re.search(
+        r"^venv:.*?\n(.*?)(?=^[A-Za-z_][\w.-]*:)",
+        MAKEFILE.read_text(encoding="utf-8"),
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, "❌ No 'venv:' target found in the Makefile.\nFix: update this test."
+    return match.group(1)
+
+
+@pytest.mark.precommit
+@pytest.mark.xfail(strict=True, reason="F22: contract pinned before the fix")
+def test_pyproject_declares_no_dev_dependencies() -> None:
+    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8")).get("project", {})
+    extras = project.get("optional-dependencies", {})
+    assert not extras and not project.get("dependencies"), (
+        f"❌ pyproject.toml declares dependencies: {extras or project.get('dependencies')} (F22)\n"
+        "Fix: declare dev dependencies in requirements-dev.txt only; make venv never reads "
+        "pyproject.toml."
+    )
+
+
+@pytest.mark.precommit
+@pytest.mark.xfail(strict=True, reason="F22: contract pinned before the fix")
+def test_venv_installs_only_requirements_dev() -> None:
+    installs = re.findall(r"pip\"?\s+install\s+([^;\\\n]*)", _venv_recipe())
+    assert installs, "❌ The venv recipe runs no 'pip install'.\nFix: update this test."
+    other = [
+        args.strip()
+        for args in installs
+        if "-r requirements-dev.txt" not in args and not re.fullmatch(r"(-U\s+)?pip\b.*", args)
+    ]
+    assert not other, (
+        f"❌ make venv installs from a source other than requirements-dev.txt (F22): {other}\n"
+        "Fix: install only with 'pip install -r requirements-dev.txt'; fail if it is missing."
     )
