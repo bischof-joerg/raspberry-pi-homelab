@@ -22,6 +22,7 @@ REQUIREMENTS_DEV = REPO_ROOT / "requirements-dev.txt"
 CONSTRAINTS_DEV = REPO_ROOT / "constraints-dev.txt"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 MAKEFILE = REPO_ROOT / "Makefile"
+ENSURE_VENV = REPO_ROOT / "scripts/dev/ensure-venv.sh"
 PRECOMMIT_HOOK_ID = "pytest-precommit"
 
 # pre-commit hook repository URL -> PyPI distribution name installed into .venv
@@ -98,12 +99,17 @@ def test_pyproject_declares_no_dev_dependencies() -> None:
 
 @pytest.mark.precommit
 def test_venv_installs_only_requirements_dev() -> None:
-    installs = re.findall(r"pip\"?\s+install\s+([^;\\\n]*)", _venv_recipe())
-    assert installs, "❌ The venv recipe runs no 'pip install'.\nFix: update this test."
+    # The recipe may delegate to the script (F21, R1.6); both are checked.
+    sources = _venv_recipe() + (
+        ENSURE_VENV.read_text(encoding="utf-8") if ENSURE_VENV.exists() else ""
+    )
+    installs = re.findall(r"pip\"?\s+install\s+([^;\\\n]*)", sources)
+    assert installs, "❌ make venv runs no 'pip install'.\nFix: update this test."
     other = [
         args.strip()
         for args in installs
-        if "-r requirements-dev.txt" not in args and not re.fullmatch(r"(-U\s+)?pip\b.*", args)
+        if not re.search(r"-r\s+\S*requirements", args, re.IGNORECASE)
+        and not re.fullmatch(r"(-U\s+|-c\s+\S+\s+)?pip\b.*", args.strip())
     ]
     assert not other, (
         f"❌ make venv installs from a source other than requirements-dev.txt (F22): {other}\n"
@@ -179,4 +185,14 @@ def test_hook_dependencies_match_requirements_dev() -> None:
         "(F21/F22):\n"
         + "\n".join(f" - {m}" for m in mismatched)
         + "\nFix: use the exact pins from requirements-dev.txt; bump both in the same commit."
+    )
+
+
+@pytest.mark.precommit
+@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
+def test_pip_is_pinned_in_constraints() -> None:
+    spec = requirement_specs(CONSTRAINTS_DEV).get("pip", "")
+    assert spec.startswith("=="), (
+        f"❌ pip is not pinned in {CONSTRAINTS_DEV.name} (F21): '{spec or 'missing'}'\n"
+        "Fix: add 'pip==<version>'; make venv installs pip under the constraints file."
     )
