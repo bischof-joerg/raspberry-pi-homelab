@@ -95,6 +95,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F53 | host-runtime scripts are untestable off the Pi and untested | Tests | Med | open | R3b |
 | F54 | Docker packages upgrade uncontrolled inside the routine APT upgrade | Host | Med | open | R3b |
 | F55 | Plan output, audit and runtime-updates doc disagree; audit gaps pass silently | Host | Low | open | R3b |
+| F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | open | h |
 
 ## Secrets and credentials
 
@@ -187,7 +188,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Test:** `tests/guards/test_10_monitoring_compose_contract.py` — an explicit allowlist of privileged services that references the ADR; `tests/postdeploy/test_25_cadvisor_metrics.py` proves metrics still flow after each step.
 - **Acceptance:** The guard test fails for any privileged service not on the allowlist; the allowlist entry cites an existing ADR; `docs/monitoring.md` no longer contradicts the compose file.
 - **Progress (2026-09-25):** step (1) done via F28 (merge `f2a3172`); the socket is now `:ro`. The compose line numbers above predate R1.2 and have shifted (cadvisor now starts near line 251) — re-read before fixing. Next: steps (2) + (3) as one docs/ADR increment with the allowlist guard, then (4).
-- **Progress (2026-09-28):** steps (2) + (3) on branch `docs/r1-f46-privileged-adr`. `docs/monitoring.md` no longer denies privileged containers; its cAdvisor section lists the privileges and all mounts and links `docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md` (status Proposed until the operator accepts it). The ADR records the Pi 5 necessity as unmeasured; the flag predates `3a50de5` (2026-02-02) with no recorded test. Guard: `PRIVILEGED_ALLOWLIST` in `tests/guards/test_10_monitoring_compose_contract.py` — `test_privileged_services_are_allowlisted`, `test_allowlist_has_no_stale_entries`, `test_allowlist_entries_cite_existing_adr`, `test_monitoring_doc_does_not_deny_privileged_containers` (the last two strict xfail in the tests commit `8802d3a`). No compose change. Status `partly`: step (4), dropping `privileged`, remains.
+- **Progress (2026-09-28):** steps (2) + (3) done as R1.3, merge `ed8e008` (PR #27); ADR-0010 Accepted by the operator; deploy done without recreating cadvisor, postdeploy `tests: passed`. `docs/monitoring.md` no longer denies privileged containers; its cAdvisor section lists the privileges and all mounts and links `docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md` (drafted Proposed, Accepted before merge). The ADR records the Pi 5 necessity as unmeasured; the flag predates `3a50de5` (2026-02-02) with no recorded test. Guard: `PRIVILEGED_ALLOWLIST` in `tests/guards/test_10_monitoring_compose_contract.py` — `test_privileged_services_are_allowlisted`, `test_allowlist_has_no_stale_entries`, `test_allowlist_entries_cite_existing_adr`, `test_monitoring_doc_does_not_deny_privileged_containers` (the last two strict xfail in the tests commit `8802d3a`). No compose change. Status `partly`: step (4), dropping `privileged`, remains.
 
 ### F28 – cadvisor mounts the Docker socket read-write
 
@@ -498,6 +499,14 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** R2d — `docs/operations/dev-environment-updates.md` (checklist and recovery), `make doctor` version checks (Python minor as in CI, Docker and Compose plugin present) with a pointer to the doc.
 - **Test:** `tests/doctor` — the version checks, with a clear message per missing or mismatched tool.
 - **Acceptance:** With Docker's WSL integration off, `make doctor` fails with a message naming the fix; the doc describes the update and recovery flow.
+
+### F56 – Deploy log records postdeploy as `passed` without counts; the evidence is not kept
+
+- **Evidence:** `deploy.sh:290-294` (`run_postdeploy_tests`) runs `make postdeploy` and then logs only `tests: passed`; `log()` at `deploy.sh:66` writes to stdout, and `deploy.sh` redirects nothing to a file (no `tee`/`exec >`). The `Makefile` can tee output to `logs/<target>-<ts>.log` only with opt-in `LOG=1` (`Makefile:101`), which `deploy.sh:293` does not set. Measured by the operator on 2026-09-28 (deploy of merge `ed8e008`): the deploy summary shows `tests: passed` and `deploy: done` with no pass/skip counts; the "62 passed, 4 skipped" in the log rows of `.claude/roadmap.md` §7 comes from the operator reading it off the pytest output, not from any kept record. [V 2026-09-28]; whether pytest's own summary line reliably reaches the operator's terminal view [I — the operator confirms on the next deploy].
+- **Impact:** IN7 makes "postdeploy green" part of *done*, but the only kept evidence is a word. A test that starts skipping (the false-green class of F47 and F23) or a test that vanishes leaves `tests: passed` unchanged, so a regression in coverage cannot be seen from the deploy log, and every increment log row has the same gap.
+- **Proposed fix:** `run_postdeploy_tests` records the pytest result: write a JUnit XML (`--junitxml`) or capture the summary line to a host log path outside the checkout, and log `tests: passed (<n> passed, <m> skipped, …)` — or `tests: FAILED (…)` before `die`. Decide the host path together with the log location of the backup scripts (`docs/operations/BackupVerifyRestore.md` names `logs/`). IN9 check at fix time: a new host file.
+- **Test:** `tests/guards` — run `run_postdeploy_tests` (or an extracted helper) with a stub `make` that prints a pytest summary; assert the logged line carries the counts, and that a failing stub is logged as failed with its counts.
+- **Acceptance:** The next deploy log shows `tests: passed (<n> passed, <m> skipped …)`; the §7 log rows cite that line instead of an operator reading.
 
 ## Host runtime updates
 
