@@ -1,20 +1,26 @@
-# Test runner
-pytest>=8.0,<9.0
+# Dev/test toolchain for WSL and CI (`make venv`). The only source of dev dependencies (F22).
+# Every direct dependency is pinned exactly (F21); transitive pins live in constraints-dev.txt.
+# Bump a pin together with the matching pin in .pre-commit-config.yaml, in the same commit
+# (tests/precommit/test_50_toolchain_version_parity.py).
+-c constraints-dev.txt
 
-# HTTP client for runtime smoke tests
-requests>=2.31,<3.0
+# Test runner (also in the pytest-precommit hook's additional_dependencies)
+pytest==8.4.2
 
-# YAML parsing (Alertmanager config.original, config checks)
-PyYAML>=6.0,<7.0
+# HTTP client for runtime smoke tests (also in the pytest-precommit hook)
+requests==2.32.5
 
-# Lint/format (pinned: must match .pre-commit-config.yaml rev)
+# YAML parsing (also in the pytest-precommit hook)
+PyYAML==6.0.3
+
+# Lint/format (must match .pre-commit-config.yaml rev)
 ruff==0.14.11
 
-# Shell lint (pinned: must match .pre-commit-config.yaml rev)
+# Shell lint (must match .pre-commit-config.yaml rev)
 shellcheck-py==0.10.0.1
 
-# YAML lint (pinned: must match .pre-commit-config.yaml rev)
+# YAML lint (must match .pre-commit-config.yaml rev)
 yamllint==1.35.1
 
-# Optional (nice-to-have if you want to run "pre-commit run" locally from the venv)
-pre-commit>=3.7,<4.0
+# Hook runner, to run "pre-commit run" from the venv
+pre-commit==3.8.0

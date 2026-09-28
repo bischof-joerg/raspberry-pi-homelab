@@ -54,8 +54,13 @@ All development happens inside WSL (Ubuntu).
 ### 3.1 Tooling Model
 
 - Python virtual environment: `.venv`
-- Dev dependencies: `requirements-dev.txt` (lint tools pinned to the revisions in
-  `.pre-commit-config.yaml`, enforced by `tests/precommit/test_50_toolchain_version_parity.py`)
+- Dev dependencies: `requirements-dev.txt` only — `pyproject.toml` declares none. Every direct
+  dependency is pinned exactly there, and every transitive one in `constraints-dev.txt`
+  (applied by `-c`). Pins that also appear in `.pre-commit-config.yaml` must match, enforced by
+  `tests/precommit/test_50_toolchain_version_parity.py`.
+- `tests/doctor/test_40_venv_matches_pins.py` checks that `.venv` holds exactly the pinned
+  packages. `pip install -r` never removes a package, so after a dependency is dropped, run
+  `make venv-clean venv` once.
 - No production Python dependencies exist
 - Makefile is the **single orchestration entrypoint**
 
@@ -67,14 +72,18 @@ First-time setup:
 make venv
 ```
 
-This:
+This runs `scripts/dev/ensure-venv.sh`, which:
 
 - creates `.venv` if missing
-- upgrades pip
-- installs `requirements-dev.txt` (pytest, ruff, shellcheck-py, yamllint, pre-commit, ...)
+- installs pip at the version pinned in `constraints-dev.txt`
+- installs `requirements-dev.txt` (pytest, ruff, shellcheck-py, yamllint, pre-commit, ...); fails
+  if it or `constraints-dev.txt` is missing
+- writes `.venv/.toolchain-stamp` (a hash of both pin files and the Python version) only after
+  both installs succeeded
 
 Note: every quality-gate target (`make precommit`, `make test`, `make ci`, `make ci-*`) depends on
-`make venv`, so the venv is refreshed implicitly.
+`make venv`. When the stamp matches, `make venv` installs nothing and prints `[venv] up to date`;
+a changed pin file or Python version triggers a reinstall.
 
 ------------------------------------------------------------------------
 
@@ -155,7 +164,8 @@ It contains three parallel jobs:
 All jobs:
 
 - use Python 3.12
-- run `make venv` (with `.venv` cached by `requirements-dev.txt` hash)
+- run `make venv` (with `.venv` cached by the hash of `requirements-dev.txt` and
+  `constraints-dev.txt`; no partial cache restore, so old packages never carry over)
 - precommit job additionally caches `~/.cache/pre-commit`
 
 This keeps WSL and GitHub CI on the same Make targets. These job checks are the required status

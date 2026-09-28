@@ -30,9 +30,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements-dev.txt') }}
-          restore-keys: |
-            venv-${{ runner.os }}-py312-
+          # No restore-keys: pip never removes packages, so a partial match would carry
+          # packages from older pins into this run (F21).
+          key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements-dev.txt', 'constraints-dev.txt') }}
 
       - run: make venv
       - run: make ci-doctor
@@ -54,9 +54,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements-dev.txt') }}
-          restore-keys: |
-            venv-${{ runner.os }}-py312-
+          # No restore-keys: pip never removes packages, so a partial match would carry
+          # packages from older pins into this run (F21).
+          key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements-dev.txt', 'constraints-dev.txt') }}
 
       - name: Cache pre-commit
         uses: actions/cache@v4
@@ -86,9 +86,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements-dev.txt') }}
-          restore-keys: |
-            venv-${{ runner.os }}-py312-
+          # No restore-keys: pip never removes packages, so a partial match would carry
+          # packages from older pins into this run (F21).
+          key: venv-${{ runner.os }}-py312-${{ hashFiles('requirements-dev.txt', 'constraints-dev.txt') }}
 
       - run: make venv
       - run: make ci-tests

@@ -34,10 +34,12 @@ repos:
         name: pytest (marker=precommit)
         entry: pytest -q -m precommit
         language: python
+        # Exact pins, equal to requirements-dev.txt (F21/F22). The hook env cannot apply
+        # constraints-dev.txt, so its transitive dependencies are not pinned.
         additional_dependencies:
-          - pytest>=8.0,<9.0
-          - requests>=2.31,<3.0
-          - PyYAML>=6.0,<7.0
+          - pytest==8.4.2
+          - requests==2.32.5
+          - PyYAML==6.0.3
         pass_filenames: false
 
   # Ruff for Python linting/formatting

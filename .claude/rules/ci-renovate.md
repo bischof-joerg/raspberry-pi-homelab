@@ -25,13 +25,19 @@ paths:
 ## Toolchain pins must stay in lockstep
 
 `.pre-commit-config.yaml` pins `shellcheck-py` 0.10.0.1, `ruff-pre-commit` 0.14.11,
-`yamllint` 1.35.1, and `requirements-dev.txt` pins the same versions exactly. This is enforced by
+`yamllint` 1.35.1, and the `pytest-precommit` hook's `pytest`, `requests` and `PyYAML`;
+`requirements-dev.txt` pins the same versions exactly. This is enforced by
 `tests/precommit/test_50_toolchain_version_parity.py`.
 
 - **MUST** bump `.pre-commit-config.yaml` and `requirements-dev.txt` in the **same commit**.
   The parity test exists precisely to make a one-sided bump fail.
-- Known second source of truth: `pyproject.toml` `[project.optional-dependencies].dev` duplicates
-  these ranges and is **not** used by `make venv` (F22). Do not treat it as authoritative.
+- **MUST** declare dev dependencies only in `requirements-dev.txt`. `pyproject.toml` has no
+  dependency lists and `make venv` installs nothing else (F22, enforced by the same test file).
+- **MUST** pin every dev dependency with `==`: direct ones in `requirements-dev.txt`, transitive
+  ones in `constraints-dev.txt` (F21). A new transitive dependency after a bump goes into
+  `constraints-dev.txt` in the same commit; `tests/doctor/test_40_venv_matches_pins.py` fails on
+  any package in `.venv` that is pinned nowhere. Known gap: the pre-commit hook environment cannot
+  apply the constraints file, so its transitive dependencies float.
 
 ## Renovate
 
