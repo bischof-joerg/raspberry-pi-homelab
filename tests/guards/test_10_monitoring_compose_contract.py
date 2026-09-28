@@ -4,8 +4,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
-
 from tests._lib.compose import render_compose
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -106,7 +104,6 @@ def test_allowlist_has_no_stale_entries() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="F46: contract pinned before the ADR exists")
 def test_allowlist_entries_cite_existing_adr() -> None:
     problems = []
     for service, adr in PRIVILEGED_ALLOWLIST.items():
@@ -122,7 +119,6 @@ def test_allowlist_entries_cite_existing_adr() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="F46: contract pinned before the doc is corrected")
 def test_monitoring_doc_does_not_deny_privileged_containers() -> None:
     text = MONITORING_DOC.read_text(encoding="utf-8")
     denials = [

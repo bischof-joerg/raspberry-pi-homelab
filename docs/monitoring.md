@@ -26,7 +26,8 @@ Implementation goal including hardening:
 - Only Grafana exposes a TCP port
 - All other services are internal-only Docker network
 - Read-only root filesystems where supported
-- No privileged containers
+- Only cAdvisor runs privileged, as a recorded exception
+  ([ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md))
 - Secrets never stored in Git
 - Fixed Docker bridge + UFW rules
 
@@ -190,11 +191,18 @@ None – stateless.
 **Required mounts (read-only):**
 
 - `/var/lib/docker`
-- `/sys`
-- Root filesystem
+- `/sys` and `/sys/fs/cgroup`
+- Root filesystem (`/:/rootfs`)
+- `/etc/machine-id`
+- Docker socket and containerd socket
 
-**Note:**
-Due to the required host mounts, cAdvisor is intentionally isolated and run with minimal privileges.
+**Privileges:**
+cAdvisor is the one privileged container in the stack: `privileged: true`, `user: root`,
+`pid: host` and the device `/dev/kmsg`. It publishes no host port; vmagent scrapes it over the
+`monitoring` network. The `:ro` socket mounts do not restrict the Docker API, so a compromise of
+cAdvisor is a compromise of the host. The exception, the unmeasured claim that the Pi 5 requires
+it, and the planned test without `privileged` are recorded in
+[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md).
 
 ---
 
