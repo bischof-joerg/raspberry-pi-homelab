@@ -9,14 +9,13 @@ is read at the start of any work session. The Claude transition (R0) is complete
 
 - **Stage:** R1 — review of the implementation and the findings in `.claude/reports/repo-findings.md`.
 - **Done in R1:** group a except F26b (its restore test belongs to R3/F9); F48 and F49; F28, the
-  first step of group b. See §6 and §7.
-- **In progress:** R1.3, F46 steps (2) and (3) on `docs/r1-f46-privileged-adr` — ADR-0010 for
-  cadvisor's privileged exception (Proposed), `docs/monitoring.md` corrected, allowlist guard in
-  `tests/guards/test_10_monitoring_compose_contract.py`. No compose change. Step (4), dropping
-  `privileged`, is a separate, later increment.
-- **Then:** F21 and F22 (group h, pulled forward on 2026-09-26): a reproducible toolchain — pinned
-  pip, idempotent `make venv`, one source of dev dependencies. Every later increment relies on
-  `make ci` as evidence, and today each gate run may upgrade tools within version ranges.
+  first step of group b; F46 steps (2) and (3) as R1.3 (ADR-0010 Accepted, allowlist guard). See
+  §6 and §7.
+- **Next increment:** F21 and F22 (group h, pulled forward on 2026-09-26): a reproducible
+  toolchain — pinned pip, idempotent `make venv`, one source of dev dependencies. Every later
+  increment relies on `make ci` as evidence, and today each gate run may upgrade tools within
+  version ranges.
+- **Then:** F46 step (4) — try dropping cadvisor's `privileged` (ADR-0010 Decision 4).
 - **Stages re-planned on 2026-09-26:** a new R2 (quality and lifecycle, §9) sits between R1 and
   backup (now R3); a new R4 (service standard, §9.7) follows backup; core and apps moved to R5
   and R6.
@@ -122,7 +121,7 @@ first, then the mechanisms other fixes depend on.
 | f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | — | One test file becomes the home of all hardening checks |
 | e | Host reconciliation ADR | F16, F17, F18, F43, F19, F20 | — | Needs an ADR decision before code (R1 exit criterion) |
 | g | Supply chain | F3, F24, F44 | F37 | Digest pins together; F37 went with F8; F4 moved to R2d |
-| h | Toolchain and dead tests | F21, F22, F23, F25, F47, F11 | F49 | F21 + F22 pulled forward (next after F46 (2)+(3)); rest low risk, quick |
+| h | Toolchain and dead tests | F21, F22, F23, F25, F47, F11, F56 | F49 | F21 + F22 pulled forward (next after F46 (2)+(3)); rest low risk, quick |
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2b | Documentation | F5, F6, F12 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26 |
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
@@ -136,7 +135,8 @@ R1 onwards, newest first. R0 rows stay in `.claude/ClaudeTransition.md` §10.4 (
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
-| Roadmap document | 2026-09-26 | pending | pending | no runtime effect | `.claude/roadmap.md` created; `ClaudeTransition.md` archived; §3.6 index duplicate dropped, `check_findings.py` checks the §6 group table instead. Same branch: stage R2 inserted (§9), R2–R4 renumbered to R3–R5, group i → R2b, F4 → R2d, F21/F22 pulled forward, findings F50–F55 added; then stage R4 (service standard, §9.7) inserted, core → R5, apps → R6. |
+| R1.3 F46 (2)+(3) ADR-0010 | 2026-09-28 | `8802d3a` (tests), `5b136e5` (fix); merge `ed8e008` (PR #27) | merged; result not recorded here | deploy: done, cadvisor not recreated; postdeploy: `tests: passed` (deploy log 13:17:53) | ADR-0010 Accepted by the operator; allowlist guard in `test_10`, both strict xfails verified with `--runxfail` first. No compose change. Operator reports 62 passed, 4 skipped; the deploy log summary itself has no counts (recorded as F56). F46 → `partly`, step (4) remains. |
+| Roadmap document | 2026-09-26 | merge `5c86a6b` (PR #26) | merged; result not recorded here | no runtime effect | `.claude/roadmap.md` created; `ClaudeTransition.md` archived; §3.6 index duplicate dropped, `check_findings.py` checks the §6 group table instead. Same branch: stage R2 inserted (§9), R2–R4 renumbered to R3–R5, group i → R2b, F4 → R2d, F21/F22 pulled forward, findings F50–F55 added; then stage R4 (service standard, §9.7) inserted, core → R5, apps → R6. |
 | F28 cadvisor socket :ro | 2026-09-25 | `1a2f26c` (tests), `b447602` (fix); merge `f2a3172` (PR #24) | green | deploy: done twice, postdeploy green (62 passed, 4 skipped) | cadvisor recreated with the socket `:ro`; named container metrics read live from the fresh cadvisor, mount `RW=false`. Near-zero security gain alone (privileged stays; `:ro` does not restrict the API) — F46 step (1) done. Same deploy proved F49: its pull changed `tests/postdeploy/test_25`, `find ! -user admin` empty right after, next deploy `repo-ownership: OK` → F49 addressed. |
 | F49 no-bytecode | 2026-09-25 | `dca1145` (tests), `05eee19` (fix); merge `19c76ab` (PR #22) | green | deploy: done twice, postdeploy green, both `repo-ownership: OK`; `find ! -user admin` empty | Fix in `scripts/tests/run-tests.sh` (export + explicit in the sudo env call). **Not yet proof:** this pull changed no module that postdeploy imports, so nothing would have been recompiled anyway. F49 stays partly until a pull changes `tests/postdeploy`. |
 | F48 guard (host-wide no-volume check) | 2026-09-25 | `785dee5` (tests), `133b615` (helper); merge `acdd38b` (PR #20) | green | deploy: done, postdeploy: green (60 passed, 4 skipped) incl. `test_host_has_no_docker_volumes` | Variant a (operator): any Docker volume on the Pi fails; parsing proven by guards `test_40` (strict xfail first). ADR-0008 gained an Enforcement section. F48 addressed. The same deploy confirmed F49: two root-owned `.pyc` files for the changed test modules; the next deploy (14:27) logged `repo-ownership: mismatch`. |
