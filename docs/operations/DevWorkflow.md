@@ -54,9 +54,13 @@ All development happens inside WSL (Ubuntu).
 ### 3.1 Tooling Model
 
 - Python virtual environment: `.venv`
-- Dev dependencies: `requirements-dev.txt` only — `pyproject.toml` declares none (lint tools
-  pinned to the revisions in `.pre-commit-config.yaml`, enforced by
-  `tests/precommit/test_50_toolchain_version_parity.py`)
+- Dev dependencies: `requirements-dev.txt` only — `pyproject.toml` declares none. Every direct
+  dependency is pinned exactly there, and every transitive one in `constraints-dev.txt`
+  (applied by `-c`). Pins that also appear in `.pre-commit-config.yaml` must match, enforced by
+  `tests/precommit/test_50_toolchain_version_parity.py`.
+- `tests/doctor/test_40_venv_matches_pins.py` checks that `.venv` holds exactly the pinned
+  packages. `pip install -r` never removes a package, so after a dependency is dropped, run
+  `make venv-clean venv` once.
 - No production Python dependencies exist
 - Makefile is the **single orchestration entrypoint**
 
@@ -157,7 +161,8 @@ It contains three parallel jobs:
 All jobs:
 
 - use Python 3.12
-- run `make venv` (with `.venv` cached by `requirements-dev.txt` hash)
+- run `make venv` (with `.venv` cached by the hash of `requirements-dev.txt` and
+  `constraints-dev.txt`; no partial cache restore, so old packages never carry over)
 - precommit job additionally caches `~/.cache/pre-commit`
 
 This keeps WSL and GitHub CI on the same Make targets. These job checks are the required status

@@ -129,7 +129,6 @@ def _hook_dependencies() -> list[str]:
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 def test_requirements_dev_pins_exactly() -> None:
     unpinned = _unpinned(requirement_specs(REQUIREMENTS_DEV))
     assert not unpinned, (
@@ -139,7 +138,6 @@ def test_requirements_dev_pins_exactly() -> None:
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 def test_requirements_dev_applies_constraints() -> None:
     assert f"-c {CONSTRAINTS_DEV.name}" in option_lines(REQUIREMENTS_DEV), (
         f"❌ requirements-dev.txt does not apply {CONSTRAINTS_DEV.name} (F21).\n"
@@ -148,7 +146,6 @@ def test_requirements_dev_applies_constraints() -> None:
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 def test_constraints_pin_exactly_and_do_not_repeat_direct_pins() -> None:
     assert CONSTRAINTS_DEV.is_file(), (
         f"❌ {CONSTRAINTS_DEV.name} is missing (F21).\n"
@@ -169,7 +166,6 @@ def test_constraints_pin_exactly_and_do_not_repeat_direct_pins() -> None:
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 def test_hook_dependencies_match_requirements_dev() -> None:
     specs = requirement_specs(REQUIREMENTS_DEV)
     mismatched = []

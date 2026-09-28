@@ -193,7 +193,7 @@ Prerequisite: F21/F22 done in R1 (pinned pip, idempotent `make venv`, one depend
 
 | Inc | Content |
 |---|---|
-| R2d.1 | Renovate managers `pip_requirements`, `pre-commit`, `github-actions`; pins in `requirements-dev.txt` and `.pre-commit-config.yaml` move in one PR (the parity test enforces it); no automerge (F4) |
+| R2d.1 | Renovate managers `pip_requirements`, `pre-commit`, `github-actions`; pins in `requirements-dev.txt`, `constraints-dev.txt` and `.pre-commit-config.yaml` move in one PR (the parity test enforces it); no automerge (F4) |
 | R2d.2 | `docs/operations/dev-environment-updates.md`, analogous to `runtime-updates.md`: WSL checklist (apt, Ubuntu release, Docker Desktop + WSL integration, Python version, Claude Code), the flow `make venv-clean venv` → `make ci` → commit pins, and recovery when Docker is missing (F50) |
 | R2d.3 | `make doctor` checks versions: Python minor as in CI (3.12), Docker and Compose plugin present, with a pointer to the doc (F50) |
 | R2d.4 | GitHub Actions pinned by digest and kept current by Renovate (may join group g / F3 instead) |

@@ -29,11 +29,17 @@ def _in_repo_venv() -> bool:
     return Path(sys.prefix).resolve() == VENV.resolve()
 
 
+def _in_venv(dist: metadata.Distribution) -> bool:
+    # tests/conftest.py puts the repo root on sys.path, so metadata outside .venv is visible too,
+    # e.g. a git-ignored `*.egg-info` left in the checkout by an old `pip install -e .`.
+    return Path(str(dist.locate_file(""))).resolve().is_relative_to(VENV.resolve())
+
+
 def _installed() -> dict[str, str]:
     return {
         normalize(dist.metadata["Name"]): dist.version
         for dist in metadata.distributions()
-        if normalize(dist.metadata["Name"]) not in NOT_YET_PINNED
+        if _in_venv(dist) and normalize(dist.metadata["Name"]) not in NOT_YET_PINNED
     }
 
 
@@ -58,7 +64,6 @@ def _require_repo_venv() -> None:
         pytest.skip(f"not running in {VENV} (sys.prefix={sys.prefix}); the check is about .venv")
 
 
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 def test_every_installed_package_is_pinned() -> None:
     unpinned = sorted(f"{n}=={v}" for n, v in _installed().items() if n not in _pins())
     assert not unpinned, (

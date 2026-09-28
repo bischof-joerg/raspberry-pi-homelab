@@ -1,0 +1,21 @@
+# Exact pins for the transitive dev dependencies (F21), applied by `-c constraints-dev.txt` in
+# requirements-dev.txt. Direct dependencies are pinned there, never here.
+# Versions as installed in .venv on 2026-09-28; the comment names the package that pulls it in.
+# tests/doctor/test_40_venv_matches_pins.py fails if .venv holds a package pinned nowhere.
+
+certifi==2026.1.4  # requests
+cfgv==3.5.0  # pre-commit
+charset-normalizer==3.4.4  # requests
+distlib==0.4.0  # virtualenv
+filelock==3.20.3  # virtualenv
+identify==2.6.16  # pre-commit
+idna==3.11  # requests
+iniconfig==2.3.0  # pytest
+nodeenv==1.10.0  # pre-commit
+packaging==26.0  # pytest
+pathspec==1.0.3  # yamllint
+platformdirs==4.5.1  # virtualenv
+pluggy==1.6.0  # pytest
+Pygments==2.19.2  # pytest
+urllib3==2.6.3  # requests
+virtualenv==20.36.1  # pre-commit
