@@ -102,7 +102,6 @@ def _venv_recipe() -> str:
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="F22: contract pinned before the fix")
 def test_pyproject_declares_no_dev_dependencies() -> None:
     project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8")).get("project", {})
     extras = project.get("optional-dependencies", {})
@@ -114,7 +113,6 @@ def test_pyproject_declares_no_dev_dependencies() -> None:
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="F22: contract pinned before the fix")
 def test_venv_installs_only_requirements_dev() -> None:
     installs = re.findall(r"pip\"?\s+install\s+([^;\\\n]*)", _venv_recipe())
     assert installs, "❌ The venv recipe runs no 'pip install'.\nFix: update this test."

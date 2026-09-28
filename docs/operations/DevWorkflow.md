@@ -54,8 +54,9 @@ All development happens inside WSL (Ubuntu).
 ### 3.1 Tooling Model
 
 - Python virtual environment: `.venv`
-- Dev dependencies: `requirements-dev.txt` (lint tools pinned to the revisions in
-  `.pre-commit-config.yaml`, enforced by `tests/precommit/test_50_toolchain_version_parity.py`)
+- Dev dependencies: `requirements-dev.txt` only — `pyproject.toml` declares none (lint tools
+  pinned to the revisions in `.pre-commit-config.yaml`, enforced by
+  `tests/precommit/test_50_toolchain_version_parity.py`)
 - No production Python dependencies exist
 - Makefile is the **single orchestration entrypoint**
 
@@ -71,7 +72,8 @@ This:
 
 - creates `.venv` if missing
 - upgrades pip
-- installs `requirements-dev.txt` (pytest, ruff, shellcheck-py, yamllint, pre-commit, ...)
+- installs `requirements-dev.txt` (pytest, ruff, shellcheck-py, yamllint, pre-commit, ...); fails
+  if the file is missing
 
 Note: every quality-gate target (`make precommit`, `make test`, `make ci`, `make ci-*`) depends on
 `make venv`, so the venv is refreshed implicitly.

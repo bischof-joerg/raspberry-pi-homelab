@@ -15,15 +15,9 @@ license = { text = "UNLICENSED" }
 # Runtime dependencies (keep empty for now unless you ship an importable package)
 dependencies = []
 
-[project.optional-dependencies]
-# WSL-only dev/test toolchain (venv). Keep Pi lean and run postdeploy there only.
-dev = [
-  "pytest>=8",
-  "typeguard>=4",
-  "pre-commit>=3.7",
-  "yamllint>=1.33",
-  "ruff>=0.14.11",
-]
+# Dev/test dependencies live only in requirements-dev.txt, installed by `make venv` (F22).
+# Do not add an optional-dependencies extra here: a second list drifts from the pins
+# (tests/precommit/test_50_toolchain_version_parity.py).
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

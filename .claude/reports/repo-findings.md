@@ -60,7 +60,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F19 | Host-specific literals in reconciliation scripts | Host | Low | open | e |
 | F20 | `ensure-journald-read.sh` default user does not match its use | Host | Low | open | e |
 | F21 | Toolchain drift between `.venv` and pre-commit | Toolchain | Med | partly | h |
-| F22 | Three diverging sources of dev dependencies | Toolchain | Med | open | h |
+| F22 | Three diverging sources of dev dependencies | Toolchain | Med | partly | h |
 | F23 | Tests marked `lint` are never run by any gate | Tests | Med | open | h |
 | F24 | Renovate validator hook runs a floating image tag | Supply chain | Med | open | g |
 | F25 | JSON test scans git-ignored files | Tests | Low | open | h |
@@ -442,6 +442,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Make `requirements-dev.txt` the only source; drop the `dev` extra or generate it.
 - **Test:** `tests/precommit/test_50_toolchain_version_parity.py` — the extra is absent or identical.
 - **Acceptance:** One source of dev dependencies, enforced by the test.
+- **Progress (2026-09-28, R1.4 on `chore/r1-toolchain`):** `pyproject.toml` declares no dependencies (the `dev` extra and the unused `typeguard` are gone); the `Makefile` `venv` recipe installs only `-r requirements-dev.txt` and fails if the file is missing (the `.[dev]` and bare-package fallbacks are gone). Tests: `test_pyproject_declares_no_dev_dependencies`, `test_venv_installs_only_requirements_dev` in `tests/precommit/test_50_toolchain_version_parity.py` (strict xfail in `397d950`). **Open:** the third source, the `pytest-precommit` hook's `additional_dependencies`, still carries ranges; R1.5 pins it to `requirements-dev.txt` with a parity test, which closes F22.
 
 ### F23 – Tests marked `lint` are never run by any gate
 

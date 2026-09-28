@@ -30,8 +30,8 @@ paths:
 
 - **MUST** bump `.pre-commit-config.yaml` and `requirements-dev.txt` in the **same commit**.
   The parity test exists precisely to make a one-sided bump fail.
-- Known second source of truth: `pyproject.toml` `[project.optional-dependencies].dev` duplicates
-  these ranges and is **not** used by `make venv` (F22). Do not treat it as authoritative.
+- **MUST** declare dev dependencies only in `requirements-dev.txt`. `pyproject.toml` has no
+  dependency lists and `make venv` installs nothing else (F22, enforced by the same test file).
 
 ## Renovate
 
