@@ -10,10 +10,10 @@ is read at the start of any work session. The Claude transition (R0) is complete
 - **Stage:** R1 — review of the implementation and the findings in `.claude/reports/repo-findings.md`.
 - **Done in R1:** group a except F26b (its restore test belongs to R3/F9); F48 and F49; F28, the
   first step of group b. See §6 and §7.
-- **Next increment:** F46 steps (2) and (3) — make `docs/monitoring.md` stop contradicting the
-  compose file, write the ADR for cadvisor's privileged exception (four-digit form per
-  `.claude/rules/docs-adr.md`), and a guard with an allowlist of privileged services that cites it.
-  Step (4), dropping `privileged`, is a separate, later increment.
+- **In progress:** R1.3, F46 steps (2) and (3) on `docs/r1-f46-privileged-adr` — ADR-0010 for
+  cadvisor's privileged exception (Proposed), `docs/monitoring.md` corrected, allowlist guard in
+  `tests/guards/test_10_monitoring_compose_contract.py`. No compose change. Step (4), dropping
+  `privileged`, is a separate, later increment.
 - **Then:** F21 and F22 (group h, pulled forward on 2026-09-26): a reproducible toolchain — pinned
   pip, idempotent `make venv`, one source of dev dependencies. Every later increment relies on
   `make ci` as evidence, and today each gate run may upgrade tools within version ranges.
@@ -116,7 +116,7 @@ first, then the mechanisms other fixes depend on.
 | Group | Scope | Open | Done | Why this order / state |
 |---|---|---|---|---|
 | a | Alertmanager renderer: modes, errors, escaping, determinism | F26b | F26, F35, F36, F8, F39, F48 | Done except F26b's restore fixture test, which needs the R3 backup harness (F9) |
-| b | Docker socket and privilege | F46, F30, F34 | F28 | Host-root equivalence. Next: F46 (2)+(3) docs/ADR/allowlist, then F46 (4) drop `privileged` |
+| b | Docker socket and privilege | F46, F30, F34 | F28 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; then F46 (4) drop `privileged` |
 | c | LAN exposure and firewall contract | F45, F31, F42, F15 | — | F45 needs a Pi-side measurement first; decides F15 |
 | d | Config hash that works | F1, F2, F29, F13 | — | Makes every later config change actually deploy; candidate: `up --renew-anon-volumes` (F48) |
 | f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | — | One test file becomes the home of all hardening checks |

@@ -85,7 +85,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F43 | ADR-0001 promises subnet validation the deploy path skips | Docs | Med | open | e |
 | F44 | Stale image tag in a Markdown example | Supply chain | Low | open | g |
 | F45 | UFW very likely does not govern the published ports | Exposure | High | open | c |
-| F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | open | b |
+| F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | partly | b |
 | F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | open | h |
 | F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | addressed | a |
 | F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | addressed | h |
@@ -187,6 +187,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Test:** `tests/guards/test_10_monitoring_compose_contract.py` — an explicit allowlist of privileged services that references the ADR; `tests/postdeploy/test_25_cadvisor_metrics.py` proves metrics still flow after each step.
 - **Acceptance:** The guard test fails for any privileged service not on the allowlist; the allowlist entry cites an existing ADR; `docs/monitoring.md` no longer contradicts the compose file.
 - **Progress (2026-09-25):** step (1) done via F28 (merge `f2a3172`); the socket is now `:ro`. The compose line numbers above predate R1.2 and have shifted (cadvisor now starts near line 251) — re-read before fixing. Next: steps (2) + (3) as one docs/ADR increment with the allowlist guard, then (4).
+- **Progress (2026-09-28):** steps (2) + (3) on branch `docs/r1-f46-privileged-adr`. `docs/monitoring.md` no longer denies privileged containers; its cAdvisor section lists the privileges and all mounts and links `docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md` (status Proposed until the operator accepts it). The ADR records the Pi 5 necessity as unmeasured; the flag predates `3a50de5` (2026-02-02) with no recorded test. Guard: `PRIVILEGED_ALLOWLIST` in `tests/guards/test_10_monitoring_compose_contract.py` — `test_privileged_services_are_allowlisted`, `test_allowlist_has_no_stale_entries`, `test_allowlist_entries_cite_existing_adr`, `test_monitoring_doc_does_not_deny_privileged_containers` (the last two strict xfail in the tests commit `8802d3a`). No compose change. Status `partly`: step (4), dropping `privileged`, remains.
 
 ### F28 – cadvisor mounts the Docker socket read-write
 

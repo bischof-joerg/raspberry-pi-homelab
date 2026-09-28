@@ -1,4 +1,4 @@
-Read `.claude/roadmap.md` and plan the next increment with `/increment-plan`
+Antworte auf Deutsch. Lese `.claude/roadmap.md` und plane das nächste Inkrement mit /increment-plan
 
 ____ TODO STACK _____
 

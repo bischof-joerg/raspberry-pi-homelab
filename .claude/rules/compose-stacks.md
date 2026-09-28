@@ -48,9 +48,10 @@ implementation; a new stack copies its shape, not its service list.
 
 - `cadvisor` runs `privileged: true` as root, plus `pid: host` and the Docker socket (`:ro` since
   F28 — which does not restrict the API, see above).
-  An inline compose comment calls this a Pi 5 necessity, but **no document records the exception and
-  `docs/monitoring.md` claims the opposite** (F46). Treat it as existing practice under review, not
-  as a settled decision, and do not cite it to justify a second privileged container.
+  Recorded in `docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md` and enforced by
+  `PRIVILEGED_ALLOWLIST` in `tests/guards/test_10_monitoring_compose_contract.py`. The claimed Pi 5
+  necessity is **unmeasured**; F46 step (4) tests dropping it. Do not cite it to justify a second
+  privileged container — a new one needs its own ADR and allowlist entry.
 - `alertmanager-config-render` is a one-shot renderer that runs as uid 0 (`user: "0:0"`,
   `group_add: ["65534"]`) because it must own the root-owned output directory. It has no network,
   a read-only root filesystem and no capabilities, and it installs nothing at runtime (F8, since
@@ -70,7 +71,9 @@ Every new image also needs Renovate coverage in the same increment (`ci-renovate
 ## Sources
 
 `stacks/monitoring/compose/docker-compose.yml`, `docs/architecture/adr/ADR-0008-bind-mounts-only.md`,
-`docs/architecture/adr/ADR-0007-secrets-and-env-files.md`, `deploy.sh`, `ChatGPTHint.txt` §4 and §7.
+`docs/architecture/adr/ADR-0007-secrets-and-env-files.md`,
+`docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md`, `deploy.sh`, `ChatGPTHint.txt`
+§4 and §7.
 
 ## Violations
 
