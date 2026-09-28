@@ -223,18 +223,9 @@ _guard-pi: ## Internal: fail if not running on Raspberry Pi
 
 # --- Virtualenv --------------------------------------------------------------
 
-venv: ## Create local venv and install dev requirements (WSL only)
+venv: ## Create local venv and install the pinned dev requirements; no-op if up to date (WSL only)
 ifeq ($(USE_VENV),yes)
-	@set -euo pipefail; \
-	if [ ! -x "$(VENV_DIR)/bin/python" ]; then \
-	  echo "[venv] creating $(VENV_DIR)"; \
-	  python3 -m venv "$(VENV_DIR)"; \
-	fi; \
-	echo "[venv] upgrading pip"; \
-	"$(VENV_DIR)/bin/pip" install -U pip >/dev/null; \
-	[ -f requirements-dev.txt ] || { echo "FAIL: requirements-dev.txt missing (the only dev dependency source, F22)"; exit 2; }; \
-	echo "[venv] installing requirements-dev.txt"; \
-	"$(VENV_DIR)/bin/pip" install -r requirements-dev.txt
+	@VENV_DIR="$(VENV_DIR)" ./scripts/dev/ensure-venv.sh
 else
 	@echo "venv: SKIP (WSL only by design)"
 endif

@@ -78,7 +78,6 @@ def _pip_calls(box: dict[str, Path]) -> list[str]:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 def test_first_run_installs_pinned_pip_then_requirements(sandbox: dict[str, Path]) -> None:
     proc = _run(sandbox)
     assert proc.returncode == 0, f"❌ ensure-venv.sh failed:\n{proc.stdout}{proc.stderr}"
@@ -95,7 +94,6 @@ def test_first_run_installs_pinned_pip_then_requirements(sandbox: dict[str, Path
     )
 
 
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 def test_second_run_calls_no_pip(sandbox: dict[str, Path]) -> None:
     assert _run(sandbox).returncode == 0
     first = len(_pip_calls(sandbox))
@@ -108,7 +106,6 @@ def test_second_run_calls_no_pip(sandbox: dict[str, Path]) -> None:
     assert "up to date" in proc.stdout, f"❌ No 'up to date' message:\n{proc.stdout}"
 
 
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 @pytest.mark.parametrize("change", ["constraints", "requirements", "python"])
 def test_a_changed_input_triggers_a_reinstall(sandbox: dict[str, Path], change: str) -> None:
     assert _run(sandbox).returncode == 0
@@ -127,7 +124,6 @@ def test_a_changed_input_triggers_a_reinstall(sandbox: dict[str, Path], change: 
     )
 
 
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 def test_failed_install_leaves_no_stamp(sandbox: dict[str, Path]) -> None:
     proc = _run(sandbox, STUB_PIP_EXIT="1")
     assert proc.returncode != 0, "❌ ensure-venv.sh exited 0 although pip failed."

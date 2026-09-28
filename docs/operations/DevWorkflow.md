@@ -72,15 +72,18 @@ First-time setup:
 make venv
 ```
 
-This:
+This runs `scripts/dev/ensure-venv.sh`, which:
 
 - creates `.venv` if missing
-- upgrades pip
+- installs pip at the version pinned in `constraints-dev.txt`
 - installs `requirements-dev.txt` (pytest, ruff, shellcheck-py, yamllint, pre-commit, ...); fails
-  if the file is missing
+  if it or `constraints-dev.txt` is missing
+- writes `.venv/.toolchain-stamp` (a hash of both pin files and the Python version) only after
+  both installs succeeded
 
 Note: every quality-gate target (`make precommit`, `make test`, `make ci`, `make ci-*`) depends on
-`make venv`, so the venv is refreshed implicitly.
+`make venv`. When the stamp matches, `make venv` installs nothing and prints `[venv] up to date`;
+a changed pin file or Python version triggers a reinstall.
 
 ------------------------------------------------------------------------
 

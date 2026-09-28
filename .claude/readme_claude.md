@@ -444,8 +444,9 @@ Phase 8 retired C1 and C2. What changed:
 
 - **Write scope:** Claude writes inside the repo, minus the exclusions in §4.1. Outside the repo it
   may write only to the plan and temp prefixes (`CLAUDE.md` §2.1).
-- **Gates and formatters:** Claude runs `make ci` and friends. They update `.venv` unpinned (F21)
-  and start Docker for the Renovate validator (F24) — reasons to fix both early in R1.
+- **Gates and formatters:** Claude runs `make ci` and friends. They update `.venv` only when a pin
+  changed, and then to the exact pins (F21, R1.4–R1.6); they still start Docker for the Renovate
+  validator (F24).
 - **Guard:** reason labels in operate mode are `scope`, `policy` and `inspect`. C1/C2 no longer
   appear. The transition policy is still tested (mode-pinned tests T01–T46), so switching back to
   `"mode": "transition"` in `guard-config.json` is a one-line rollback.

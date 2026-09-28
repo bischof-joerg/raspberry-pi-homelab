@@ -119,9 +119,10 @@ git status | diff | log | show | ls-files | check-ignore | rev-parse
 **Claude may also run — gates and formatters that write** (since Phase 8, D8-b/D8-c):
 `make precommit`, `test`, `check`, `ci`, `ci-doctor`, `ci-precommit`, `ci-tests`, `format`,
 `ruff`, `ruff-fix`; `ruff check --fix`, `ruff format`. They can rewrite files (pre-commit fixers,
-formatters), so show the resulting `git diff` afterwards. Each depends on `make venv`, which updates
-`.venv` with an **unpinned** `pip install -U pip` over the network (F21). pre-commit also starts
-Docker for the Renovate validator (F24).
+formatters), so show the resulting `git diff` afterwards. Each depends on `make venv`
+(`scripts/dev/ensure-venv.sh`): it installs the pinned pip and `requirements-dev.txt` over the
+network only when a pin file or the Python version changed, and otherwise prints `[venv] up to
+date` (F21). pre-commit also starts Docker for the Renovate validator (F24).
 
 **Operator only** — these touch the Pi, host state, secrets or history:
 `make venv`, `venv-clean`, `hooks`, `postdeploy`, `host-*`, `backup*`, `restore`, `renovate*`;

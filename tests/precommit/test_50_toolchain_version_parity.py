@@ -189,7 +189,6 @@ def test_hook_dependencies_match_requirements_dev() -> None:
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="F21: contract pinned before the fix")
 def test_pip_is_pinned_in_constraints() -> None:
     spec = requirement_specs(CONSTRAINTS_DEV).get("pip", "")
     assert spec.startswith("=="), (

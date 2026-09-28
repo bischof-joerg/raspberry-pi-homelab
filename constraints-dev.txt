@@ -14,6 +14,7 @@ iniconfig==2.3.0  # pytest
 nodeenv==1.10.0  # pre-commit
 packaging==26.0  # pytest
 pathspec==1.0.3  # yamllint
+pip==26.2.1  # the venv itself; installed first by scripts/dev/ensure-venv.sh
 platformdirs==4.5.1  # virtualenv
 pluggy==1.6.0  # pytest
 Pygments==2.19.2  # pytest
