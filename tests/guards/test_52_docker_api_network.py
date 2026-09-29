@@ -13,14 +13,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts/network/bootstrap-networks.sh"
-
-pytestmark = pytest.mark.xfail(
-    strict=True, reason="R1.9: bootstrap-networks.sh does not know docker-api yet"
-)
 
 
 def _text() -> str:

@@ -5,7 +5,9 @@ set -euo pipefail
 # Ensures external Docker networks used by stacks exist (idempotent), with guardrails.
 #
 # Default behavior:
-# - Ensure "monitoring" and "apps" networks exist (create if missing).
+# - Ensure "monitoring", "apps" and "docker-api" networks exist (create if missing).
+# - "docker-api" is internal (--internal: no default route, no way out of the host). It carries
+#   only Docker socket proxy traffic (F30, F57); an existing one that is not internal is an error.
 # - If you set *_SUBNET/*_GATEWAY/*_BRIDGE_NAME, validate existing network matches.
 # - If missing and subnet config is set, create with that config.
 #
@@ -16,6 +18,7 @@ set -euo pipefail
 # Env:
 #   MONITORING_NETWORK=monitoring
 #   APPS_NETWORK=apps
+#   DOCKER_API_NETWORK=docker-api
 #
 #   # Optional desired config (validation + creation)
 #   MONITORING_SUBNET=172.20.0.0/16
@@ -44,6 +47,7 @@ CREATE_IF_MISSING="${CREATE_IF_MISSING:-1}"
 
 MONITORING_NETWORK="${MONITORING_NETWORK:-monitoring}"
 APPS_NETWORK="${APPS_NETWORK:-apps}"
+DOCKER_API_NETWORK="${DOCKER_API_NETWORK:-docker-api}"
 
 run() {
   if [[ "$DRY_RUN" == "1" ]]; then
@@ -127,9 +131,13 @@ create_network() {
   local subnet="${2:-}"
   local gateway="${3:-}"
   local bridge_name="${4:-}"
+  local internal="${5:-}"
 
   local args=(docker network create --driver bridge)
 
+  if [[ "$internal" == "internal" ]]; then
+    args+=(--internal)
+  fi
   if [[ -n "$bridge_name" ]]; then
     args+=(--opt "com.docker.network.bridge.name=${bridge_name}")
   fi
@@ -157,6 +165,17 @@ validate_network() {
   local want_subnet="${2:-}"
   local want_gateway="${3:-}"
   local want_bridge="${4:-}"
+  local want_internal="${5:-}"
+
+  if [[ "$want_internal" == "internal" && "$DRY_RUN" == "1" ]] && ! net_exists "$name"; then
+    log "DRY_RUN: network '${name}' not created, Internal check skipped"
+  elif [[ "$want_internal" == "internal" ]]; then
+    local have_internal
+    have_internal="$(docker network inspect "$name" --format '{{.Internal}}' || true)"
+    if [[ "$have_internal" != "true" ]]; then
+      die "network '${name}' must be internal: have Internal=${have_internal:-<none>} want=true"
+    fi
+  fi
 
   if [[ -n "$want_subnet" || -n "$want_gateway" ]]; then
     local have
@@ -188,10 +207,11 @@ ensure_network() {
   local want_subnet="${2:-}"
   local want_gateway="${3:-}"
   local want_bridge="${4:-}"
+  local internal="${5:-}"
 
   if net_exists "$name"; then
     log "Network exists: $name"
-    validate_network "$name" "$want_subnet" "$want_gateway" "$want_bridge"
+    validate_network "$name" "$want_subnet" "$want_gateway" "$want_bridge" "$internal"
     return 0
   fi
 
@@ -200,8 +220,8 @@ ensure_network() {
   fi
 
   log "Network missing: $name"
-  create_network "$name" "$want_subnet" "$want_gateway" "$want_bridge"
-  validate_network "$name" "$want_subnet" "$want_gateway" "$want_bridge"
+  create_network "$name" "$want_subnet" "$want_gateway" "$want_bridge" "$internal"
+  validate_network "$name" "$want_subnet" "$want_gateway" "$want_bridge" "$internal"
 }
 
 main() {
@@ -209,10 +229,12 @@ main() {
 
   log "bootstrap: ensuring external networks"
   log "settings: DRY_RUN=$DRY_RUN CREATE_IF_MISSING=$CREATE_IF_MISSING"
-  log "networks: monitoring=$MONITORING_NETWORK apps=$APPS_NETWORK"
+  log "networks: monitoring=$MONITORING_NETWORK apps=$APPS_NETWORK docker-api=$DOCKER_API_NETWORK"
 
   ensure_network "$MONITORING_NETWORK" "${MONITORING_SUBNET:-}" "${MONITORING_GATEWAY:-}" "${MONITORING_BRIDGE_NAME:-}"
   ensure_network "$APPS_NETWORK" "${APPS_SUBNET:-}" "${APPS_GATEWAY:-}" "${APPS_BRIDGE_NAME:-}"
+  # Internal: Docker socket proxy traffic only (F30, F57); no subnet pinning needed.
+  ensure_network "$DOCKER_API_NETWORK" "" "" "" internal
 
   log "OK: networks ready"
 }

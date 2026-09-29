@@ -24,6 +24,7 @@ The design prioritizes:
 |------------|-----------|---------|
 | `monitoring` | external | Monitoring plane: VictoriaMetrics, vmagent, vmalert, VictoriaLogs, Grafana, exporters |
 | `apps`       | external | Application plane: app stacks (Home Assistant, AdGuard, etc.) |
+| `docker-api` | external, **internal** | Docker API plane: only the Docker socket proxy and the services that read the Docker API through it (planned R1.10/R1.11: vector, cadvisor; findings F30, F57). No default route, no way out of the host. Created since R1.9; no service uses it yet. |
 
 ### Design principles
 
@@ -43,6 +44,7 @@ The design prioritizes:
 |-------------|---------------------|
 | monitoring  | `monitoring` |
 | apps        | `apps` |
+| docker-api  | `docker-api` |
 
 ### Docker Compose (example)
 
@@ -75,9 +77,11 @@ It is:
 
 ### Responsibilities
 
-- Verify that required networks exist (`monitoring`, `apps`)
-- Create missing networks (optional)
+- Verify that required networks exist (`monitoring`, `apps`, `docker-api`)
+- Create missing networks (optional); `docker-api` is always created with `--internal`
 - Validate subnet, gateway, and bridge name if configured
+- Always validate that `docker-api` is internal; an existing non-internal `docker-api` fails the
+  bootstrap and must be removed by hand (`docker network rm docker-api`) before the next deploy
 - Refuse creation if the requested subnet overlaps existing Docker networks
 
 ### Default behavior
