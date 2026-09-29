@@ -13,6 +13,18 @@ CADVISOR_CONTAINER = f"{PROJECT}-cadvisor-1"
 CURL_IMAGE = "curlimages/curl:8.11.1"
 # Long-running services whose container metrics must carry the Docker container name.
 NAMED_SERVICES = ("alertmanager", "grafana", "victoriametrics")
+# Families that vmalert rules (stacks/monitoring/vmalert/rules/basic-alerts.yml) and the Docker
+# overview dashboard use. All present for NAMED_SERVICES while privileged (measured on the Pi,
+# 2026-09-29); F46 step 4 must keep every one of them.
+REQUIRED_FAMILIES = (
+    "container_last_seen",
+    "container_cpu_usage_seconds_total",
+    "container_memory_working_set_bytes",
+    "container_memory_rss",
+    "container_memory_cache",
+    "container_network_receive_bytes_total",
+    "container_network_transmit_bytes_total",
+)
 
 
 @pytest.mark.postdeploy
@@ -73,6 +85,8 @@ def test_cadvisor_exports_named_container_metrics(retry):
     """
     F28: the `name` label comes from cadvisor's Docker integration (the Docker API over the
     socket). /metrics keeps answering without it, so the endpoint test above cannot tell.
+    F46 step 4: without `privileged`, single families can vanish (e.g. network counters read
+    from /proc/<pid>/net of other UIDs), so every family in REQUIRED_FAMILIES is checked.
     Queried live from cadvisor, not from VictoriaMetrics, whose lookback would still return
     series scraped before a cadvisor restart.
     """
@@ -83,24 +97,41 @@ def test_cadvisor_exports_named_container_metrics(retry):
 
     def _check():
         nonlocal missing
-        body = _cadvisor_metrics()
+        lines = _cadvisor_metrics().splitlines()
         missing = [
-            svc
+            f"{svc}/{family}"
             for svc in NAMED_SERVICES
+            for family in REQUIRED_FAMILIES
             if not any(
-                line.startswith("container_memory_usage_bytes{")
-                and f'name="{PROJECT}-{svc}-1"' in line
-                for line in body.splitlines()
+                line.startswith(f"{family}{{") and f'name="{PROJECT}-{svc}-1"' in line
+                for line in lines
             )
         ]
         assert not missing, (
-            f"❌ cadvisor exports no container_memory_usage_bytes with name= for {missing} (F28).\n"
-            "Its Docker integration is not working - check `docker logs "
-            f"{CADVISOR_CONTAINER}` and the /var/run/docker.sock mount."
+            f"❌ cadvisor exports these families without a name= series: {missing} (F28, F46).\n"
+            f"Check `docker logs {CADVISOR_CONTAINER}`. All missing: the Docker integration "
+            "(/var/run/docker.sock mount). Only some: a privilege gap since privileged was dropped "
+            "- add the smallest cap_add set (ADR-0011)."
         )
 
     # cadvisor needs a housekeeping cycle (30-60 s) after a restart to discover containers.
     retry(_check, timeout_s=120, interval_s=5)
+
+
+@pytest.mark.postdeploy
+def test_cadvisor_container_is_not_privileged():
+    """F46 step 4: the running cadvisor container is not privileged (ADR-0011)."""
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
+
+    res = run(["docker", "inspect", CADVISOR_CONTAINER, "--format", "{{.HostConfig.Privileged}}"])
+    assert res.returncode == 0, f"❌ docker inspect {CADVISOR_CONTAINER} failed:\n{res.stderr}"
+    privileged = res.stdout.strip()
+    assert privileged == "false", (
+        f"❌ {CADVISOR_CONTAINER}: HostConfig.Privileged={privileged!r}, expected 'false' (F46).\n"
+        "Fix: drop `privileged: true` from stacks/monitoring/compose/docker-compose.yml and "
+        "redeploy so the container is recreated."
+    )
 
 
 @pytest.mark.postdeploy

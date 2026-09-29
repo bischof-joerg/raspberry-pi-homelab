@@ -5,6 +5,9 @@ the open findings by group, and the increment log. `.claude/CLAUDE.md` is always
 is read at the start of any work session. The Claude transition (R0) is complete and archived in
 `.claude/ClaudeTransition.md` — historical record only, no longer maintained.
 
+**To work on the roadmap - start a new claude session and enter command:** \
+`Antworte auf Deutsch. Lese .claude/roadmap.md und plane das nächste Inkrement mit /increment-plan`
+
 ## 1. Status
 
 - **Stage:** R1 — review of the implementation and the findings in `.claude/reports/repo-findings.md`.

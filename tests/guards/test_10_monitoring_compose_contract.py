@@ -4,6 +4,8 @@ import re
 from functools import cache
 from pathlib import Path
 
+import pytest
+
 from tests._lib.compose import render_compose
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +20,8 @@ MONITORING_DOC = REPO_ROOT / "docs/monitoring.md"
 PRIVILEGED_ALLOWLIST = {
     "cadvisor": "docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md",
 }
+# F46 step 4: the ADR that records cadvisor running without `privileged` (supersedes ADR-0010).
+CADVISOR_ADR = "docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md"
 
 REQUIRED_SERVICES = {
     "victoriametrics",
@@ -119,22 +123,37 @@ def test_allowlist_entries_cite_existing_adr() -> None:
     )
 
 
-def test_monitoring_doc_does_not_deny_privileged_containers() -> None:
+@pytest.mark.xfail(strict=True, reason="F46 step 4: contract pinned before privileged is dropped")
+def test_cadvisor_is_not_privileged() -> None:
+    privileged = _services()["cadvisor"].get("privileged")
+    assert privileged is not True, (
+        f"❌ cadvisor sets privileged={privileged!r} (F46 step 4).\n"
+        f"Fix: drop `privileged: true`; {CADVISOR_ADR} records that it is not needed. If metrics "
+        "are missing without it, add the smallest `cap_add` set instead."
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="F46 step 4: contract pinned before the doc is corrected")
+def test_monitoring_doc_matches_cadvisor_privileges() -> None:
     text = MONITORING_DOC.read_text(encoding="utf-8")
-    denials = [
+    claims = [
         phrase
-        for phrase in ("no privileged containers", "minimal privileges")
+        for phrase in ("only cadvisor runs privileged", "one privileged container")
         if phrase in text.lower()
     ]
-    assert not denials, (
-        f"❌ docs/monitoring.md contradicts the compose file (F46): {denials}\n"
-        "Fix: state that cadvisor runs privileged and link its ADR."
+    assert not claims, (
+        f"❌ docs/monitoring.md still calls cadvisor privileged (F46): {claims}\n"
+        "Fix: describe cadvisor's actual privileges and link its ADR."
     )
 
     section = re.search(r"^### cAdvisor$(.*?)(?=^##)", text, flags=re.MULTILINE | re.DOTALL)
     assert section, "❌ docs/monitoring.md has no '### cAdvisor' section.\nFix: restore it."
-    adr_name = Path(PRIVILEGED_ALLOWLIST["cadvisor"]).name
+    assert "privileged: true" not in section.group(1), (
+        "❌ The cAdvisor section of docs/monitoring.md lists `privileged: true` (F46).\n"
+        "Fix: remove it; the compose file no longer sets it."
+    )
+    adr_name = Path(CADVISOR_ADR).name
     assert adr_name in section.group(1), (
         f"❌ The cAdvisor section of docs/monitoring.md does not link {adr_name} (F46).\n"
-        "Fix: link the ADR that records the privileged exception."
+        "Fix: link the ADR that records cadvisor's privileges."
     )
