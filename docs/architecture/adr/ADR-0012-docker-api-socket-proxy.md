@@ -1,6 +1,6 @@
 # ADR-0012: Docker API access through a filtering socket proxy
 
-- **Status:** Accepted
+- **Status:** Proposed
 - **Date:** 2026-09-29
 - **Scope:** every container in this repository that reads the Docker Engine API; today vector
   (since R1.10) and, from R1.11, cadvisor. Findings F30 and F57.
