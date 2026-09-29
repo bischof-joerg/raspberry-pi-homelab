@@ -26,6 +26,9 @@ VECTOR_CONTAINER = f"{PROJECT}-vector-1"
 CURL_IMAGE = "curlimages/curl:8.11.1"
 DOCKER_SOCKET = "/var/run/docker.sock"
 
+# Without it deploy.sh (`-m postdeploy`) deselects every test here (tests/guards/test_43).
+pytestmark = pytest.mark.postdeploy
+
 
 @pytest.fixture(autouse=True)
 def _need_docker() -> None:

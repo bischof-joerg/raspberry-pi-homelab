@@ -48,6 +48,10 @@ with** the implementation, never afterwards.
   `lint` is silently deselected — that is F23, and it is currently hiding a real failure in
   `test_15_json_valid.py` (F25). Check the marker before assuming a test runs.
 - `make test` ignores `tests/precommit` entirely.
+- A test in `tests/postdeploy` without the `postdeploy` marker is deselected on the Pi, and
+  `make ci` never runs that directory — the seven checks of `test_26_docker_socket_proxy.py`
+  were lost this way on the first R1.10 deploy. `tests/guards/test_43_postdeploy_markers.py` now
+  fails on any unmarked postdeploy test; mark the module with `pytestmark`.
 
 ## Backup has no tests yet
 
