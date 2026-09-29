@@ -33,6 +33,24 @@ REQUIRED_SERVICES = {
 
 OPTIONAL_SERVICES = {}
 
+# Finding F34: every service's networks are fixed here, so joining a network is a reviewed change.
+# vector is on `apps` on purpose (operator, 2026-09-29): the apps stack (R6) is prepared, and
+# vector is to process data from app services there. docker_logs itself needs no network.
+# The renderer has none at all (`network_mode: none`, F8).
+EXPECTED_NETWORKS: dict[str, set[str]] = {
+    "alertmanager": {"monitoring"},
+    "alertmanager-config-render": set(),
+    "victoriametrics": {"monitoring"},
+    "vmagent": {"monitoring"},
+    "vmalert": {"monitoring"},
+    "grafana": {"monitoring"},
+    "node-exporter": {"monitoring"},
+    "cadvisor": {"monitoring"},
+    "victorialogs": {"monitoring"},
+    "vector": {"monitoring", "apps"},
+}
+NO_NETWORK_SERVICES = {"alertmanager-config-render"}
+
 # Policy: Prometheus runtime must not exist in the monitoring stack.
 BANNED_SERVICES = {"prometheus"}
 
@@ -79,6 +97,43 @@ def test_grafana_datasource_does_not_point_to_prometheus_runtime():
 def _services() -> dict:
     data = render_compose(COMPOSE_FILE, env_file=ENV_EXAMPLE if ENV_EXAMPLE.exists() else None)
     return data["services"]
+
+
+def test_every_service_has_an_expected_network_set() -> None:
+    # Guards the guard: a service missing from EXPECTED_NETWORKS would never be checked.
+    services = set(_services())
+    assert services == EXPECTED_NETWORKS.keys(), (
+        "❌ EXPECTED_NETWORKS does not match the compose services (F34).\n"
+        f"Missing: {sorted(services - EXPECTED_NETWORKS.keys())}, "
+        f"stale: {sorted(EXPECTED_NETWORKS.keys() - services)}\n"
+        "Fix: add or remove the entry, with the reason for any network beyond `monitoring`."
+    )
+
+
+def test_services_join_only_their_expected_networks() -> None:
+    wrong = {
+        name: sorted(service.get("networks") or {})
+        for name, service in _services().items()
+        if name in EXPECTED_NETWORKS
+        and set(service.get("networks") or {}) != EXPECTED_NETWORKS[name]
+    }
+    assert not wrong, (
+        f"❌ Services with unexpected networks (F34): {wrong}\n"
+        f"Expected: { {n: sorted(EXPECTED_NETWORKS[n]) for n in wrong} }\n"
+        "Fix: revert the network change, or update EXPECTED_NETWORKS and record the reason."
+    )
+
+
+def test_no_network_services_have_network_mode_none() -> None:
+    wrong = {
+        name: _services()[name].get("network_mode")
+        for name in NO_NETWORK_SERVICES
+        if _services()[name].get("network_mode") != "none"
+    }
+    assert not wrong, (
+        f"❌ Services meant to run without a network do not set `network_mode: none`: {wrong}\n"
+        "Fix: restore `network_mode: none` (F8)."
+    )
 
 
 def _privileged_services() -> set[str]:

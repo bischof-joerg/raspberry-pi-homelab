@@ -16,9 +16,11 @@ is read at the start of any work session. The Claude transition (R0) is complete
   F21 and F22 as R1.4–R1.6 (one dev dependency source, exact pins incl. `constraints-dev.txt`,
   pinned pip, idempotent `make venv`); F46 step (4) as R1.7 (cadvisor unprivileged, ADR-0011
   supersedes ADR-0010, F46 addressed). See §6 and §7.
-- **Next increment:** the rest of group b — F30 and F57 (Docker API access of vector and cadvisor;
-  likely one filtering socket proxy) and F34 (vector on the `apps` network); to be planned with
-  the `increment-plan` skill.
+- **Next increment:** the rest of group b, planned 2026-09-29 as R1.8–R1.11 with the operator's
+  decisions: vector stays on `apps` (F34, R1.8); Docker API access of vector and cadvisor through
+  `wollomatic/socket-proxy` with a GET-only allowlist (F30, F57), on an external internal network
+  `docker-api` bootstrapped by `scripts/network/bootstrap-networks.sh` — R1.9 network, R1.10 proxy
+  and vector, R1.11 cadvisor. One branch, PR and deploy each. The rest of F57's hardening follows.
 - **Stages re-planned on 2026-09-26:** a new R2 (quality and lifecycle, §9) sits between R1 and
   backup (now R3); a new R4 (service standard, §9.7) follows backup; core and apps moved to R5
   and R6.
@@ -118,7 +120,7 @@ first, then the mechanisms other fixes depend on.
 | Group | Scope | Open | Done | Why this order / state |
 |---|---|---|---|---|
 | a | Alertmanager renderer: modes, errors, escaping, determinism | F26b | F26, F35, F36, F8, F39, F48 | Done except F26b's restore fixture test, which needs the R3 backup harness (F9) |
-| b | Docker socket and privilege | F30, F57, F34 | F28, F46 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; F46 (4) `privileged` dropped in R1.7 (ADR-0011) |
+| b | Docker socket and privilege | F30, F57, F58 | F28, F46, F34 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; F46 (4) `privileged` dropped in R1.7 (ADR-0011); F34 reason recorded and networks pinned in R1.8. Planned: R1.9 `docker-api` network, R1.10 socket proxy for vector (F30), R1.11 cadvisor on the proxy (F57) |
 | c | LAN exposure and firewall contract | F45, F31, F42, F15 | — | F45 needs a Pi-side measurement first; decides F15 |
 | d | Config hash that works | F1, F2, F29, F13 | — | Makes every later config change actually deploy; candidate: `up --renew-anon-volumes` (F48) |
 | f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | — | One test file becomes the home of all hardening checks |

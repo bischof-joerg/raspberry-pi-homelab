@@ -73,7 +73,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F31 | Grafana admin credentials default to empty | Secrets | High | open | c |
 | F32 | Grafana runs without `read_only` on a wrong justification | Hardening | Med | open | f |
 | F33 | vector has no healthcheck | Hardening | Low | open | f |
-| F34 | vector joins the `apps` network without a reason | Privilege | Med | open | b |
+| F34 | vector joins the `apps` network without a reason | Privilege | Med | addressed | b |
 | F35 | Renderer swallows errors despite `set -euo pipefail` | Secrets | Med | addressed | a |
 | F36 | Renderer builds YAML without escaping | Secrets | Med | addressed | a |
 | F37 | `alpine:3.24` is a floating minor tag | Supply chain | Med | addressed | g |
@@ -97,6 +97,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F55 | Plan output, audit and runtime-updates doc disagree; audit gaps pass silently | Host | Low | open | R3b |
 | F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | open | h |
 | F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | open | b |
+| F58 | vector's API listens on all interfaces of two networks | Privilege | Low | open | b |
 
 ## Secrets and credentials
 
@@ -217,6 +218,15 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Remove `apps` from vector's networks, or record the reason in the compose file and an ADR.
 - **Test:** `tests/guards/test_10_monitoring_compose_contract.py` — expected network set per service.
 - **Acceptance:** vector is attached only to `monitoring` (or the reason is documented and the test encodes it).
+- **Resolution (2026-09-29):** the reason exists and is now recorded — the operator decided on 2026-09-29 that vector stays on `apps`: the apps stack (R6) is prepared, and vector is to process data from app services there. No vector source uses the network yet; `docker_logs` reads through the Docker API, not over a network. Recorded in a comment at vector's `networks` in `stacks/monitoring/compose/docker-compose.yml` and in `docs/services/vector.md`; no ADR, since the R6 stack design will decide how app data reaches vector. Guard: `EXPECTED_NETWORKS` in `tests/guards/test_10_monitoring_compose_contract.py` pins the network set of every service (`test_every_service_has_an_expected_network_set`, `test_services_join_only_their_expected_networks`, `test_no_network_services_have_network_mode_none`). No runtime change. The reach this gives vector's API is recorded as F58; vector's socket access remains F30.
+
+### F58 – vector's API listens on all interfaces of two networks
+
+- **Evidence:** `stacks/monitoring/vector/vector.yaml:1-4` (`api.enabled: true`, `address: 0.0.0.0:8686`); vector joins `monitoring` and `apps` (`stacks/monitoring/compose/docker-compose.yml`, F34). Nothing outside the container uses the port: the only caller is `tests/postdeploy/test_20_health_endpoints.py:18`, which queries `127.0.0.1:8686` inside vector's network namespace. [V 2026-09-29]; reachability from another container [I — from a container on `apps`, `wget -qO- http://vector:8686/health`; operator only, C5].
+- **Impact:** Every container on `monitoring`, and every future app container on `apps`, can query vector's API (health, topology, component metrics). Low today; it grows with R6, and it adds to the reach of a service that has Docker API access until F30 is fixed.
+- **Proposed fix:** Bind the API to `127.0.0.1:8686`; `test_20` keeps working because it queries from inside the namespace.
+- **Test:** `tests/guards/test_10_monitoring_compose_contract.py` — vector's API address in `stacks/monitoring/vector/vector.yaml` is loopback; `tests/postdeploy/test_20_health_endpoints.py` stays green.
+- **Acceptance:** The guard passes; after deploy, `http://vector:8686/health` from another container on `monitoring` is refused, while `test_20` passes.
 
 ### F57 – cadvisor is host-root equivalent via the Docker socket, root and `pid: host`
 
