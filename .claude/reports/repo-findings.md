@@ -275,6 +275,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Derive the hash input from the compose file's bind-mounted config paths (one list, one source), or hash each service's mounted config into its own label.
 - **Test:** `tests/guards` — every read-only config bind mount in compose is covered by the hash input; a missing file in the hash list fails the test.
 - **Acceptance:** Changing any mounted config file changes the affected service's label value (checked in the guard test by computing the hash over a fixture change).
+- **Progress (2026-09-29, R1.12):** the operator chose the per-service variant, started with vector because F58 changes `stacks/monitoring/vector/vector.yaml`, which no hash covered. `deploy.sh` gained `compute_file_hash` (content only, no paths; dies on a missing file) and exports `VECTOR_CONFIG_HASH`; vector carries `homelab.config-hash=${VECTOR_CONFIG_HASH:-unset}`. Tests commit `f2e01b2`: `tests/guards/test_54_vector_config_hash.py` (4 strict xfails, static), postdeploy `test_vector_label_matches_config_hash` in `tests/postdeploy/test_40_vector_pipeline.py`. The global `MONITORING_CONFIG_HASH` and the other services are unchanged; status stays `open`.
 
 ### F2 – Hash list names a missing file and two unmounted ones
 
@@ -291,6 +292,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Add the label to every service that mounts configuration (together with F1).
 - **Test:** `tests/guards/test_10_monitoring_compose_contract.py` — every service with a config bind mount carries the label.
 - **Acceptance:** The test enumerates the services and fails when one lacks the label.
+- **Progress (2026-09-29, R1.12):** vector now carries the label, with its own per-service value `VECTOR_CONFIG_HASH` (see F1). The generic "every config-mounting service carries a label" test is still missing; status stays `open`.
 
 ### F13 – Compose mounts a templates directory that does not exist
 

@@ -238,9 +238,23 @@ labels:
 If a hashed file changes, the label changes and Compose recreates the services that carry the
 label, without a global `--force-recreate`.
 
-Known limitation (tracked for review): the hashed file list does not yet cover all mounted
-configuration files, and not all config-mounting services carry the label. Changes outside the
-hashed set may require a manual recreate until this is fixed.
+Per-service hash (since R1.12, the target design for F1/F29): `compute_file_hash` in `deploy.sh`
+hashes only the content of a service's own config files and dies if one is missing. vector is the
+first service on it:
+
+``` yaml
+labels:
+  - "homelab.config-hash=${VECTOR_CONFIG_HASH:-unset}"
+```
+
+`VECTOR_CONFIG_HASH` covers `stacks/monitoring/vector/vector.yaml`, so a change to it recreates
+vector only. `tests/guards/test_54_vector_config_hash.py` guards the wiring, and
+`tests/postdeploy/test_40_vector_pipeline.py::test_vector_label_matches_config_hash` proves on the
+Pi that the running container carries the hash of the checked-out file.
+
+Known limitation (tracked for review, F1/F2/F29): the global hashed file list does not yet cover
+all mounted configuration files, and not all config-mounting services carry a label. Changes
+outside the hashed sets may require a manual recreate until this is fixed.
 
 ------------------------------------------------------------------------
 

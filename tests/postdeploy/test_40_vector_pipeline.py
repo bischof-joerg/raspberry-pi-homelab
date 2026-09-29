@@ -1,9 +1,15 @@
+import hashlib
 import os
 import subprocess
 import time
 import uuid
 
 import pytest
+
+from tests._helpers import REPO_ROOT
+
+VECTOR_CONFIG = REPO_ROOT / "stacks/monitoring/vector/vector.yaml"
+VECTOR_CONTAINER = "homelab-home-prod-mon-vector-1"
 
 POSTDEPLOY_ON_TARGET = os.getenv("POSTDEPLOY_ON_TARGET") == "1"
 
@@ -158,3 +164,33 @@ def test_vector_end_to_end_dockerlogs_to_victorialogs():
 
     # 3) Verify it arrives in VictoriaLogs
     _wait_for_token_in_vlogs(token, timeout_s=VECTORE2E_TIMEOUT_S)
+
+
+@pytest.mark.postdeploy
+@pytest.mark.skipif(
+    not POSTDEPLOY_ON_TARGET, reason="POSTDEPLOY_ON_TARGET=1 required (run on target host)."
+)
+def test_vector_label_matches_config_hash():
+    """
+    R1.12 (F1/F29): the running vector carries the content hash of the vector.yaml in this
+    checkout. A mismatch means the container was not recreated after a config change, so it
+    still runs the old configuration.
+    """
+    want = hashlib.sha256(VECTOR_CONFIG.read_bytes()).hexdigest()
+    cp = _run(
+        [
+            "docker",
+            "inspect",
+            VECTOR_CONTAINER,
+            "--format",
+            '{{index .Config.Labels "homelab.config-hash"}}',
+        ],
+        check=False,
+    )
+    assert cp.returncode == 0, f"❌ docker inspect {VECTOR_CONTAINER} failed:\n{cp.stdout}"
+    have = cp.stdout.strip()
+    assert have == want, (
+        f"❌ {VECTOR_CONTAINER} label homelab.config-hash={have!r}, expected sha256 of "
+        f"{VECTOR_CONFIG.relative_to(REPO_ROOT)} = {want!r} (F1/F29).\n"
+        "Fix: deploy.sh must export VECTOR_CONFIG_HASH before compose up; rerun sudo ./deploy.sh."
+    )
