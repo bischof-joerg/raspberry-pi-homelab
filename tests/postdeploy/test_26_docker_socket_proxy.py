@@ -3,7 +3,9 @@
 # Finding F30 (R1.10): vector reads the Docker API only through socket-proxy
 # (wollomatic/socket-proxy, ADR-0012). These checks prove on the Pi that the proxy filters:
 # an allowed GET works, a write (POST) and a file read (archive) are refused, and vector
-# neither mounts the socket nor carries the Docker group any more.
+# neither mounts the socket nor carries the Docker group any more. F57 (R1.11): cadvisor is a
+# consumer too; HEAD /_ping answers, and a refused cadvisor request fails the blocked-request
+# check below like a vector one.
 #
 # The probes run in the proxy's own network namespace (client 127.0.0.1, allowed by -allowfrom),
 # so a refusal comes from the method/path allowlist, not from the client check. The proxy
@@ -53,8 +55,8 @@ def _status(method: str, path: str) -> str:
             "%{http_code}",
             "--max-time",
             "5",
-            "-X",
-            method,
+            # curl -X HEAD would wait for a body that never comes; --head sends a proper HEAD.
+            *(["--head"] if method == "HEAD" else ["-X", method]),
             f"http://127.0.0.1:2375{path}",
         ],
         capture_output=True,
@@ -87,6 +89,15 @@ def test_proxy_allows_listing_containers() -> None:
     assert status == "200", (
         f"❌ GET /containers/json through socket-proxy returned {status} (F30).\n"
         "Fix: check -allowGET and -allowfrom (127.0.0.1/32) in the compose command."
+    )
+
+
+def test_proxy_answers_head_ping() -> None:
+    # F57 (R1.11): cadvisor's moby client pings with HEAD /_ping before any other call.
+    status = _status("HEAD", "/_ping")
+    assert status == "200", (
+        f"❌ HEAD /_ping through socket-proxy returned {status} (F57).\n"
+        "Fix: -allowHEAD=/_ping in the socket-proxy command (ADR-0012)."
     )
 
 

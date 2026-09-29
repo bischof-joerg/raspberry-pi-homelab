@@ -47,7 +47,7 @@ EXPECTED_NETWORKS: dict[str, set[str]] = {
     "vmalert": {"monitoring"},
     "grafana": {"monitoring"},
     "node-exporter": {"monitoring"},
-    "cadvisor": {"monitoring"},
+    "cadvisor": {"monitoring", "docker-api"},
     "victorialogs": {"monitoring"},
     "vector": {"monitoring", "apps", "docker-api"},
     "socket-proxy": {"docker-api"},

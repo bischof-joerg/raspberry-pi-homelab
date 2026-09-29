@@ -253,7 +253,11 @@ services:
     restart: unless-stopped
     # Root for the read-only host mounts; not privileged (F46 step 4, ADR-0011).
     user: root
-    networks: [monitoring]
+    # docker-api: Docker API through socket-proxy only, no runtime socket (F57, ADR-0012).
+    networks: [monitoring, docker-api]
+    depends_on:
+      socket-proxy:
+        condition: service_healthy
     # Do NOT expose to LAN; vmagent scrapes it via Docker network
     # ports:
     #   - "8080:8080"
@@ -262,15 +266,13 @@ services:
       - /dev/kmsg:/dev/kmsg
     volumes:
       - /etc/machine-id:/etc/machine-id:ro
-      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
       - /sys/fs/cgroup:/sys/fs/cgroup:ro # Explicit cgroup v2 mount
       - /:/rootfs:ro
-      # Read-only (F28): least privilege for the socket file. It does NOT restrict the Docker
-      # API (F30): Docker API access remains host-root equivalent (ADR-0011).
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
     command: # recommended flags for VictoriaMetrics integration + performance on Pi
+      # Filtered Docker API (F57, ADR-0012) instead of the Docker and containerd sockets.
+      - --docker=tcp://socket-proxy:2375
       # Reduce CPU usage by checking containers less frequently essential for Pi resource management
       - --housekeeping_interval=30s
       - --max_housekeeping_interval=60s
@@ -310,9 +312,11 @@ services:
       # Persistent log store (bind mount for deterministic backup/restore)
       - /srv/data/stacks/monitoring/victorialogs:/vlogs
 
-  # Filtering Docker API proxy (F30, ADR-0012): the only service with the Docker socket and the
-  # Docker group. GET only, on the paths vector's docker_logs source uses; clients by name only.
-  # 127.0.0.1/32 lets postdeploy test_26 probe the allowlist from the proxy's own namespace.
+  # Filtering Docker API proxy (F30, F57, ADR-0012): the only service with the Docker socket and
+  # the Docker group. GET on the paths its consumers use (vector: events, containers; cadvisor:
+  # _ping, version, info, container inspect); HEAD only on /_ping (moby's client pings with HEAD
+  # first). Clients by name only; 127.0.0.1/32 lets postdeploy test_26 probe from the proxy's
+  # own namespace.
   socket-proxy:
     image: wollomatic/socket-proxy:1.13.1
     restart: unless-stopped
@@ -322,8 +326,9 @@ services:
     networks: [docker-api]
     command:
       - -listenip=0.0.0.0
-      - -allowfrom=vector,127.0.0.1/32
-      - -allowGET=(/v1\.[0-9]+)?/(events|containers/json|containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*/(json|logs))
+      - -allowfrom=vector,cadvisor,127.0.0.1/32
+      - -allowGET=(/v1\.[0-9]+)?/(_ping|version|info|events|containers/json|containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*/(json|logs))
+      - -allowHEAD=/_ping
       - -allowhealthcheck
       - -shutdowngracetime=5
     healthcheck:

@@ -26,10 +26,10 @@ Implementation goal including hardening:
 - Only Grafana exposes a TCP port
 - All other services are internal-only Docker network
 - Read-only root filesystems where supported
-- No container runs privileged; cAdvisor still runs as root with `pid: host` and the Docker
-  socket ([ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md)); vector reads the Docker
-  API only through the filtering socket-proxy
-  ([ADR-0012](architecture/adr/ADR-0012-docker-api-socket-proxy.md))
+- No container runs privileged; cAdvisor still runs as root with `pid: host`
+  ([ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md)); vector and cAdvisor read the
+  Docker API only through the filtering socket-proxy, which is the only service with the Docker
+  socket ([ADR-0012](architecture/adr/ADR-0012-docker-api-socket-proxy.md))
 - Secrets never stored in Git
 - Fixed Docker bridge + UFW rules
 
@@ -196,25 +196,28 @@ None – stateless.
 - `/sys` and `/sys/fs/cgroup`
 - Root filesystem (`/:/rootfs`)
 - `/etc/machine-id`
-- Docker socket and containerd socket
+
+No Docker or containerd socket since R1.11 (F57): cAdvisor reads the Docker API through
+socket-proxy (`--docker=tcp://socket-proxy:2375`, network `docker-api`,
+[ADR-0012](architecture/adr/ADR-0012-docker-api-socket-proxy.md)).
 
 **Privileges:**
 cAdvisor runs without privileged mode, but as `user: root` with `pid: host` and the device
-`/dev/kmsg`. It publishes no host port; vmagent scrapes it over the `monitoring` network. The
-`:ro` socket mounts do not restrict the Docker API, so a compromise of cAdvisor is still a
-compromise of the host. The decision, the baseline measurement and the metric families the
-postdeploy tests require are recorded in
+`/dev/kmsg`. It publishes no host port; vmagent scrapes it over the `monitoring` network. It no
+longer has a path to the Docker API beyond the proxy's read-only allowlist; root, `pid: host` and
+the read-only host mounts remain (F57). The decision, the baseline measurement and the metric
+families the postdeploy tests require are recorded in
 [ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md), which supersedes
-[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md). Moving cAdvisor's Docker
-API access to socket-proxy is planned for R1.11 (F57).
+[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md).
 
 ### socket-proxy
 
 **Role:**
-Filtering Docker API proxy (`wollomatic/socket-proxy`). vector's `docker_logs` source reads
-container logs through it at `http://socket-proxy:2375` instead of mounting the Docker socket
-(F30). It allows GET only, on `events`, `containers/json`, `containers/<id>/json` and
-`containers/<id>/logs`, for the client `vector`; every other request is refused and logged as
+Filtering Docker API proxy (`wollomatic/socket-proxy`). vector's `docker_logs` source (F30) and
+cAdvisor's Docker integration (F57) read the Docker API through it at `socket-proxy:2375`
+instead of mounting the Docker socket. It allows GET on `_ping`, `version`, `info`, `events`,
+`containers/json`, `containers/<id>/json` and `containers/<id>/logs`, and HEAD on `/_ping` only,
+for the clients `vector` and `cadvisor`; every other request is refused and logged as
 `blocked request`.
 
 **Persistence:**
