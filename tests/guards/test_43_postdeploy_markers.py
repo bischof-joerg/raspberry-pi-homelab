@@ -13,8 +13,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POSTDEPLOY_DIR = REPO_ROOT / "tests/postdeploy"
 
@@ -69,7 +67,6 @@ def test_postdeploy_files_exist() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.10: test_26 lacks the postdeploy marker")
 def test_every_postdeploy_test_carries_the_marker() -> None:
     unmarked = [t for path in _postdeploy_files() for t in _unmarked_tests(path)]
     assert not unmarked, (
