@@ -2,13 +2,17 @@
 
 ## Networks
 
-vector joins two external networks (`stacks/monitoring/compose/docker-compose.yml`):
+vector joins three external networks (`stacks/monitoring/compose/docker-compose.yml`):
 
 - `monitoring` — to ship logs to `victorialogs:9428`.
+- `docker-api` (internal) — to read the Docker API through `socket-proxy` (`docker_host:
+  http://socket-proxy:2375` in `stacks/monitoring/vector/vector.yaml`). vector has no Docker
+  socket mount and no Docker group since R1.10 (finding F30,
+  `docs/architecture/adr/ADR-0012-docker-api-socket-proxy.md`).
 - `apps` — on purpose, decided by the operator on 2026-09-29 (finding F34): the apps stack
   (roadmap stage R6) is prepared, and vector is to process data from app services there. No vector
   source uses it yet. Container logs do not need it: the `docker_logs` source reads them through
-  the Docker API, not over a network.
+  the Docker API (via `docker-api`), not over `apps`.
 
 The network set of every service is pinned in `tests/guards/test_10_monitoring_compose_contract.py`
 (`EXPECTED_NETWORKS`), so joining another network is a reviewed change.

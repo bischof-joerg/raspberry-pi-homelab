@@ -69,7 +69,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F27 | Container uid left to image defaults for 8 of 10 services | Hardening | Med | open | f |
 | F28 | cadvisor mounts the Docker socket read-write | Privilege | High | addressed | b |
 | F29 | Config-hash label missing on 5 of 10 services | Deploy | High | open | d |
-| F30 | vector is effectively host root via the Docker socket | Privilege | High | open | b |
+| F30 | vector is effectively host root via the Docker socket | Privilege | High | partly | b |
 | F31 | Grafana admin credentials default to empty | Secrets | High | open | c |
 | F32 | Grafana runs without `read_only` on a wrong justification | Hardening | Med | open | f |
 | F33 | vector has no healthcheck | Hardening | Low | open | f |
@@ -210,6 +210,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Replace direct socket access with a filtering proxy that allows only the read endpoints vector needs (containers list, logs, events), or switch vector to journald-only collection for container logs.
 - **Test:** `tests/guards` — vector has no `docker.sock` mount and no `group_add` with the Docker GID once fixed; `tests/postdeploy/test_40_vector_pipeline.py` proves container logs still arrive.
 - **Acceptance:** vector cannot call a write endpoint (e.g. `POST /containers/create` via the proxy returns 403); log pipeline test green.
+- **Progress (2026-09-29):** implemented as R1.10 on `feat/r1-socket-proxy`, after the network `docker-api` (R1.9). Tests commit `099899a`: guards `tests/guards/test_53_socket_proxy_contract.py` and two in `tests/guards/test_50_docker_socket_mounts.py` (11 strict xfails, each failing for its own reason with `--runxfail`), postdeploy `tests/postdeploy/test_26_docker_socket_proxy.py`. Fix: service `socket-proxy` (`wollomatic/socket-proxy:1.13.1`, tag read from Docker Hub on 2026-09-29, arm64 present) is the only holder of the socket and the Docker group besides cadvisor (F57, R1.11); GET only on `events`, `containers/json`, `containers/<id>/json`, `containers/<id>/logs` — the four calls in vector v0.53.0 `src/sources/docker_logs/mod.rs` [V 2026-09-29]; vector without socket mount and `${DOCKER_GID}`, `docker_host: http://socket-proxy:2375`. The proxy answers a refused method with 405, not the 403 assumed above, and a refused path with 403 (`cmd/socket-proxy/handlehttprequest.go` [V 2026-09-29]). `docs/architecture/adr/ADR-0012-docker-api-socket-proxy.md` Proposed; it records that `containers/<id>/json` still exposes container environments, secrets included. Whether vector needs no further endpoint is [I] until postdeploy on the Pi (`test_proxy_blocked_no_consumer_request`, `test_40`). Status `partly` until deploy and postdeploy are green.
 
 ### F34 – vector joins the `apps` network without a reason
 
@@ -483,6 +484,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Set both GIDs to distinct dummy values in the test env. Skip only when the compose plugin is missing; any other `config` failure must `pytest.fail` with stderr.
 - **Test:** The test itself. A negative check: an env without the GIDs must make it **fail**, not skip.
 - **Acceptance:** `make ci` shows `test_35_cadvisor_flags` as PASSED. Removing a GID from its env produces FAILED with the compose stderr.
+- **Progress (2026-09-29):** the compose error disappeared as a side effect of R1.10 (F30): vector's `group_add` now holds only `${SYSTEMD_JOURNAL_GID}`, so there are no longer two equal empty items. Measured in `make ci` on `feat/r1-socket-proxy` [V 2026-09-29]: the skip moved to `tests/doctor/test_35_cadvisor_flags.py:147: cadvisor image not present locally: ghcr.io/google/cadvisor:v0.60.5`. The test still does not run, and its any-failure skip is unchanged, so the defect stands; status stays `open`.
 
 ### F25 – JSON test scans git-ignored files
 

@@ -4,8 +4,10 @@
 #
 # This is least privilege, NOT isolation: `:ro` protects the socket inode, not the API behind
 # it, so any container that can connect to the Docker socket is still host-root equivalent
-# (F30, .claude/rules/compose-stacks.md). This test only keeps a writable mount from coming
-# back; removing socket access altogether is F30/F46.
+# (F30, .claude/rules/compose-stacks.md).
+#
+# F30 (R1.10): only the services in SOCKET_ALLOWLIST mount a runtime socket. socket-proxy is the
+# one intended holder (ADR-0012); every other consumer reads the Docker API through it.
 
 from __future__ import annotations
 
@@ -16,6 +18,11 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = REPO_ROOT / "stacks/monitoring/compose/docker-compose.yml"
 SOCKETS = ("/var/run/docker.sock", "/run/docker.sock", "/run/containerd/containerd.sock")
+# Each entry names why the service may hold a runtime socket.
+SOCKET_ALLOWLIST: dict[str, str] = {
+    "socket-proxy": "the filtering proxy itself (ADR-0012, F30)",
+    "cadvisor": "moves to socket-proxy in R1.11 (F57)",
+}
 
 
 def _socket_mounts() -> list[tuple[str, str]]:
@@ -29,11 +36,20 @@ def _socket_mounts() -> list[tuple[str, str]]:
 
 
 def test_socket_mounts_exist_where_expected() -> None:
-    # Guards the guard: if the mounts moved or changed syntax, the check below would pass vacuously.
+    # Guards the guard: if the mounts moved or changed syntax, the checks below pass vacuously,
+    # and an allowlist entry for a service without a socket keeps a stale exception alive.
     services = {name for name, _ in _socket_mounts()}
-    assert {"cadvisor", "vector"} <= services, (
-        f"❌ Expected socket mounts in cadvisor and vector, found them in {sorted(services)}.\n"
-        "Fix: update this test if socket access was removed on purpose (F30/F46)."
+    assert services == SOCKET_ALLOWLIST.keys(), (
+        f"❌ Socket mounts found in {sorted(services)}, allowlisted: {sorted(SOCKET_ALLOWLIST)}.\n"
+        "Fix: update SOCKET_ALLOWLIST if socket access was removed on purpose (F30/F57)."
+    )
+
+
+def test_only_allowlisted_services_mount_runtime_sockets() -> None:
+    offenders = sorted({name for name, _ in _socket_mounts()} - SOCKET_ALLOWLIST.keys())
+    assert not offenders, (
+        f"❌ Services mount a runtime socket without an allowlist entry: {offenders} (F30).\n"
+        "Fix: read the Docker API through socket-proxy (http://socket-proxy:2375) instead."
     )
 
 

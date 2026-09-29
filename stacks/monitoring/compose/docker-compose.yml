@@ -310,26 +310,62 @@ services:
       # Persistent log store (bind mount for deterministic backup/restore)
       - /srv/data/stacks/monitoring/victorialogs:/vlogs
 
+  # Filtering Docker API proxy (F30, ADR-0012): the only service with the Docker socket and the
+  # Docker group. GET only, on the paths vector's docker_logs source uses; clients by name only.
+  # 127.0.0.1/32 lets postdeploy test_26 probe the allowlist from the proxy's own namespace.
+  socket-proxy:
+    image: wollomatic/socket-proxy:1.13.1
+    restart: unless-stopped
+    user: "65534:65534"
+    group_add:
+      - "${DOCKER_GID}"
+    networks: [docker-api]
+    command:
+      - -listenip=0.0.0.0
+      - -allowfrom=vector,127.0.0.1/32
+      - -allowGET=(/v1\.[0-9]+)?/(events|containers/json|containers/[a-zA-Z0-9][a-zA-Z0-9_.-]*/(json|logs))
+      - -allowhealthcheck
+      - -shutdowngracetime=5
+    healthcheck:
+      test: ["CMD", "./healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    security_opt:
+      - no-new-privileges=true
+    cap_drop: [ALL]
+    read_only: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
   vector:
     image: timberio/vector:0.53.0-debian
     restart: unless-stopped
     command: ["--config", "/etc/vector/vector.yaml"]
-    # apps: on purpose (F34) - reserved for processing data from app services (apps stack, R6).
-    # docker_logs needs no network; it reads the Docker API. Pinned in tests/guards/test_10.
+    # apps: on purpose (F34) - reserved for processing data from app services (apps stack, R6);
+    # docker_logs does not use it. docker-api: Docker API through socket-proxy only (F30,
+    # ADR-0012). Pinned in tests/guards/test_10.
     networks:
       - monitoring
       - apps
+      - docker-api
     environment:
       - HOST_NODE_NAME=${HOSTNAME:-rpi-hub}
       - VECTOR_CONFIG=/etc/vector/vector.yaml
     depends_on:
       victorialogs:
         condition: service_started
-    # Needs journald access; see runbook notes below.
+      socket-proxy:
+        condition: service_healthy
+    # Needs journald access; see runbook notes below. No Docker group since F30.
     user: "65532:65532"
     group_add:
       - "${SYSTEMD_JOURNAL_GID}"
-      - "${DOCKER_GID}"
     read_only: true
     tmpfs:
       - /tmp
@@ -342,7 +378,6 @@ services:
       # journald access (runtime + persistent)
       - /run/log/journal:/run/log/journal:ro
       - /var/log/journal:/var/log/journal:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/machine-id:/etc/machine-id:ro
 
 networks:
@@ -352,3 +387,7 @@ networks:
   apps:
     external: true
     name: apps
+  # Internal network, bootstrapped by scripts/network/bootstrap-networks.sh (R1.9).
+  docker-api:
+    external: true
+    name: docker-api
