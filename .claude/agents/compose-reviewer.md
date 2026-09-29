@@ -28,9 +28,9 @@ there and you do not restate them. Your job is the procedure and the verdict.
 
 They are known and documented; listing them as new findings buries the real ones:
 
-- `cadvisor` runs as root with `pid: host`, but not privileged — recorded in ADR-0011 (F46
-  step 4); it reads the Docker API through socket-proxy since R1.11 (F57). Any privileged service
-  is new and must be reported.
+- `cadvisor` runs as root with `pid: host` and the Docker socket, but not privileged — recorded
+  in ADR-0011 (F46 step 4); its socket moves to socket-proxy in R1.11 (F57). Any privileged
+  service is new and must be reported.
 - `socket-proxy` holds the Docker socket and the Docker group on purpose (ADR-0012). Any other
   service with a runtime socket or the Docker group is new and must be reported.
 - Grafana `3000` and VictoriaLogs `9428` are LAN-exposed on purpose, though no ADR records it (F42).
