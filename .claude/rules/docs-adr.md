@@ -39,11 +39,12 @@ exception to a rule. Not for choices a future increment can reverse freely.
 - **MUST** state the decision, the context that forced it, and the consequences — including what it
   makes harder. An ADR without a cost section is a sales pitch.
 - **MUST** record explicit exceptions where they exist, e.g. cadvisor running privileged
-  (ADR-0010).
+  (ADR-0010, superseded by ADR-0011 once cadvisor runs unprivileged).
 - **SHOULD** reference the enforcing test. A decision nobody checks is a preference.
 
 Existing ADRs worth knowing: ADR-0001 networking and firewall, ADR-0007 secrets and env files,
-ADR-0008 bind mounts only, ADR-009 backup/verify/restore, ADR-0010 cadvisor privileged exception.
+ADR-0008 bind mounts only, ADR-009 backup/verify/restore, ADR-0010 cadvisor privileged exception,
+ADR-0011 cadvisor unprivileged.
 
 ## Keeping docs honest
 

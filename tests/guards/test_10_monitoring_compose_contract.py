@@ -13,11 +13,11 @@ ENV_EXAMPLE = REPO_ROOT / "stacks/monitoring/compose/.env.example"
 MONITORING_DOC = REPO_ROOT / "docs/monitoring.md"
 
 # Finding F46: `privileged: true` is an exception that needs an ADR (.claude/rules/docs-adr.md).
-# Each entry maps a service to the ADR that records why it is privileged. Dropping `privileged`
-# from a service (F46 step 4) must remove its entry here.
-PRIVILEGED_ALLOWLIST = {
-    "cadvisor": "docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md",
-}
+# Each entry maps a service to the ADR that records why it is privileged. Empty since F46 step 4
+# dropped cadvisor's `privileged` (ADR-0011); a new entry needs its own ADR.
+PRIVILEGED_ALLOWLIST: dict[str, str] = {}
+# F46 step 4: the ADR that records cadvisor running without `privileged` (supersedes ADR-0010).
+CADVISOR_ADR = "docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md"
 
 REQUIRED_SERVICES = {
     "victoriametrics",
@@ -119,22 +119,35 @@ def test_allowlist_entries_cite_existing_adr() -> None:
     )
 
 
-def test_monitoring_doc_does_not_deny_privileged_containers() -> None:
+def test_cadvisor_is_not_privileged() -> None:
+    privileged = _services()["cadvisor"].get("privileged")
+    assert privileged is not True, (
+        f"❌ cadvisor sets privileged={privileged!r} (F46 step 4).\n"
+        f"Fix: drop `privileged: true`; {CADVISOR_ADR} records that it is not needed. If metrics "
+        "are missing without it, add the smallest `cap_add` set instead."
+    )
+
+
+def test_monitoring_doc_matches_cadvisor_privileges() -> None:
     text = MONITORING_DOC.read_text(encoding="utf-8")
-    denials = [
+    claims = [
         phrase
-        for phrase in ("no privileged containers", "minimal privileges")
+        for phrase in ("only cadvisor runs privileged", "one privileged container")
         if phrase in text.lower()
     ]
-    assert not denials, (
-        f"❌ docs/monitoring.md contradicts the compose file (F46): {denials}\n"
-        "Fix: state that cadvisor runs privileged and link its ADR."
+    assert not claims, (
+        f"❌ docs/monitoring.md still calls cadvisor privileged (F46): {claims}\n"
+        "Fix: describe cadvisor's actual privileges and link its ADR."
     )
 
     section = re.search(r"^### cAdvisor$(.*?)(?=^##)", text, flags=re.MULTILINE | re.DOTALL)
     assert section, "❌ docs/monitoring.md has no '### cAdvisor' section.\nFix: restore it."
-    adr_name = Path(PRIVILEGED_ALLOWLIST["cadvisor"]).name
+    assert "privileged: true" not in section.group(1), (
+        "❌ The cAdvisor section of docs/monitoring.md lists `privileged: true` (F46).\n"
+        "Fix: remove it; the compose file no longer sets it."
+    )
+    adr_name = Path(CADVISOR_ADR).name
     assert adr_name in section.group(1), (
         f"❌ The cAdvisor section of docs/monitoring.md does not link {adr_name} (F46).\n"
-        "Fix: link the ADR that records the privileged exception."
+        "Fix: link the ADR that records cadvisor's privileges."
     )

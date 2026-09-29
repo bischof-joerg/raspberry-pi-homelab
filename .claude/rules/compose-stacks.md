@@ -46,12 +46,13 @@ implementation; a new stack copies its shape, not its service list.
 
 ## Documented exceptions — do not "fix" these
 
-- `cadvisor` runs `privileged: true` as root, plus `pid: host` and the Docker socket (`:ro` since
-  F28 — which does not restrict the API, see above).
-  Recorded in `docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md` and enforced by
-  `PRIVILEGED_ALLOWLIST` in `tests/guards/test_10_monitoring_compose_contract.py`. The claimed Pi 5
-  necessity is **unmeasured**; F46 step (4) tests dropping it. Do not cite it to justify a second
-  privileged container — a new one needs its own ADR and allowlist entry.
+- `cadvisor` runs as root with `pid: host`, `/dev/kmsg` and the Docker socket (`:ro` since F28 —
+  which does not restrict the API, see above), but **not** `privileged` since F46 step (4).
+  Recorded in `docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md` (supersedes ADR-0010 once
+  accepted). No service may set `privileged: true`: `PRIVILEGED_ALLOWLIST` in
+  `tests/guards/test_10_monitoring_compose_contract.py` is empty, and a new entry needs its own
+  ADR. If cadvisor metrics go missing, restore them with the smallest `cap_add` set, not with
+  `privileged` (ADR-0011 Decision 3).
 - `alertmanager-config-render` is a one-shot renderer that runs as uid 0 (`user: "0:0"`,
   `group_add: ["65534"]`) because it must own the root-owned output directory. It has no network,
   a read-only root filesystem and no capabilities, and it installs nothing at runtime (F8, since
@@ -72,7 +73,8 @@ Every new image also needs Renovate coverage in the same increment (`ci-renovate
 
 `stacks/monitoring/compose/docker-compose.yml`, `docs/architecture/adr/ADR-0008-bind-mounts-only.md`,
 `docs/architecture/adr/ADR-0007-secrets-and-env-files.md`,
-`docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md`, `deploy.sh`, `ChatGPTHint.txt`
+`docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md`,
+`docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md`, `deploy.sh`, `ChatGPTHint.txt`
 §4 and §7.
 
 ## Violations
