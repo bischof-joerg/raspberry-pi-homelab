@@ -14,9 +14,11 @@ is read at the start of any work session. The Claude transition (R0) is complete
 - **Done in R1:** group a except F26b (its restore test belongs to R3/F9); F48 and F49; F28, the
   first step of group b; F46 steps (2) and (3) as R1.3 (ADR-0010 Accepted, allowlist guard);
   F21 and F22 as R1.4–R1.6 (one dev dependency source, exact pins incl. `constraints-dev.txt`,
-  pinned pip, idempotent `make venv`). See §6 and §7.
-- **Next increment:** F46 step (4) — try dropping cadvisor's `privileged` (ADR-0010 Decision 4),
-  proven by `tests/postdeploy/test_25_cadvisor_metrics.py`.
+  pinned pip, idempotent `make venv`); F46 step (4) as R1.7 (cadvisor unprivileged, ADR-0011
+  supersedes ADR-0010, F46 addressed). See §6 and §7.
+- **Next increment:** the rest of group b — F30 and F57 (Docker API access of vector and cadvisor;
+  likely one filtering socket proxy) and F34 (vector on the `apps` network); to be planned with
+  the `increment-plan` skill.
 - **Stages re-planned on 2026-09-26:** a new R2 (quality and lifecycle, §9) sits between R1 and
   backup (now R3); a new R4 (service standard, §9.7) follows backup; core and apps moved to R5
   and R6.
@@ -116,7 +118,7 @@ first, then the mechanisms other fixes depend on.
 | Group | Scope | Open | Done | Why this order / state |
 |---|---|---|---|---|
 | a | Alertmanager renderer: modes, errors, escaping, determinism | F26b | F26, F35, F36, F8, F39, F48 | Done except F26b's restore fixture test, which needs the R3 backup harness (F9) |
-| b | Docker socket and privilege | F46, F30, F34 | F28 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; then F46 (4) drop `privileged` |
+| b | Docker socket and privilege | F30, F57, F34 | F28, F46 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; F46 (4) `privileged` dropped in R1.7 (ADR-0011) |
 | c | LAN exposure and firewall contract | F45, F31, F42, F15 | — | F45 needs a Pi-side measurement first; decides F15 |
 | d | Config hash that works | F1, F2, F29, F13 | — | Makes every later config change actually deploy; candidate: `up --renew-anon-volumes` (F48) |
 | f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | — | One test file becomes the home of all hardening checks |
@@ -136,6 +138,7 @@ R1 onwards, newest first. R0 rows stay in `.claude/ClaudeTransition.md` §10.4 (
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
+| R1.7 F46 (4) cadvisor unprivileged | 2026-09-29 | `5d760d6` (tests), `f113690` (fix); merge `68a3118` (PR #31) | green | deploy: done, cadvisor recreated, `HostConfig.Privileged` = `false`; postdeploy green, operator reports 63 passed, 4 skipped | Baseline of cadvisor metric families measured by the operator before the branch, repeated after deploy: identical line for line, network families included — the assumed `CAP_SYS_PTRACE` need did not materialise, `cap_add` fallback unused. Two strict-xfail guards verified with `--runxfail`; postdeploy checks every family alerts and dashboards use. ADR-0011 Accepted, ADR-0010 Superseded (operator). `PRIVILEGED_ALLOWLIST` empty. F46 addressed. cadvisor's remaining Docker socket access, root and `pid: host` recorded as new finding F57 (group b). Postdeploy counts read from the terminal, not a kept log — F56 stays open. |
 | R1.4–R1.6 F21 + F22 toolchain | 2026-09-28 | R1.4 `397d950` (tests), `1c5f807` (fix); R1.5 `f2fe8ea`, `80c60b6`; R1.6 `5bb3bf9`, `3ef40d9`; merge `2ea6475` (PR #29) | green | deploy: done; postdeploy: `tests: passed`. No runtime effect: postdeploy uses the Pi's system `python3`, never `.venv` | One feature, three increments on one branch, each tests-first with strict xfail. R1.4: `requirements-dev.txt` the only source (pyproject `dev` extra and venv fallbacks gone). R1.5: all dev dependencies `==`, 16 transitives in `constraints-dev.txt`, hook pins equal, CI venv cache without `restore-keys`; operator ran `make venv-clean venv` (removed `typeguard`, `typing-extensions`, a stray editable install). R1.6: `scripts/dev/ensure-venv.sh`, `pip==26.2.1`, stamp. Measured in WSL: two `make ci` runs — 1 install + 6 `up to date`, then 7 `up to date` (before: 7 unpinned pip upgrades per run). Guard refused `pip freeze`/`--version` and a here-document; neither was worked around. F21, F22 addressed. |
 | R1.3 F46 (2)+(3) ADR-0010 | 2026-09-28 | `8802d3a` (tests), `5b136e5` (fix); merge `ed8e008` (PR #27) | green | deploy: done, cadvisor not recreated; postdeploy: `tests: passed` (deploy log 13:17:53) | ADR-0010 Accepted by the operator; allowlist guard in `test_10`, both strict xfails verified with `--runxfail` first. No compose change. Operator reports 62 passed, 4 skipped; the deploy log summary itself has no counts (recorded as F56). F46 → `partly`, step (4) remains. |
 | Roadmap document | 2026-09-26 | merge `5c86a6b` (PR #26) | green | no runtime effect | `.claude/roadmap.md` created; `ClaudeTransition.md` archived; §3.6 index duplicate dropped, `check_findings.py` checks the §6 group table instead. Same branch: stage R2 inserted (§9), R2–R4 renumbered to R3–R5, group i → R2b, F4 → R2d, F21/F22 pulled forward, findings F50–F55 added; then stage R4 (service standard, §9.7) inserted, core → R5, apps → R6. |
@@ -180,8 +183,8 @@ skills and agents that cite ADRs.
   checked against the cited text — existence of the file is not enough (the R0 lesson).
 - **ADR → rule:** every ADR decision that constrains Claude's work appears in `CLAUDE.md`, a rule
   or a skill, or is recorded as not relevant to Claude.
-- **Exceptions:** anything a rule tolerates needs an ADR (known: cadvisor `privileged` → F46;
-  LAN exposure of 3000/9428 → F42).
+- **Exceptions:** anything a rule tolerates needs an ADR (known: cadvisor root, `pid: host` and
+  socket → ADR-0011; LAN exposure of 3000/9428 → F42).
 - Result: a "Source" column in `.claude/reports/rule-coverage.md` (R2a) and a reverse section in it.
   Contradictions become findings; ADR precedence per §5. `check_rules.py` requires a section
   reference for every ADR named under "Sources" (form only).
@@ -259,7 +262,7 @@ guidelines. Last in R2, so they describe the state after R2a/R2c.
 |---|---|---|
 | R2b.1 | `README.md` | F5 |
 | R2b.2 | ADRs: numbering, titles, content vs implementation | F6, F43 |
-| R2b.3 | `docs/monitoring.md`, `docs/services/` — content only; the move into `docs/services/monitoring/` and the templates come in R4 | F42, rest of F46 |
+| R2b.3 | `docs/monitoring.md`, `docs/services/` — content only; the move into `docs/services/monitoring/` and the templates come in R4 | F42 |
 | R2b.4 | `docs/architecture/networking-and-firewall-model.md` | outcome of R1 groups c/e |
 | R2b.5 | `docs/operations/`: DevWorkflow, git-branch-workflow, runtime-updates (path `~/iac/…`, "Last verified", plan vs script — F55), renovate | F44, F55 |
 | R2b.6 | Backup docs and ADR-009, consistency only (content follows in R3) | — |

@@ -85,7 +85,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F43 | ADR-0001 promises subnet validation the deploy path skips | Docs | Med | open | e |
 | F44 | Stale image tag in a Markdown example | Supply chain | Low | open | g |
 | F45 | UFW very likely does not govern the published ports | Exposure | High | open | c |
-| F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | partly | b |
+| F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | addressed | b |
 | F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | open | h |
 | F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | addressed | a |
 | F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | addressed | h |
@@ -96,6 +96,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F54 | Docker packages upgrade uncontrolled inside the routine APT upgrade | Host | Med | open | R3b |
 | F55 | Plan output, audit and runtime-updates doc disagree; audit gaps pass silently | Host | Low | open | R3b |
 | F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | open | h |
+| F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | open | b |
 
 ## Secrets and credentials
 
@@ -190,6 +191,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Progress (2026-09-25):** step (1) done via F28 (merge `f2a3172`); the socket is now `:ro`. The compose line numbers above predate R1.2 and have shifted (cadvisor now starts near line 251) — re-read before fixing. Next: steps (2) + (3) as one docs/ADR increment with the allowlist guard, then (4).
 - **Progress (2026-09-28):** steps (2) + (3) done as R1.3, merge `ed8e008` (PR #27); ADR-0010 Accepted by the operator; deploy done without recreating cadvisor, postdeploy `tests: passed`. `docs/monitoring.md` no longer denies privileged containers; its cAdvisor section lists the privileges and all mounts and links `docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md` (drafted Proposed, Accepted before merge). The ADR records the Pi 5 necessity as unmeasured; the flag predates `3a50de5` (2026-02-02) with no recorded test. Guard: `PRIVILEGED_ALLOWLIST` in `tests/guards/test_10_monitoring_compose_contract.py` — `test_privileged_services_are_allowlisted`, `test_allowlist_has_no_stale_entries`, `test_allowlist_entries_cite_existing_adr`, `test_monitoring_doc_does_not_deny_privileged_containers` (the last two strict xfail in the tests commit `8802d3a`). No compose change. Status `partly`: step (4), dropping `privileged`, remains.
 - **Progress (2026-09-29):** step (4) implemented on `fix/r1-cadvisor-unprivileged`. Baseline measured by the operator on the Pi on 2026-09-29 while privileged [V]: cadvisor exports `container_last_seen`, `container_cpu_usage_seconds_total`, `container_memory_working_set_bytes`, `container_memory_rss`, `container_memory_cache`, `container_network_receive_bytes_total` and `container_network_transmit_bytes_total` with `name=` for alertmanager, grafana and victoriametrics (one series per service; 55 name prefixes in the `uniq -c` output, whose regex `[a-z_]+` truncates names with digits such as `container_cpu_load_average_10s`). Tests commit `5d760d6`: guards `test_cadvisor_is_not_privileged` and `test_monitoring_doc_matches_cadvisor_privileges` (strict xfail, failing for the intended reason with `--runxfail`); postdeploy `test_cadvisor_container_is_not_privileged` and the family check in `test_cadvisor_exports_named_container_metrics`. Fix: `privileged: true` removed, `PRIVILEGED_ALLOWLIST` empty, `docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md` Proposed. Whether the network families survive without `CAP_SYS_PTRACE` is [I] until postdeploy on the Pi; if not, fix-forward with the smallest `cap_add` (ADR-0011 Decision 3). Status stays `partly` until deploy and postdeploy are green.
+- **Resolution (2026-09-29):** merge `68a3118` (PR #31; commits `5d760d6` tests, `f113690` fix) deployed by the operator. Measured on the Pi [V 2026-09-29]: `HostConfig.Privileged` = `false` on the recreated cadvisor; the family listing matches the baseline line for line, network families included, so `CAP_SYS_PTRACE` was not needed and the `cap_add` fallback was not used. Postdeploy green; the operator reports 63 passed, 4 skipped. ADR-0011 Accepted and ADR-0010 Superseded by the operator the same day. What remains is outside F46's scope (an undocumented privilege) and is recorded as F57: cadvisor still reaches the Docker API through its socket (the class F30 describes, but F30 names only vector), runs as root with `pid: host`, and has no `cap_drop` or `read_only` (F7 covers only its missing healthcheck).
 
 ### F28 – cadvisor mounts the Docker socket read-write
 
@@ -215,6 +217,14 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Remove `apps` from vector's networks, or record the reason in the compose file and an ADR.
 - **Test:** `tests/guards/test_10_monitoring_compose_contract.py` — expected network set per service.
 - **Acceptance:** vector is attached only to `monitoring` (or the reason is documented and the test encodes it).
+
+### F57 – cadvisor is host-root equivalent via the Docker socket, root and `pid: host`
+
+- **Evidence:** `stacks/monitoring/compose/docker-compose.yml:251-287` — after F46 step (4) cadvisor is no longer privileged, but still runs `user: root` with `pid: host`, the device `/dev/kmsg`, host `/` as `/rootfs:ro`, and `/var/run/docker.sock` plus the containerd socket (both `:ro`); no `cap_drop`, no `read_only`, no `security_opt`. [V 2026-09-29]; ADR-0011 "Negative / Tradeoffs" records the same. F30 describes this socket class for vector only; F7 covers only cadvisor's missing healthcheck.
+- **Impact:** A compromise of cadvisor, which parses host-controlled data and is reachable from every container on the `monitoring` network, still gives full Docker API access (`:ro` does not restrict the API), i.e. host root. Dropping `privileged` removed all-capabilities and all-devices, not this path.
+- **Proposed fix:** Decide together with F30, since both need read-only Docker API access: a filtering socket proxy that allows only the read endpoints cadvisor and vector use, shared or per service. Then drop what cadvisor does not need, each step measured by `tests/postdeploy/test_25_cadvisor_metrics.py`: `cap_drop: [ALL]` plus only the capabilities that prove necessary, `no-new-privileges`, `read_only` with a `tmpfs`, and whether `pid: host` and `/dev/kmsg` are needed with `--docker_only=true`.
+- **Test:** `tests/guards/test_50_docker_socket_mounts.py` — no service mounts the raw socket once the proxy exists; `tests/guards/test_10_monitoring_compose_contract.py` — cadvisor's expected `cap_add`/`cap_drop`/`security_opt` set; postdeploy `test_25` family check after each step.
+- **Acceptance:** cadvisor cannot call a write endpoint of the Docker API; every family in `REQUIRED_FAMILIES` still flows; its remaining rights are listed in ADR-0011 or a successor.
 
 ## Exposure and firewall
 
@@ -512,6 +522,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** `run_postdeploy_tests` records the pytest result: write a JUnit XML (`--junitxml`) or capture the summary line to a host log path outside the checkout, and log `tests: passed (<n> passed, <m> skipped, …)` — or `tests: FAILED (…)` before `die`. Decide the host path together with the log location of the backup scripts (`docs/operations/BackupVerifyRestore.md` names `logs/`). IN9 check at fix time: a new host file.
 - **Test:** `tests/guards` — run `run_postdeploy_tests` (or an extracted helper) with a stub `make` that prints a pytest summary; assert the logged line carries the counts, and that a failing stub is logged as failed with its counts.
 - **Acceptance:** The next deploy log shows `tests: passed (<n> passed, <m> skipped …)`; the §7 log rows cite that line instead of an operator reading.
+- **Progress (2026-09-29):** the [I] part is answered. On the deploy of merge `68a3118` (R1.7) pytest's own summary line `63 passed, 4 skipped in 15.86s` reached the operator's terminal [V 2026-09-29, operator]. It was read from the terminal, not from a kept file, so the defect stands: `deploy.sh` still keeps no record of the counts. Status stays `open`.
 
 ## Host runtime updates
 
