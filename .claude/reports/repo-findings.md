@@ -99,6 +99,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | open | b |
 | F58 | vector's API listens on all interfaces of two networks | Privilege | Low | addressed | b |
 | F59 | `make ci` never runs the pre-commit hooks on new, untracked files | Toolchain | Low | addressed | h |
+| F60 | `/boot/firmware` is read-only, so `initramfs-tools` stays half-configured and every APT run fails | Host | Med | open | R3b |
 
 ## Secrets and credentials
 
@@ -601,6 +602,14 @@ what the scripts do not enforce. Scheduled in R3b, after backup (`.claude/roadma
 - **Proposed fix:** R2b corrects the doc; R3b adds the missing plan output, a machine-readable audit summary (versions, EEPROM channel, reboot state) and a distinct exit code for an incomplete audit.
 - **Test:** `tests/guards` (stubs) — audit without sudo reports "incomplete" with its exit code; the plan prints disk and failed units.
 - **Acceptance:** Doc and scripts agree; an incomplete audit is distinguishable by exit code.
+
+### F60 – `/boot/firmware` is read-only, so `initramfs-tools` stays half-configured and every APT run fails
+
+- **Evidence:** measured by the operator on the Pi on 2026-09-29 while installing `bpftrace` for the F57 capability trace [V 2026-09-29, operator]: before anything was installed, apt reported `1 not fully installed or removed.`; after `bpftrace` and its libraries were set up, the pending configure of `initramfs-tools (0.148.4+rpt1)` ran `update-initramfs`, which generated `/boot/initrd.img-6.18.29+rpt-rpi-v8` and then failed with `cp: cannot create regular file '/boot/firmware/initramfs8': Read-only file system` (`run-parts: /etc/initramfs/post-update.d//z50-raspi-firmware exited with return code 1`), so apt exited with `E: Sub-process /usr/bin/dpkg returned an error code (1)`. The running kernel is `6.18.29+rpt-rpi-2712` (same session). In the repository: `stacks/monitoring/vmalert/rules/host-storage.yml:5` exempts `/boot/firmware` from `HostFilesystemReadOnly`, so a read-only firmware partition was known, but no document says why; `scripts/host-runtime/audit-runtime.sh:55-59` prints its mount options without judging them and checks no dpkg state; `scripts/host-runtime/upgrade-apply.sh:3,27` runs `apt-get -y full-upgrade` under `set -e`. [V 2026-09-29]; whether the read-only mount is intended (`/etc/fstab`) or an error remount, since when the package is half-configured, and whether the kernel and initramfs in `/boot/firmware` still match the installed kernel packages [I — operator, read-only: `findmnt /boot/firmware`, `/etc/fstab`, `dmesg`, `dpkg --audit`, `/var/log/dpkg.log*`, `ls -l` of `/boot/firmware/kernel*.img`, `initramfs*` against `/boot/vmlinuz-*`, `/boot/initrd.img-*`].
+- **Impact:** Every APT run ends with exit code 1, whatever it installs, so `make host-upgrade-apply` aborts after `full-upgrade` and never reaches `autoremove`, the version report or the reboot hint; a real failure is indistinguishable from this known one. Kernel and initramfs updates do not reach the firmware partition, so the next reboot may start a kernel or initramfs that does not match `/lib/modules` [I]; with no proven restore yet (R3), that is a risk to the whole host. The alert exemption hides the state from monitoring.
+- **Proposed fix:** First the read-only diagnosis above; no reboot, `remount,rw` or `dpkg --configure -a` until it is known. Then decide in R3b (with F51/F54): either the firmware partition is writable during host updates (for example a controlled remount inside `upgrade-apply.sh`, with the reason recorded) or read-only by design with a documented update path. `audit-runtime.sh` and the upgrade plan report half-configured packages and a read-only `/boot/firmware` explicitly; the alert exemption carries its reason or goes.
+- **Test:** `tests/guards` (stubs, F53) — the plan and the audit flag a `dpkg --audit` finding and a read-only `/boot/firmware`; `tests/postdeploy` — `dpkg --audit` is empty on the Pi.
+- **Acceptance:** On the Pi `dpkg --audit` is empty and an APT run exits 0; the kernel and initramfs in `/boot/firmware` match the installed kernel packages; the reason for the mount mode of `/boot/firmware` is written down next to the alert exemption.
 
 ## Documentation and ADRs
 
