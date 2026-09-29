@@ -4,7 +4,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
 import yaml
 
 from tests._lib.compose import render_compose
@@ -144,7 +143,6 @@ def test_no_network_services_have_network_mode_none() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.16 (F7): victorialogs has no restart policy yet")
 def test_long_running_services_restart_unless_stopped() -> None:
     # F7: measured on 2026-09-29 - after a reboot, victorialogs (no `restart`) stayed Exited while
     # every service with `unless-stopped` came back. A deploy never shows this: `up -d` starts all.

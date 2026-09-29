@@ -288,6 +288,8 @@ services:
 
   victorialogs:
     image: victoriametrics/victoria-logs:v1.52.0
+    # F7: without it VictoriaLogs stayed down after the reboot on 2026-09-29.
+    restart: unless-stopped
     command:
       - --storageDataPath=/vlogs
       - --httpListenAddr=:9428

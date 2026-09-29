@@ -26,9 +26,9 @@ is read at the start of any work session. The Claude transition (R0) is complete
 - **Next increment:** group j — F60, a repository-managed host update path for the read-only
   `/boot/firmware` (operator, 2026-09-29): every APT run on the Pi fails, so unattended-upgrades has
   installed no security update since at least 2026-09-26. R1.15 (APT remount hook, ADR-0013) is
-  deployed (§7). Proposed order, pending the operator's decision: R1.16 F7's `restart` part pulled
+  deployed (§7). Then, as decided by the operator on 2026-09-29: R1.16 F7's `restart` part, pulled
   forward (the reboot on 2026-09-29 left `victorialogs` stopped, and `test_10_containers.py` did not
-  notice); R1.17 F60's permanent postdeploy checks (`dpkg --audit` empty, boot files match the
+  notice) — in progress on `fix/r1-victorialogs-restart`; R1.17 F60's permanent postdeploy checks (`dpkg --audit` empty, boot files match the
   running kernel); R1.18 F57 `cap_drop` with a measured capability set, planned; its baseline was measured on 2026-09-29
   (`CapEff` `0xa80425fb`, Docker's default set; `dmesg_restrict = 0`; `docker diff` shows no writes;
   56 `name=` families), the `bpftrace` trace is pending, and `bpftrace` stays installed on the Pi until
@@ -140,7 +140,7 @@ first, then the mechanisms other fixes depend on.
 | b | Docker socket and privilege | F57 | F28, F46, F34, F30, F58 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; F46 (4) `privileged` dropped in R1.7 (ADR-0011); F34 reason recorded and networks pinned in R1.8; `docker-api` network in R1.9; socket proxy for vector in R1.10 (F30, ADR-0012). R1.11 cadvisor on the proxy reverted — containerd image store needs the containerd socket (F57 socket part blocked, decision open). R1.12 per-service config hash for vector, R1.13 vector API on loopback (F58). Next: F57 hardening without the sockets |
 | c | LAN exposure and firewall contract | F45, F31, F42, F15 | — | F45 needs a Pi-side measurement first; decides F15 |
 | d | Config hash that works | F1, F2, F29, F13 | — | Makes every later config change actually deploy; candidate: `up --renew-anon-volumes` (F48) |
-| f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | — | One test file becomes the home of all hardening checks |
+| f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | — | One test file becomes the home of all hardening checks. F7's `restart` part pulled forward as R1.16 (2026-09-29); its healthchecks stay here |
 | e | Host reconciliation ADR | F16, F17, F18, F43, F19, F20 | — | Needs an ADR decision before code (R1 exit criterion) |
 | g | Supply chain | F3, F24, F44 | F37 | Digest pins together; F37 went with F8; F4 moved to R2d |
 | h | Toolchain and dead tests | F23, F25, F47, F11, F56 | F49, F21, F22, F59 | F21 + F22 done as R1.4–R1.6; F59 as R1.14; rest low risk, quick |
