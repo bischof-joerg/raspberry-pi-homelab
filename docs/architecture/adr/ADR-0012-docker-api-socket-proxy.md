@@ -89,8 +89,7 @@ amended then. Until R1.11 cadvisor keeps its direct socket mounts (F57), as allo
 - The allowlist is coupled to the consumers' code: an upgrade of vector or cadvisor that calls a
   new endpoint loses data until the allowlist is amended. Postdeploy catches it (Decision 6), but
   only after the deploy.
-- vector now depends on the proxy being healthy (`depends_on: condition: service_healthy`);
-  cadvisor too since the R1.11 amendment below.
+- vector now depends on the proxy being healthy (`depends_on: condition: service_healthy`).
 
 ## Enforcement
 
@@ -104,33 +103,3 @@ amended then. Until R1.11 cadvisor keeps its direct socket mounts (F57), as allo
   403; no `blocked request` from a consumer; vector without socket mount and Docker group.
 - `tests/postdeploy/test_40_vector_pipeline.py` — container logs still reach VictoriaLogs.
 - `tests/postdeploy/test_35_network_and_ufw.py` — `docker-api` is internal.
-
-## Amendment 2026-09-29 (R1.11): cadvisor joins the proxy
-
-Status of the amendment: Proposed until postdeploy is green on the Pi; the decision above stays
-Accepted.
-
-1. cadvisor reads the Docker API through the proxy (`--docker=tcp://socket-proxy:2375`), joins
-   `docker-api`, is named in `-allowfrom`, and mounts neither `/var/run/docker.sock` nor
-   `/run/containerd/containerd.sock` any more. Decision 1 now holds for every consumer.
-2. The GET allowlist adds what cadvisor v0.60.5 calls (`container/docker/{factory,client,docker}.go`,
-   read 2026-09-29): `_ping`, `version`, `info`; `containers/<id>/json` was already allowed.
-   `images/json` (`ImageList`, used only by cadvisor's web UI status page) stays refused.
-3. **Exception to Decision 3 ("GET only"):** HEAD is allowed on exactly `/_ping`. cadvisor's client
-   (`github.com/moby/moby/client`) pings with HEAD `/_ping` first and falls back to GET only on a
-   non-200 answer; without HEAD every ping would be a refused request, which Decision 6 treats as
-   a defect. HEAD is read-only and `/_ping` returns no data beyond the API version.
-4. The allowlist is one union for both consumers: vector may now call `_ping`, `version` and
-   `info`, cadvisor `events` and `containers/<id>/logs`. All are GET reads; per-consumer lists
-   would need one proxy per consumer and are not worth it at this size.
-
-Consequence: cadvisor no longer has host-root equivalence through a socket. Its remaining rights
-(root, `pid: host`, `/dev/kmsg`, host `/` read-only, no `cap_drop`/`read_only`) stay recorded in
-ADR-0011 and finding F57, and are the next hardening steps.
-
-Enforcement added: `tests/guards/test_53_socket_proxy_contract.py` (`-allowHEAD` matches exactly
-`/_ping`; cadvisor's paths allowed; cadvisor uses the proxy), `tests/guards/test_50_docker_socket_mounts.py`
-(only socket-proxy holds a runtime socket), `tests/doctor/test_35_cadvisor_flags.py` (the pinned
-image supports `--docker`), `tests/postdeploy/test_25_cadvisor_metrics.py` (no runtime socket
-mounts; every required metric family with `name=`), `tests/postdeploy/test_26_docker_socket_proxy.py`
-(HEAD `/_ping` 200; no refused cadvisor request).

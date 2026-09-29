@@ -62,9 +62,8 @@ Both files plus `.claude/.gitignore` are self-protected: **only the operator cha
   volumes, ADR-0008), explicit port exposure, least privilege.
 - **Hardening** — non-root, `cap_drop`, read-only filesystems where possible, healthchecks.
   No service runs `privileged` (empty allowlist guard; a new entry needs an ADR). Known
-  exception: cadvisor runs as root with `pid: host` (ADR-0011, which supersedes ADR-0010; F46
-  step (4) measured on the Pi 2026-09-29). Only `socket-proxy` holds the Docker socket; vector
-  and cadvisor read the Docker API through it (ADR-0012).
+  exception: cadvisor runs as root with `pid: host` and the Docker socket (ADR-0011, which
+  supersedes ADR-0010; F46 step (4) measured on the Pi 2026-09-29).
 - **Secrets** — host-only `/etc/raspberry-pi-homelab/monitoring.env` (`root:root 600`), loaded via
   `docker compose --env-file` in `deploy.sh`. A repo-root `.env` is refused (ADR-0007).
 - **Naming** — compose project `<org>-<site>-<env>-<stack>`, e.g. `homelab-home-prod-mon`;
