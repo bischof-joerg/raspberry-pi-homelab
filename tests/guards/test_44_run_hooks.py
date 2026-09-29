@@ -34,8 +34,6 @@ case "$*" in
 esac
 """
 
-pytestmark = pytest.mark.xfail(strict=True, reason="R1.14: scripts/dev/run-hooks.sh missing (F59)")
-
 
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)

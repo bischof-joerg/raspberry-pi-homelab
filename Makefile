@@ -254,13 +254,13 @@ format: _guard-wsl venv ## Run ruff formatter (WSL only)
 
 # --- Test targets ------------------------------------------------------------
 
-hooks: _guard-wsl venv ## Run pre-commit hooks only (all files)
+hooks: _guard-wsl venv ## Run pre-commit hooks only (tracked and new, untracked files)
 	@command -v $(PRE_COMMIT) >/dev/null 2>&1 || { \
 	  echo "ERROR: pre-commit not found."; \
 	  echo "HINT: run: make venv && $(PIP) install -r requirements-dev.txt"; \
 	  exit 2; \
 	}
-	@$(PRE_COMMIT) run --all-files --show-diff-on-failure
+	@PRE_COMMIT="$(PRE_COMMIT)" ./scripts/dev/run-hooks.sh
 
 precommit: _guard-wsl venv ## Run pre-commit hooks + python precommit tests (WSL/CI)
 	@echo "== pre-commit hooks =="

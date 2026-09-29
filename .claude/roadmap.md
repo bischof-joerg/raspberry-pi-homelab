@@ -190,10 +190,11 @@ Each has a home in a rule or a test; listed here so a new session sees them at o
   cadvisor's Docker integration then requires that socket (F57). Before changing what a service
   may reach on the host, measure the host first (`docker info` for driver and version) and read
   the integration's code path for that state — the source said so, but only for that driver.
-- **`make ci` does not see new files' formatting.** Its hooks run on tracked files only (F59), so
-  a new file meets `trailing-whitespace` and `ruff-format` first at commit time (`test_43`,
-  `test_54`). Until F59 is fixed, run `.venv/bin/ruff format --check --no-cache .` and
-  `.venv/bin/ruff check --no-fix --no-cache .` before handing over a commit with new Python files.
+- **`pre-commit run --all-files` means tracked files only.** Until R1.14, `make ci` never ran the
+  hooks on a new file; it met `trailing-whitespace` and `ruff-format` first at commit time
+  (`test_43`, `test_54`, F59). Since R1.14 `scripts/dev/run-hooks.sh` adds a run over untracked,
+  not-ignored files (`tests/guards/test_44_run_hooks.py`), and the interim practice of running
+  `ruff format --check` by hand is no longer needed.
 
 ## 9. Stage plans R2, R3b and R4
 
