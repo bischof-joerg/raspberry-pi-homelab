@@ -98,7 +98,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | open | h |
 | F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | open | b |
 | F58 | vector's API listens on all interfaces of two networks | Privilege | Low | addressed | b |
-| F59 | `make ci` never runs the pre-commit hooks on new, untracked files | Toolchain | Low | open | h |
+| F59 | `make ci` never runs the pre-commit hooks on new, untracked files | Toolchain | Low | partly | h |
 
 ## Secrets and credentials
 
@@ -553,6 +553,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Let `make hooks` also run the hooks on untracked, not-ignored files, e.g. a second run `pre-commit run --files $(git ls-files --others --exclude-standard)` when that list is not empty. Interim practice until then (recorded in `.claude/roadmap.md` §8): run `.venv/bin/ruff format --check --no-cache .` and `.venv/bin/ruff check --no-fix --no-cache .`, which read the file system, before handing over a commit with new Python files.
 - **Test:** `tests/guards` — the `hooks` recipe in `Makefile` covers untracked files (static check of the recipe); plus one manual negative control at fix time: an untracked file with trailing whitespace makes `make ci` fail.
 - **Acceptance:** `make ci` fails on a new, untracked file with trailing whitespace, and passes once it is fixed.
+- **Progress (2026-09-29, R1.14):** fixed on `fix/r1-hooks-untracked-files`. pre-commit 3.8.0 (read in `.venv`): `--files` takes names as given and checks only existence (`commands/run.py:264-265`, `:75`), and an empty `--files` stashes and falls back to staged files (`:343`) — so the second run starts only when untracked files exist. Tests commit `36c5e38`: `tests/guards/test_44_run_hooks.py` (5 strict xfails against a stub pre-commit in a tmp git repo, each failing for its own reason with `--runxfail`). Fix: `scripts/dev/run-hooks.sh` (`--all-files`, then `git ls-files -z --others --exclude-standard | xargs -0 -r … --files`), called by the `Makefile` target `hooks`. Measured in WSL [V 2026-09-29]: `make ci` ran the second pass on the untracked `scripts/dev/run-hooks.sh` itself (ShellCheck `Passed`); negative control — an untracked `tmp_f59_probe.md` with trailing whitespace made `make precommit` fail (`trim trailing whitespace ... Failed`, `Fixing tmp_f59_probe.md`, exit 2); after removing it `make ci` passed. The interim practice in `.claude/roadmap.md` §8 is retired. Status `partly` until CI is green on the PR (there the second run is skipped: a fresh checkout has no untracked files).
 
 ## Host runtime updates
 

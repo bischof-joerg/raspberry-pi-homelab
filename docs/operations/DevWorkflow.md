@@ -100,7 +100,13 @@ make precommit
 
 This executes:
 
-1. `pre-commit run --all-files --show-diff-on-failure`
+1. `scripts/dev/run-hooks.sh` (target `hooks`):
+    - `pre-commit run --all-files --show-diff-on-failure` — every tracked file;
+    - then, only if there are any, `pre-commit run --files` on untracked, not-ignored files
+      (`git ls-files --others --exclude-standard`), so a new file meets the hooks before the
+      commit, not at it (F59).
+
+    The hooks:
     - hygiene fixers (trailing whitespace, end of file) and checks (YAML, JSON, merge conflicts, large files)
     - yamllint
     - shellcheck
