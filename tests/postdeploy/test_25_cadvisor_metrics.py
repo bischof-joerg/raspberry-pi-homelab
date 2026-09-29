@@ -83,8 +83,8 @@ def _cadvisor_metrics() -> str:
 @pytest.mark.postdeploy
 def test_cadvisor_exports_named_container_metrics(retry):
     """
-    F28: the `name` label comes from cadvisor's Docker integration (the Docker API over the
-    socket). /metrics keeps answering without it, so the endpoint test above cannot tell.
+    F28: the `name` label comes from cadvisor's Docker integration (the Docker API, through
+    socket-proxy since R1.11). /metrics keeps answering without it, so the endpoint test above cannot tell.
     F46 step 4: without `privileged`, single families can vanish (e.g. network counters read
     from /proc/<pid>/net of other UIDs), so every family in REQUIRED_FAMILIES is checked.
     Queried live from cadvisor, not from VictoriaMetrics, whose lookback would still return
@@ -110,8 +110,9 @@ def test_cadvisor_exports_named_container_metrics(retry):
         assert not missing, (
             f"❌ cadvisor exports these families without a name= series: {missing} (F28, F46).\n"
             f"Check `docker logs {CADVISOR_CONTAINER}`. All missing: the Docker integration "
-            "(/var/run/docker.sock mount). Only some: a privilege gap since privileged was dropped "
-            "- add the smallest cap_add set (ADR-0011)."
+            "(--docker=tcp://socket-proxy:2375; look for `blocked request` in the socket-proxy "
+            "log, ADR-0012). Only some: a privilege gap since privileged was dropped - add the "
+            "smallest cap_add set (ADR-0011)."
         )
 
     # cadvisor needs a housekeeping cycle (30-60 s) after a restart to discover containers.
@@ -135,16 +136,22 @@ def test_cadvisor_container_is_not_privileged():
 
 
 @pytest.mark.postdeploy
-def test_cadvisor_docker_socket_is_read_only():
-    """F28: the Docker socket is mounted read-only (least privilege; see F30 on its limits)."""
+def test_cadvisor_has_no_runtime_socket_mounts():
+    """F57 (R1.11): cadvisor reads the Docker API through socket-proxy (ADR-0012) and mounts
+    neither the Docker nor the containerd socket. Supersedes the F28 `:ro` check."""
     if not which_ok("docker"):
         pytest.skip("docker not available")
 
-    fmt = '{{range .Mounts}}{{if eq .Destination "/var/run/docker.sock"}}{{.RW}}{{end}}{{end}}'
+    fmt = "{{range .Mounts}}{{.Destination}} {{end}}"
     res = run(["docker", "inspect", CADVISOR_CONTAINER, "--format", fmt])
     assert res.returncode == 0, f"❌ docker inspect {CADVISOR_CONTAINER} failed:\n{res.stderr}"
-    rw = res.stdout.strip()
-    assert rw == "false", (
-        f"❌ {CADVISOR_CONTAINER}: /var/run/docker.sock mount RW={rw!r}, expected 'false' (F28).\n"
-        "Fix: mount it with :ro in stacks/monitoring/compose/docker-compose.yml and redeploy."
+    sockets = [
+        m
+        for m in res.stdout.split()
+        if m in ("/var/run/docker.sock", "/run/docker.sock", "/run/containerd/containerd.sock")
+    ]
+    assert not sockets, (
+        f"❌ {CADVISOR_CONTAINER} still mounts runtime sockets: {sockets} (F57).\n"
+        "Fix: remove them from stacks/monitoring/compose/docker-compose.yml, keep "
+        "--docker=tcp://socket-proxy:2375, and redeploy."
     )

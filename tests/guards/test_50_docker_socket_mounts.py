@@ -6,13 +6,15 @@
 # it, so any container that can connect to the Docker socket is still host-root equivalent
 # (F30, .claude/rules/compose-stacks.md).
 #
-# F30 (R1.10): only the services in SOCKET_ALLOWLIST mount a runtime socket. socket-proxy is the
-# one intended holder (ADR-0012); every other consumer reads the Docker API through it.
+# F30 (R1.10), F57 (R1.11): only the services in SOCKET_ALLOWLIST mount a runtime socket.
+# socket-proxy is the one intended holder (ADR-0012); every consumer, cadvisor included, reads
+# the Docker API through it. The containerd socket has no holder at all.
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -21,8 +23,8 @@ SOCKETS = ("/var/run/docker.sock", "/run/docker.sock", "/run/containerd/containe
 # Each entry names why the service may hold a runtime socket.
 SOCKET_ALLOWLIST: dict[str, str] = {
     "socket-proxy": "the filtering proxy itself (ADR-0012, F30)",
-    "cadvisor": "moves to socket-proxy in R1.11 (F57)",
 }
+R1_11 = pytest.mark.xfail(strict=True, reason="R1.11: cadvisor still mounts runtime sockets (F57)")
 
 
 def _socket_mounts() -> list[tuple[str, str]]:
@@ -35,6 +37,7 @@ def _socket_mounts() -> list[tuple[str, str]]:
     ]
 
 
+@R1_11
 def test_socket_mounts_exist_where_expected() -> None:
     # Guards the guard: if the mounts moved or changed syntax, the checks below pass vacuously,
     # and an allowlist entry for a service without a socket keeps a stale exception alive.
@@ -45,10 +48,11 @@ def test_socket_mounts_exist_where_expected() -> None:
     )
 
 
+@R1_11
 def test_only_allowlisted_services_mount_runtime_sockets() -> None:
     offenders = sorted({name for name, _ in _socket_mounts()} - SOCKET_ALLOWLIST.keys())
     assert not offenders, (
-        f"❌ Services mount a runtime socket without an allowlist entry: {offenders} (F30).\n"
+        f"❌ Services mount a runtime socket without an allowlist entry: {offenders} (F30, F57).\n"
         "Fix: read the Docker API through socket-proxy (http://socket-proxy:2375) instead."
     )
 
