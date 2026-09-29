@@ -17,8 +17,15 @@ vector joins three external networks (`stacks/monitoring/compose/docker-compose.
 The network set of every service is pinned in `tests/guards/test_10_monitoring_compose_contract.py`
 (`EXPECTED_NETWORKS`), so joining another network is a reviewed change.
 
-Side effect recorded as finding F58: the vector API listens on `0.0.0.0:8686`
-(`stacks/monitoring/vector/vector.yaml`), so every container on `monitoring` and `apps` can reach it.
+The vector API listens on `127.0.0.1:8686` only (`stacks/monitoring/vector/vector.yaml`, finding
+F58, since R1.13): no container on `monitoring` or `apps` can reach it. Its only caller,
+`tests/postdeploy/test_20_health_endpoints.py`, queries `/health` from inside vector's network
+namespace. Guarded by `test_vector_api_listens_on_loopback_only`
+(`tests/guards/test_10_monitoring_compose_contract.py`) and proven on the Pi by
+`test_vector_api_is_not_reachable_from_other_containers` (`tests/postdeploy/test_40_vector_pipeline.py`).
+
+A change to `vector.yaml` recreates vector on deploy through its own config hash
+(`VECTOR_CONFIG_HASH`, R1.12, `docs/operations/DevWorkflow.md` §7).
 
 ## Journald access runbook (required for containerized Vector)
 

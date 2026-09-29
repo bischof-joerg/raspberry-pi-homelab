@@ -10,6 +10,10 @@ from tests._helpers import REPO_ROOT
 
 VECTOR_CONFIG = REPO_ROOT / "stacks/monitoring/vector/vector.yaml"
 VECTOR_CONTAINER = "homelab-home-prod-mon-vector-1"
+# Same pinned helper image as tests/postdeploy/test_20_health_endpoints.py.
+CURL_IMAGE = "curlimages/curl:8.11.1"
+# curl exit codes: 6 = could not resolve host, 7 = could not connect (refused).
+CURL_COULD_NOT_CONNECT = 7
 
 POSTDEPLOY_ON_TARGET = os.getenv("POSTDEPLOY_ON_TARGET") == "1"
 
@@ -193,4 +197,41 @@ def test_vector_label_matches_config_hash():
         f"❌ {VECTOR_CONTAINER} label homelab.config-hash={have!r}, expected sha256 of "
         f"{VECTOR_CONFIG.relative_to(REPO_ROOT)} = {want!r} (F1/F29).\n"
         "Fix: deploy.sh must export VECTOR_CONFIG_HASH before compose up; rerun sudo ./deploy.sh."
+    )
+
+
+@pytest.mark.postdeploy
+@pytest.mark.skipif(
+    not POSTDEPLOY_ON_TARGET, reason="POSTDEPLOY_ON_TARGET=1 required (run on target host)."
+)
+@pytest.mark.parametrize("network", ["monitoring", "apps"])
+def test_vector_api_is_not_reachable_from_other_containers(network: str):
+    """
+    F58 (R1.13): vector's API listens on 127.0.0.1:8686 only. From another container on a network
+    vector joins, the name resolves but the connection is refused (curl exit 7). Exit 6 would
+    mean the name did not resolve, which proves nothing; exit 0 means the API is exposed.
+    """
+    cp = _run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            network,
+            CURL_IMAGE,
+            "-sS",
+            "--max-time",
+            "5",
+            "-o",
+            "/dev/null",
+            "http://vector:8686/health",
+        ],
+        check=False,
+    )
+    assert cp.returncode == CURL_COULD_NOT_CONNECT, (
+        f"❌ http://vector:8686/health from network {network!r}: curl exit {cp.returncode}, "
+        f"expected {CURL_COULD_NOT_CONNECT} (connection refused) (F58).\n"
+        f"Output: {cp.stdout.strip()!r}\n"
+        "Exit 0: the API is exposed - set api.address to 127.0.0.1:8686 in vector.yaml and "
+        "redeploy. Exit 6: vector is not on this network - check EXPECTED_NETWORKS (test_10)."
     )
