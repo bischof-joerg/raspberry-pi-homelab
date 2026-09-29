@@ -45,7 +45,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F4 | Renovate manages compose images only | Supply chain | Med | open | R2d |
 | F5 | `README.md` describes a stack that no longer exists | Docs | Low | open | R2b |
 | F6 | ADR numbering and titles are inconsistent | Docs | Low | open | R2b |
-| F7 | Missing restart policy / healthchecks | Hardening | High | open | f |
+| F7 | Missing restart policy / healthchecks | Hardening | High | partly | f |
 | F8 | Renderer installs `gettext` from the network at every run | Supply chain | Med | addressed | a |
 | F9 | Backup scripts have no tests although ADR-009 requires them | Backup | High | open | R3 |
 | F10 | pytest version drift between pre-commit and `.venv` | Toolchain | Low | addressed | – |
@@ -373,6 +373,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Test:** F41 contract test; `tests/postdeploy/test_10_containers.py` asserts `healthy`.
 - **Acceptance:** All services report `healthy` after deploy.
 - **Measured (2026-09-29, reboot during R1.15):** after a controlled reboot of the Pi, `homelab-home-prod-mon-victorialogs-1` stayed `Exited (0)` with `restart=no`, while every other long-running service (`restart=unless-stopped`) was up again [V 2026-09-29, operator]. Postdeploy failed on `test_ready_health_endpoints_strict_200[victorialogs-insert-ready]` (`1 failed, 16 passed`); `sudo ./deploy.sh` started it again (`79 passed, 3 skipped`). `tests/postdeploy/test_10_containers.py:45-55` expects `running` for only seven services — `victorialogs`, `vector` and `socket-proxy` are missing — so it passed with VictoriaLogs stopped. [V 2026-09-29]. Severity raised from Med to High: every reboot, including the automatic one at 03:30 (F61), silently stops the log pipeline until the next deploy. Proposed as its own increment (the `restart` part) before F60's remaining checks; the healthchecks stay in group f.
+- **Progress (2026-09-29, R1.16 on `fix/r1-victorialogs-restart`):** tests commit `c79fcb3`: service classes come from the compose file (`tests/_lib/compose_services.py`, `ONE_SHOT_SERVICES`); guard `test_long_running_services_restart_unless_stopped` in `tests/guards/test_10_monitoring_compose_contract.py` (strict xfail, failing with `{'victorialogs': None}` under `--runxfail`) and `test_one_shot_services_exist_and_do_not_restart` (green from the start); `tests/postdeploy/test_10_containers.py` expects `running` for every long-running service, checks restarting/unhealthy for real and the containers' `RestartPolicy`. Fix: `restart: unless-stopped` for `victorialogs`. Status `partly` — the `restart` part is done once a reboot without a deploy leaves every long-running container up; the healthchecks for `victorialogs`, `node-exporter` and `cadvisor` remain (group f).
 
 ### F33 – vector has no healthcheck
 

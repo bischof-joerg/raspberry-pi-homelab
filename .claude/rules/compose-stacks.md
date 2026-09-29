@@ -44,7 +44,10 @@ implementation; a new stack copies its shape, not its service list.
 ## SHOULD
 
 - Add a `healthcheck` even where the upstream image has none — `victorialogs`, `node-exporter`
-  and `cadvisor` currently lack one (F7), and `victorialogs` also lacks a `restart` policy.
+  and `cadvisor` currently lack one (F7).
+- Give every long-running service `restart: unless-stopped`; only run-once services listed in
+  `ONE_SHOT_SERVICES` (`tests/_lib/compose_services.py`) use `restart: "no"`. A deploy never shows a
+  missing policy (`up -d` starts everything); a reboot does (F7, 2026-09-29).
 - Keep resource limits where memory growth is plausible (VictoriaMetrics 4G, VictoriaLogs 2G).
 - Put host data under `/srv/data/stacks/<stack>/<service>/`, named after the service. A service
   that needs a second directory suffixes it, as `alertmanager-config` does.
