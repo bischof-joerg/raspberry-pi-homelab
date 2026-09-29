@@ -26,8 +26,8 @@ Implementation goal including hardening:
 - Only Grafana exposes a TCP port
 - All other services are internal-only Docker network
 - Read-only root filesystems where supported
-- Only cAdvisor runs privileged, as a recorded exception
-  ([ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md))
+- No container runs privileged; cAdvisor still runs as root with `pid: host` and the Docker
+  socket ([ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md))
 - Secrets never stored in Git
 - Fixed Docker bridge + UFW rules
 
@@ -197,12 +197,13 @@ None – stateless.
 - Docker socket and containerd socket
 
 **Privileges:**
-cAdvisor is the one privileged container in the stack: `privileged: true`, `user: root`,
-`pid: host` and the device `/dev/kmsg`. It publishes no host port; vmagent scrapes it over the
-`monitoring` network. The `:ro` socket mounts do not restrict the Docker API, so a compromise of
-cAdvisor is a compromise of the host. The exception, the unmeasured claim that the Pi 5 requires
-it, and the planned test without `privileged` are recorded in
-[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md).
+cAdvisor runs without privileged mode, but as `user: root` with `pid: host` and the device
+`/dev/kmsg`. It publishes no host port; vmagent scrapes it over the `monitoring` network. The
+`:ro` socket mounts do not restrict the Docker API, so a compromise of cAdvisor is still a
+compromise of the host. The decision, the baseline measurement and the metric families the
+postdeploy tests require are recorded in
+[ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md), which supersedes
+[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md) once accepted.
 
 ---
 

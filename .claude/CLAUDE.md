@@ -61,8 +61,9 @@ Both files plus `.claude/.gitignore` are self-protected: **only the operator cha
 - **Explicit runtime** — Docker Compose only, explicit networks, bind mounts only (no named
   volumes, ADR-0008), explicit port exposure, least privilege.
 - **Hardening** — non-root, `cap_drop`, read-only filesystems where possible, healthchecks.
-  Known exception: cadvisor runs privileged as root, recorded in ADR-0010 and enforced by an
-  allowlist guard. The Pi 5 necessity is **unmeasured**; F46 step (4) tests dropping it.
+  No service runs `privileged` (empty allowlist guard; a new entry needs an ADR). Known
+  exception: cadvisor runs as root with `pid: host` and the Docker socket (ADR-0011, which
+  supersedes ADR-0010 once postdeploy proves F46 step (4) on the Pi).
 - **Secrets** — host-only `/etc/raspberry-pi-homelab/monitoring.env` (`root:root 600`), loaded via
   `docker compose --env-file` in `deploy.sh`. A repo-root `.env` is refused (ADR-0007).
 - **Naming** — compose project `<org>-<site>-<env>-<stack>`, e.g. `homelab-home-prod-mon`;
@@ -169,7 +170,7 @@ archived record.
 | How to work with Claude here, how to verify the safety set-up | `.claude/readme_claude.md` |
 | Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`; verifiers in `.claude/tools/` |
 | Repository findings F1–F56 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
-| Architecture decisions | `docs/architecture/adr/` — ADR-0007 secrets, ADR-0008 bind mounts, ADR-009 backup, ADR-0010 cadvisor privileged |
+| Architecture decisions | `docs/architecture/adr/` — ADR-0007 secrets, ADR-0008 bind mounts, ADR-009 backup, ADR-0010 cadvisor privileged, ADR-0011 cadvisor unprivileged |
 | Operations | `docs/operations/` — `DevWorkflow.md`, `git-branch-workflow.md`, `runtime-updates.md`, `BackupVerifyRestore.md`, `GPG_config_for_backup_encryption.md`, `renovate.md` |
 | Monitoring | `docs/monitoring.md`, `docs/services/` |
 | Open work | `Todo.txt` (German) |

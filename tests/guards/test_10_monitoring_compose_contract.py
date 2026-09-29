@@ -4,8 +4,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
-
 from tests._lib.compose import render_compose
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -15,11 +13,9 @@ ENV_EXAMPLE = REPO_ROOT / "stacks/monitoring/compose/.env.example"
 MONITORING_DOC = REPO_ROOT / "docs/monitoring.md"
 
 # Finding F46: `privileged: true` is an exception that needs an ADR (.claude/rules/docs-adr.md).
-# Each entry maps a service to the ADR that records why it is privileged. Dropping `privileged`
-# from a service (F46 step 4) must remove its entry here.
-PRIVILEGED_ALLOWLIST = {
-    "cadvisor": "docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md",
-}
+# Each entry maps a service to the ADR that records why it is privileged. Empty since F46 step 4
+# dropped cadvisor's `privileged` (ADR-0011); a new entry needs its own ADR.
+PRIVILEGED_ALLOWLIST: dict[str, str] = {}
 # F46 step 4: the ADR that records cadvisor running without `privileged` (supersedes ADR-0010).
 CADVISOR_ADR = "docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md"
 
@@ -123,7 +119,6 @@ def test_allowlist_entries_cite_existing_adr() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="F46 step 4: contract pinned before privileged is dropped")
 def test_cadvisor_is_not_privileged() -> None:
     privileged = _services()["cadvisor"].get("privileged")
     assert privileged is not True, (
@@ -133,7 +128,6 @@ def test_cadvisor_is_not_privileged() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="F46 step 4: contract pinned before the doc is corrected")
 def test_monitoring_doc_matches_cadvisor_privileges() -> None:
     text = MONITORING_DOC.read_text(encoding="utf-8")
     claims = [
