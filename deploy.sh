@@ -192,6 +192,16 @@ compute_monitoring_config_hash() {
   sha256sum "${existing[@]}" | sha256sum | awk '{print $1}'
 }
 
+# Per-service config hash (F1/F29): sha256 over the content of the given files, no paths, so the
+# value is the same wherever the checkout lives. A missing file is an error, never skipped (F2).
+compute_file_hash() {
+  local f
+  for f in "$@"; do
+    [[ -f "$f" ]] || die "config-hash: missing file: $f"
+  done
+  cat "$@" | sha256sum | awk '{print $1}'
+}
+
 repo_ownership_mismatch_exists() {
   find "$REPO_ROOT" -xdev \( ! -user "$REPO_OWNER_USER" -o ! -group "$REPO_OWNER_GROUP" \) -print -quit 2>/dev/null | grep -q .
 }
@@ -315,6 +325,11 @@ main() {
   export MONITORING_CONFIG_HASH
   MONITORING_CONFIG_HASH="$(compute_monitoring_config_hash)"
   log "config-hash: MONITORING_CONFIG_HASH=$MONITORING_CONFIG_HASH"
+
+  # vector.yaml is not in the global hash (F1); vector gets its own label value.
+  export VECTOR_CONFIG_HASH
+  VECTOR_CONFIG_HASH="$(compute_file_hash "$REPO_ROOT/stacks/monitoring/vector/vector.yaml")"
+  log "config-hash: VECTOR_CONFIG_HASH=$VECTOR_CONFIG_HASH"
 
   export SECRETS_FILE COMPOSE_FILE
 

@@ -13,7 +13,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -23,8 +22,6 @@ VECTOR_LABEL = "homelab.config-hash=${VECTOR_CONFIG_HASH:-unset}"
 VECTOR_HASH_ASSIGNMENT = (
     'VECTOR_CONFIG_HASH="$(compute_file_hash "$REPO_ROOT/stacks/monitoring/vector/vector.yaml")"'
 )
-
-pytestmark = pytest.mark.xfail(strict=True, reason="R1.12: vector has no config hash yet (F1/F29)")
 
 
 def _deploy() -> str:

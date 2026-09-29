@@ -347,6 +347,9 @@ services:
     image: timberio/vector:0.53.0-debian
     restart: unless-stopped
     command: ["--config", "/etc/vector/vector.yaml"]
+    # Own config hash over vector.yaml (deploy.sh, F1/F29): a config change recreates vector.
+    labels:
+      - "homelab.config-hash=${VECTOR_CONFIG_HASH:-unset}"
     # apps: on purpose (F34) - reserved for processing data from app services (apps stack, R6);
     # docker_logs does not use it. docker-api: Docker API through socket-proxy only (F30,
     # ADR-0012). Pinned in tests/guards/test_10.
