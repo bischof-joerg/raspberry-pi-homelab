@@ -4,9 +4,11 @@ import re
 from functools import cache
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tests._lib.compose import render_compose
+from tests._lib.compose_services import ONE_SHOT_SERVICES, long_running_services
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -139,6 +141,36 @@ def test_no_network_services_have_network_mode_none() -> None:
     assert not wrong, (
         f"❌ Services meant to run without a network do not set `network_mode: none`: {wrong}\n"
         "Fix: restore `network_mode: none` (F8)."
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="R1.16 (F7): victorialogs has no restart policy yet")
+def test_long_running_services_restart_unless_stopped() -> None:
+    # F7: measured on 2026-09-29 - after a reboot, victorialogs (no `restart`) stayed Exited while
+    # every service with `unless-stopped` came back. A deploy never shows this: `up -d` starts all.
+    wrong = {
+        name: _services()[name].get("restart")
+        for name in long_running_services(_services())
+        if _services()[name].get("restart") != "unless-stopped"
+    }
+    assert not wrong, (
+        f"❌ Long-running services without `restart: unless-stopped` (F7): {wrong}\n"
+        "They stay down after a reboot until the next deploy.\n"
+        "Fix: add `restart: unless-stopped`, or list a run-once service in ONE_SHOT_SERVICES "
+        "(tests/_lib/compose_services.py)."
+    )
+
+
+def test_one_shot_services_exist_and_do_not_restart() -> None:
+    # Guards the class list: a renamed one-shot service would otherwise count as long-running.
+    wrong = {
+        name: _services()[name].get("restart") if name in _services() else "<missing>"
+        for name in sorted(ONE_SHOT_SERVICES)
+        if name not in _services() or _services()[name].get("restart") != "no"
+    }
+    assert not wrong, (
+        f'❌ ONE_SHOT_SERVICES entries missing from compose or not `restart: "no"` (F7): {wrong}\n'
+        "Fix: update ONE_SHOT_SERVICES in tests/_lib/compose_services.py or the compose service."
     )
 
 

@@ -14,8 +14,13 @@ from tests._helpers import (
     run,
     which_ok,
 )
+from tests._lib.compose_services import ONE_SHOT_SERVICES, load_services, long_running_services
 
 COMPOSE_FILE: Path = find_monitoring_compose_file()
+
+# F7 (R1.16): derived from the compose file. The hand-kept lists here checked 7 of 10
+# long-running services and passed while VictoriaLogs stayed stopped after a reboot.
+LONG_RUNNING = long_running_services(load_services(COMPOSE_FILE))
 
 # Tunables (env override)
 POSTDEPLOY_PS_TIMEOUT_S = int(os.environ.get("POSTDEPLOY_PS_TIMEOUT_S", "45"))
@@ -40,19 +45,18 @@ def _now_ts() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
 
+def _state(row: dict) -> str:
+    return (row.get("State") or row.get("state") or "").lower()
+
+
+def _health(row: dict) -> str:
+    return (row.get("Health") or row.get("health") or "").lower()
+
+
 @pytest.mark.postdeploy
 def test_compose_services_state_json(retry):
-    expected = {
-        "grafana": "running",
-        "alertmanager": "running",
-        "node-exporter": "running",
-        "cadvisor": "running",
-        "victoriametrics": "running",
-        "vmagent": "running",
-        "vmalert": "running",
-        # one-shot job:
-        "alertmanager-config-render": "exited",
-    }
+    expected = {svc: "running" for svc in LONG_RUNNING}
+    expected.update({svc: "exited" for svc in ONE_SHOT_SERVICES})
 
     # Prometheus is removed: treat it as permanently banned.
     banned: set[str] = {"prometheus"}
@@ -87,12 +91,14 @@ def test_compose_services_state_json(retry):
 
     for svc, want in expected.items():
         row = rows[svc]
-        state = (row.get("State") or row.get("state") or "").lower()
+        state = _state(row)
         assert want in state, (
-            f"{svc}: expected state contains '{want}', got '{state}'. Full row: {row}"
+            f"❌ {svc}: expected state '{want}', got '{state}' (F7). Full row: {row}\n"
+            "A long-running service that is not running after a reboot usually lacks "
+            "`restart: unless-stopped`; `sudo ./deploy.sh` starts it again."
         )
 
-        if svc == "alertmanager-config-render":
+        if svc in ONE_SHOT_SERVICES:
             # Prefer ExitCode from ps json; fallback to docker inspect if missing.
             exit_code = row.get("ExitCode")
 
@@ -114,16 +120,6 @@ def test_compose_services_state_json(retry):
 
 @pytest.mark.postdeploy
 def test_compose_services_not_restarting_or_unhealthy(retry):
-    services = [
-        "grafana",
-        "alertmanager",
-        "node-exporter",
-        "cadvisor",
-        "victoriametrics",
-        "vmagent",
-        "vmalert",
-    ]
-
     banned: set[str] = {"prometheus"}
 
     def _assert_services_ok():
@@ -133,14 +129,44 @@ def test_compose_services_not_restarting_or_unhealthy(retry):
         present_banned = sorted(banned & set(rows.keys()))
         assert not present_banned, "Banned services present:\n" + "\n".join(present_banned)
 
-        missing = sorted(set(services) - set(rows.keys()))
+        missing = sorted(set(LONG_RUNNING) - set(rows.keys()))
         assert not missing, "Missing services in compose ps:\n" + "\n".join(missing)
 
-        # Keep your existing checks here:
-        # - not restarting
-        # - not unhealthy
-        # (depends on how rows is structured)
+        bad = {
+            svc: f"state={_state(rows[svc])} health={_health(rows[svc]) or '-'}"
+            for svc in LONG_RUNNING
+            if "restarting" in _state(rows[svc]) or _health(rows[svc]) == "unhealthy"
+        }
+        assert not bad, f"❌ Restarting or unhealthy services ({_now_ts()}): {bad}\n" + "\n".join(
+            f"--- {svc} logs ---\n{_docker_logs_tail(compose_container_name(rows, svc) or svc)}"
+            for svc in bad
+        )
 
     retry(
-        _assert_services_ok, timeout_s=POSTDEPLOY_PS_TIMEOUT_S, interval_s=POSTDEPLOY_PS_INTERVAL_S
+        _assert_services_ok,
+        timeout_s=POSTDEPLOY_HEALTH_TIMEOUT_S,
+        interval_s=POSTDEPLOY_HEALTH_INTERVAL_S,
+    )
+
+
+@pytest.mark.postdeploy
+def test_long_running_containers_restart_unless_stopped():
+    """F7: the running containers carry `unless-stopped`, so they come back after a reboot."""
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
+
+    rows = compose_services_by_name(compose_ps_json(compose_file=COMPOSE_FILE))
+    policies: dict[str, str] = {}
+    for svc in LONG_RUNNING:
+        name = compose_container_name(rows, svc)
+        assert name, f"❌ No container for long-running service {svc} in compose ps."
+        res = run(["docker", "inspect", "-f", "{{.HostConfig.RestartPolicy.Name}}", name])
+        assert res.returncode == 0, f"❌ docker inspect {name} failed:\n{res.stderr}"
+        policies[svc] = res.stdout.strip()
+
+    wrong = {svc: policy for svc, policy in policies.items() if policy != "unless-stopped"}
+    assert not wrong, (
+        f"❌ Containers without restart policy `unless-stopped` (F7): {wrong}\n"
+        "They stay down after a reboot.\nFix: `restart: unless-stopped` in "
+        "stacks/monitoring/compose/docker-compose.yml, then sudo ./deploy.sh (recreates them)."
     )

@@ -49,7 +49,10 @@ vector update auf version image: timberio/vector:0.58.0-debian mit runtime issue
 Wie Fehler auf dem PI mit Hilfe von Claude analysieren? Was sind mögliche Ansätze um Logs zu analysieren, was ist Deine Empfehlung?
 Review den im .Claude implementierten Ansatz: Gibt es Verbesserungsbedarf und weitergehende Empfehlung für einen effizienteren und effektiveren Einsatz von Claude?
 
-
+- Morgen früh bitte sudo tail -n 20 /var/log/unattended-upgrades/unattended-upgrades.log ausführen.
+Damit prüfen wir die letzte Abnahmebedingung für R1.15: Die 72 not upgraded sollten eingespielt sein, ohne Installing the upgrades failed.
+Falls der Lauf ein neues initramfs erzeugt, erscheint /var/run/reboot-required, und der Pi startet um 03:30 selbst neu.
+Wegen F7 wäre VictoriaLogs danach wieder aus, bis zum nächsten Deploy.
 _____________________________________________________________________________
 __________________________________ D O N E __________________________________
 _____________________________________________________________________________
