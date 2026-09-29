@@ -7,7 +7,8 @@
 #
 # Endpoints, read from the vector v0.53.0 source (src/sources/docker_logs/mod.rs, 2026-09-29):
 # events, list_containers, inspect_container, logs. bollard prefixes paths with /v1.<n>.
-# cadvisor follows in R1.11 (F57) and brings its own endpoints.
+# cadvisor stays off the proxy: R1.11 was reverted because cadvisor's Docker integration needs the
+# containerd socket under Docker's containerd image store (F57).
 
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ PROXY = "socket-proxy"
 PROXY_URL = "http://socket-proxy:2375"
 # Exact x.y.z tag, never the floating `1` tag the image also publishes.
 PROXY_IMAGE = re.compile(r"^wollomatic/socket-proxy:\d+\.\d+\.\d+$")
-# Flags that open a method other than GET. HEAD follows with cadvisor (R1.11) if it needs it.
+# Flags that open a method other than GET.
 OTHER_METHODS = ("POST", "PUT", "PATCH", "DELETE", "HEAD", "CONNECT", "TRACE", "OPTIONS")
 # GET paths the allowlist must accept (vector) and must refuse (file access, write-ish reads).
 MUST_ALLOW = (
@@ -136,7 +137,7 @@ def test_proxy_listens_for_named_clients_only() -> None:
     allowfrom = set(flags.get("allowfrom", "").split(","))
     assert "vector" in allowfrom and allowfrom <= {"vector", "cadvisor", "127.0.0.1/32"}, (
         f"❌ -allowfrom is {sorted(allowfrom)}.\n"
-        "Fix: name the consumers (vector; cadvisor from R1.11) plus 127.0.0.1/32 for the "
+        "Fix: name the consumers (vector) plus 127.0.0.1/32 for the "
         "postdeploy probe from the proxy's own namespace."
     )
 
@@ -155,7 +156,7 @@ def test_docker_api_network_carries_proxy_traffic_only() -> None:
     )
     assert members <= {PROXY, "vector", "cadvisor"} and "vector" in members, (
         f"❌ docker-api members: {sorted(members)}.\n"
-        "Fix: only socket-proxy and its consumers (vector; cadvisor from R1.11) join docker-api."
+        "Fix: only socket-proxy and its consumers (vector) join docker-api."
     )
 
 
