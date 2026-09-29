@@ -25,10 +25,11 @@ is read at the start of any work session. The Claude transition (R0) is complete
   hooks also cover new, untracked files). See §6 and §7.
 - **Next increment:** group j — F60, a repository-managed host update path for the read-only
   `/boot/firmware` (operator, 2026-09-29): every APT run on the Pi fails, so unattended-upgrades has
-  installed no security update since at least 2026-09-26. R1.15 (APT remount hook, ADR-0013) is in
-  progress on `fix/r1-boot-firmware-apt-hook`; R1.16 (postdeploy: `dpkg --audit` empty, boot files
-  match the running kernel) follows its deploy. R1.17 (F57 `cap_drop` with a measured capability
-  set) is planned; its baseline was measured on 2026-09-29
+  installed no security update since at least 2026-09-26. R1.15 (APT remount hook, ADR-0013) is
+  deployed (§7). Proposed order, pending the operator's decision: R1.16 F7's `restart` part pulled
+  forward (the reboot on 2026-09-29 left `victorialogs` stopped, and `test_10_containers.py` did not
+  notice); R1.17 F60's permanent postdeploy checks (`dpkg --audit` empty, boot files match the
+  running kernel); R1.18 F57 `cap_drop` with a measured capability set, planned; its baseline was measured on 2026-09-29
   (`CapEff` `0xa80425fb`, Docker's default set; `dmesg_restrict = 0`; `docker diff` shows no writes;
   56 `name=` families), the `bpftrace` trace is pending, and `bpftrace` stays installed on the Pi until
   then. Further candidates: (1) group b — F57's hardening
@@ -143,7 +144,7 @@ first, then the mechanisms other fixes depend on.
 | e | Host reconciliation ADR | F16, F17, F18, F43, F19, F20 | — | Needs an ADR decision before code (R1 exit criterion) |
 | g | Supply chain | F3, F24, F44 | F37 | Digest pins together; F37 went with F8; F4 moved to R2d |
 | h | Toolchain and dead tests | F23, F25, F47, F11, F56 | F49, F21, F22, F59 | F21 + F22 done as R1.4–R1.6; F59 as R1.14; rest low risk, quick |
-| j | Host update path with a read-only firmware partition | F60 | — | Found 2026-09-29 while preparing the F57 capability trace; pulled forward from R3b by the operator the same day, before R1.15, because every APT run fails and security updates are blocked. No manual repair before its increment plan |
+| j | Host update path with a read-only firmware partition | F60 | — | Found 2026-09-29 while preparing the F57 capability trace; pulled forward from R3b by the operator the same day, before R1.15, because every APT run fails and security updates are blocked. R1.15 deployed (APT hook, ADR-0013); open: first successful unattended-upgrades run, permanent postdeploy checks |
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2b | Documentation | F5, F6, F12 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26 |
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
@@ -157,6 +158,7 @@ R1 onwards, newest first. R0 rows stay in `.claude/ClaudeTransition.md` §10.4 (
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
+| R1.15 F60 APT hook for read-only `/boot/firmware` | 2026-09-29 | `c65497e` (tests), `075b9d4` (fix); merge `3c5d7e5` (PR #51) | green | 1st deploy (19:47): `apt-boot-firmware: installing …` for both files, `updated`; postdeploy `78 passed, 4 skipped`, including `test_06` (4). 2nd deploy (19:49): `apt-boot-firmware: OK (no changes)`, `78 passed, 4 skipped`. After the reboot and the recovery deploy (20:03): `79 passed, 3 skipped` (operator) | Operator run `sudo apt-get -y -f install`: `Setting up initramfs-tools`, `exit=0`, `dpkg --audit` empty, `/boot/firmware` `ro` again, journal `remounted /boot/firmware rw (was ro)` → `ro (was rw)` six seconds later, no `/var/run/reboot-required`. **Prediction wrong:** the trigger regenerated the initramfs of both kernels and `z50-raspi-firmware` copied both, so `initramfs_2712` changed (`75ef00f2…` → `c166ad2a…`, equal to `/boot/initrd.img-6.18.29+rpt-rpi-2712`); `kernel_2712.img` unchanged. A controlled reboot (operator's choice) proved it: `6.18.29+rpt-rpi-2712`, `ro`, no failed units. The reboot exposed F7: `victorialogs` stayed `Exited (0)` with `restart=no`, postdeploy failed on `victorialogs-insert-ready` (`1 failed, 16 passed`), and `test_10_containers.py` did not notice because it expects `running` for only 7 services; the recovery deploy started it. 20 guards verified with `--runxfail` first; `chmod +x` and a direct ShellCheck call were refused by the guard, the operator set the mode, ShellCheck ran through `make ci`. ADR-0013 Accepted (operator). F60 `partly`: the first successful unattended-upgrades run and the permanent postdeploy checks remain. |
 | R1.14 F59 hooks on untracked files | 2026-09-29 | `36c5e38` (tests), `c0efdad` (fix); merge `f61ccf2` (PR #47) | green (operator) | no deploy needed — `hooks` is WSL-only (`_guard-wsl`), no runtime effect on the Pi; the next deploy's pull carries it | `scripts/dev/run-hooks.sh` (mode `100755`): `pre-commit run --all-files`, then `--files` over `git ls-files -z --others --exclude-standard`, only when non-empty (pre-commit 3.8.0 stashes and uses staged files on an empty `--files`, read in `.venv`). Behaviour test `test_44` against a stub pre-commit in a tmp git repo, 5 strict xfails verified with `--runxfail`. Measured in WSL: the second pass ran on the then-untracked script itself; an untracked probe file with trailing whitespace made `make precommit` fail (exit 2), removing it made `make ci` green. In CI the second pass is skipped (fresh checkout). The interim `ruff format --check` practice from §8 caught one formatting issue in `test_44` before the commit and is now retired. F59 addressed. |
 | R1.13 F58 vector API on loopback | 2026-09-29 | `0c04817` (tests), `ab56b17` (fix); merge `4b46c31` (PR #45) | green | deploy: done, only vector recreated; log `config-hash: VECTOR_CONFIG_HASH=e2843b6b6ee7c0b406c0566dfc655a908743a60479c84b4c4f23acef7581b337` (15:58:30); postdeploy `74 passed, 4 skipped` (operator) | `api.address: 127.0.0.1:8686`. First real content change under R1.12's per-service hash: the Pi's value equals the one computed in WSL before the deploy, and only vector was recreated. Postdeploy `test_vector_api_is_not_reachable_from_other_containers` [monitoring, apps] green — curl exit 7 (refused) with the name resolved, so the check did not pass for the wrong reason; `test_20` `vector-health` from vector's namespace still green. Guard verified with `--runxfail` first. F58 addressed; group b now holds only F57. |
 | R1.12 vector config hash (F1/F29 slice) | 2026-09-29 | `f2e01b2` (tests), `b215871` (fix); merge `4930f4c` (PR #43) | green | deploy: done, only vector recreated; log `config-hash: VECTOR_CONFIG_HASH=09eb03064f329a37662cc9153fcce0e9a11e205d901d668c495ca011fb641904` (15:43:55); postdeploy `72 passed, 4 skipped` (operator) | Operator chose the per-service variant of F1. `compute_file_hash` hashes content only and dies on a missing file (F2 lesson); vector carries `homelab.config-hash=${VECTOR_CONFIG_HASH:-unset}`. The Pi's value equals `sha256sum stacks/monitoring/vector/vector.yaml` in WSL character for character — the hash does not depend on the checkout path. Guard `test_54` (4 strict xfails, static), postdeploy `test_vector_label_matches_config_hash` ran green. The hooks rewrote `test_54` only at commit time (untracked during `make ci`) — recorded as F59. F1 and F29 stay open for the other services. |
@@ -206,6 +208,15 @@ Each has a home in a rule or a test; listed here so a new session sees them at o
   (`test_43`, `test_54`, F59). Since R1.14 `scripts/dev/run-hooks.sh` adds a run over untracked,
   not-ignored files (`tests/guards/test_44_run_hooks.py`), and the interim practice of running
   `ruff format --check` by hand is no longer needed.
+- **A package trigger touches more than the package.** R1.15 predicted that finishing
+  `initramfs-tools` would only rewrite `initramfs8`; its trigger regenerated the initramfs of every
+  installed kernel, including the one the Pi boots. Before a host change, measure the files it may
+  touch (hashes before and after), and prove a changed boot path with a reboot while the operator
+  is present — not with the next unattended one.
+- **A reboot is a test the deploy never runs.** Every deploy starts all services with
+  `compose up -d`, so a missing `restart` policy stays invisible until the host reboots (F7,
+  2026-09-29). A postdeploy list of expected services that is written by hand drifts from the
+  compose file — `test_10_containers.py` checked 7 of 10 long-running services.
 
 ## 9. Stage plans R2, R3b and R4
 

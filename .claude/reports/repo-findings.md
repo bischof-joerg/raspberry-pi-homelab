@@ -45,7 +45,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F4 | Renovate manages compose images only | Supply chain | Med | open | R2d |
 | F5 | `README.md` describes a stack that no longer exists | Docs | Low | open | R2b |
 | F6 | ADR numbering and titles are inconsistent | Docs | Low | open | R2b |
-| F7 | Missing restart policy / healthchecks | Hardening | Med | open | f |
+| F7 | Missing restart policy / healthchecks | Hardening | High | open | f |
 | F8 | Renderer installs `gettext` from the network at every run | Supply chain | Med | addressed | a |
 | F9 | Backup scripts have no tests although ADR-009 requires them | Backup | High | open | R3 |
 | F10 | pytest version drift between pre-commit and `.venv` | Toolchain | Low | addressed | – |
@@ -99,7 +99,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | open | b |
 | F58 | vector's API listens on all interfaces of two networks | Privilege | Low | addressed | b |
 | F59 | `make ci` never runs the pre-commit hooks on new, untracked files | Toolchain | Low | addressed | h |
-| F60 | `/boot/firmware` is read-only, so `initramfs-tools` stays half-configured and every APT run fails | Host | High | open | j |
+| F60 | `/boot/firmware` is read-only, so `initramfs-tools` stays half-configured and every APT run fails | Host | High | partly | j |
 | F61 | unattended-upgrades runs on the Pi, outside the documented host update flow | Host | Med | open | R3b |
 
 ## Secrets and credentials
@@ -372,6 +372,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Add `restart: unless-stopped` and healthchecks.
 - **Test:** F41 contract test; `tests/postdeploy/test_10_containers.py` asserts `healthy`.
 - **Acceptance:** All services report `healthy` after deploy.
+- **Measured (2026-09-29, reboot during R1.15):** after a controlled reboot of the Pi, `homelab-home-prod-mon-victorialogs-1` stayed `Exited (0)` with `restart=no`, while every other long-running service (`restart=unless-stopped`) was up again [V 2026-09-29, operator]. Postdeploy failed on `test_ready_health_endpoints_strict_200[victorialogs-insert-ready]` (`1 failed, 16 passed`); `sudo ./deploy.sh` started it again (`79 passed, 3 skipped`). `tests/postdeploy/test_10_containers.py:45-55` expects `running` for only seven services — `victorialogs`, `vector` and `socket-proxy` are missing — so it passed with VictoriaLogs stopped. [V 2026-09-29]. Severity raised from Med to High: every reboot, including the automatic one at 03:30 (F61), silently stops the log pipeline until the next deploy. Proposed as its own increment (the `restart` part) before F60's remaining checks; the healthchecks stay in group f.
 
 ### F33 – vector has no healthcheck
 
@@ -612,6 +613,7 @@ what the scripts do not enforce. Scheduled in R3b, after backup (`.claude/roadma
 - **Test:** `tests/guards` — the hook or reconciliation script behaves as designed under stubs (remounts read-only again even when dpkg fails); `tests/postdeploy` — `dpkg --audit` is empty, `/boot/firmware` is mounted as the ADR says, and `kernel_2712.img`/`initramfs_2712` hash-equal the files of the running kernel in `/boot`.
 - **Acceptance:** On the Pi `dpkg --audit` is empty; the next unattended-upgrades run logs no `Installing the upgrades failed`; the boot files of the running kernel match; the postdeploy checks above are green; the reason for the mount mode of `/boot/firmware` is recorded in the repository.
 - **Progress (2026-09-29, R1.15 on `fix/r1-boot-firmware-apt-hook`):** operator decision: an APT hook, the read-only mount stays. Measured on the Pi before the branch [V 2026-09-29, operator]: no `Pre-Invoke`/`Post-Invoke` entry in `/etc/apt/apt.conf.d/`; `apt 3.0.3 (arm64)`; `/etc/initramfs/post-update.d/z50-raspi-firmware` and `/etc/kernel/postinst.d/z50-raspi-firmware` belong to `raspi-firmware` — the first copies only the newest `initrd.img-*-rpi-<flavour>` to `/boot/firmware/initramfs<flavour>` and then `sync`s, the second copies the kernel, both run inside dpkg; `apt-daily-upgrade.service` has no `Protect*`, `ReadWritePaths` or `PrivateMounts`, so a remount from the hook reaches the host's mount table; `mount`, `findmnt` and `logger` are in `/usr/bin`; `/usr/local/sbin` is `root:root 755`. Read in apt 3.0.3 `apt-pkg/deb/dpkgpm.cc` (`pkgDPkgPM::Go`, salsa.debian.org tag `3.0.3`, 2026-09-29, via a summarising fetch): a failing `DPkg::Pre-Invoke` returns before dpkg runs; after a dpkg failure the loop breaks (`Dpkg::StopOnError`) but `RunScripts("DPkg::Post-Invoke")` still runs; between the two hooks only internal errors (`pipe`, `mkdtemp`, `symlink`) and a failing `DPkg::Pre-Install-Pkgs` return early — then the partition stays read-write until the next APT run or reboot. Design: `stacks/core/apt/99homelab-boot-firmware` calls a root-owned copy of `scripts/host/homelab-boot-firmware.sh` at `/usr/local/sbin/homelab-boot-firmware`; `scripts/host/ensure-apt-boot-firmware-hook.sh` installs both from `deploy.sh`. Tests first: `tests/guards/test_55_boot_firmware_hook.py` (strict xfail), `tests/postdeploy/test_06_host_boot_firmware.py`.
+- **Progress (2026-09-29, R1.15 deployed):** merge `3c5d7e5` (PR #51; `c65497e` tests, `075b9d4` fix), CI green; ADR-0013 Accepted (operator). Measured on the Pi [V 2026-09-29, operator]: first deploy installed both files (`apt-boot-firmware: … updated`), the second logged `apt-boot-firmware: OK (no changes)`; postdeploy `78 passed, 4 skipped` both times, including the four checks of `test_06`. `sudo apt-get -y -f install` finished the pending configure with `exit=0`; `sudo dpkg --audit` is empty; `/boot/firmware` is `ro` again; the journal holds `remounted /boot/firmware rw (was ro)` and, six seconds later, `remounted /boot/firmware ro (was rw)`; no `/var/run/reboot-required`. **Correction of the plan's prediction:** the `initramfs-tools` trigger regenerated the initramfs of both installed kernels, and `z50-raspi-firmware` copied both — `initramfs_2712` changed from `75ef00f2…` to `c166ad2a…`, equal to `/boot/initrd.img-6.18.29+rpt-rpi-2712`; `kernel_2712.img` stayed `7325750a…`. A controlled reboot by the operator proved the new boot path: `6.18.29+rpt-rpi-2712`, `/boot/firmware` `ro`, no failed units, hashes unchanged. Status `partly`: open are the first unattended-upgrades run without `Installing the upgrades failed` and the permanent postdeploy checks (`dpkg --audit` empty, boot files equal the running kernel's).
 
 ### F61 – unattended-upgrades runs on the Pi, outside the documented host update flow
 

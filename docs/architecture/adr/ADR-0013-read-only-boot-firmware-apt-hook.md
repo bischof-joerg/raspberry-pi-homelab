@@ -1,6 +1,6 @@
 # ADR-0013: Read-only /boot/firmware with an APT remount hook
 
-- **Status:** Proposed
+- **Status:** Accepted (operator, 2026-09-29, after deploy, postdeploy and a controlled reboot)
 - **Date:** 2026-09-29
 - **Scope:** the firmware partition `/boot/firmware` on the Pi; every APT caller on the Pi
   (unattended-upgrades, `make host-upgrade-apply`, a manual `apt-get`)
@@ -45,6 +45,20 @@ the two hooks, only internal errors (`pipe`, `mkdtemp`, `symlink`) and a failing
 5. `deploy.sh` installs both files on every deploy with
    `scripts/host/ensure-apt-boot-firmware-hook.sh apply` (toggle `ENSURE_APT_BOOT_FIRMWARE_HOOK`),
    idempotently, as it does for `daemon.json`.
+
+## Result (measured 2026-09-29)
+
+Deployed with merge `3c5d7e5` (PR #51). The first deploy installed both files, the second logged
+`apt-boot-firmware: OK (no changes)`; postdeploy was green both times, including
+`tests/postdeploy/test_06_host_boot_firmware.py`. A single `sudo apt-get -y -f install` finished
+the pending `initramfs-tools` configure with exit 0; `dpkg --audit` is empty, and the journal shows
+the partition opened read-write and closed read-only again six seconds later.
+
+The `initramfs-tools` trigger regenerated the initramfs of **every** installed kernel, so the file
+the Pi 5 boots, `/boot/firmware/initramfs_2712`, changed as well (it equals
+`/boot/initrd.img-6.18.29+rpt-rpi-2712`); the kernel image did not. A controlled reboot proved the
+Pi boots it: kernel `6.18.29+rpt-rpi-2712`, `/boot/firmware` read-only, no failed units. Any APT run
+that fires this trigger changes the boot path; the next reboot is its test.
 
 ## Alternatives considered
 
