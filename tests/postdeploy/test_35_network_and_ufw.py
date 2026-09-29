@@ -24,6 +24,7 @@ class DockerNet:
     bridge: str
     subnet: str
     gateway: str
+    internal: bool = False
 
 
 def _get_docker_network(name: str) -> DockerNet:
@@ -50,7 +51,13 @@ def _get_docker_network(name: str) -> DockerNet:
         subnet = str(ipam_cfg[0].get("Subnet") or "")
         gateway = str(ipam_cfg[0].get("Gateway") or "")
 
-    return DockerNet(name=name, bridge=bridge, subnet=subnet, gateway=gateway)
+    return DockerNet(
+        name=name,
+        bridge=bridge,
+        subnet=subnet,
+        gateway=gateway,
+        internal=net.get("Internal") is True,
+    )
 
 
 def _iface_exists(iface: str) -> bool:
@@ -165,6 +172,29 @@ def test_networks_exist_monitoring_strict_apps_loose():
         assert _iface_exists(apps.bridge), (
             f"apps bridge interface reported but missing: {apps.bridge}"
         )
+
+
+@pytest.mark.postdeploy
+def test_docker_api_network_is_internal():
+    """
+    R1.9: `docker-api` carries only traffic between the Docker socket proxy and its consumers
+    (F30, F57). It is created with --internal by scripts/network/bootstrap-networks.sh, so a
+    container on it has no default route and no way out of the host.
+    """
+    net = _get_docker_network("docker-api")
+    assert net.internal, (
+        "❌ docker-api exists but is not internal (Internal=false).\n"
+        "Fix: on the Pi, remove the network (`docker network rm docker-api`, nothing may use it) "
+        "and redeploy; bootstrap-networks.sh recreates it with --internal."
+    )
+
+    res = _docker_run_in_network("docker-api", "ip route | grep -q '^default'")
+    assert res.returncode == 1, (
+        "❌ A container on docker-api has a default route, or the probe failed "
+        f"(rc={res.returncode}; 0 = default route present).\n"
+        f"stdout:\n{res.stdout}\nstderr:\n{res.stderr}\n"
+        "Fix: docker-api must be created with --internal (scripts/network/bootstrap-networks.sh)."
+    )
 
 
 @pytest.mark.postdeploy
