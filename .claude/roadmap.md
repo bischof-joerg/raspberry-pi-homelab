@@ -138,7 +138,7 @@ first, then the mechanisms other fixes depend on.
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2b | Documentation | F5, F6, F12 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26 |
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
-| R3b | Pi runtime lifecycle | F51, F52, F53, F54, F55 | — | Stage R3, after backup, §9 |
+| R3b | Pi runtime lifecycle | F51, F52, F53, F54, F55, F60 | — | Stage R3, after backup, §9. F60 (read-only `/boot/firmware`, half-configured `initramfs-tools`) found 2026-09-29; its read-only diagnosis comes first, no reboot until then |
 
 Closed without a group: F10, F14, F40. Groups a–h belong to R1; the others name their stage.
 
