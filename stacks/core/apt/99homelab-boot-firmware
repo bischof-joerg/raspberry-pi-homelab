@@ -1,0 +1,9 @@
+// Managed by raspberry-pi-homelab: scripts/host/ensure-apt-boot-firmware-hook.sh installs this file
+// on every deploy. Do not edit it on the Pi.
+//
+// /boot/firmware is mounted read-only (/etc/fstab). raspi-firmware's kernel and initramfs hooks
+// copy into it while dpkg runs, so every APT caller (unattended-upgrades, make host-upgrade-apply,
+// a manual apt-get) remounts it read-write for the dpkg run only (F60, ADR-0013).
+// A direct `dpkg -i` or `dpkg --configure` bypasses these hooks: use apt-get.
+DPkg::Pre-Invoke { "/usr/local/sbin/homelab-boot-firmware rw"; };
+DPkg::Post-Invoke { "/usr/local/sbin/homelab-boot-firmware ro"; };

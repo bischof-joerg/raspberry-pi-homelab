@@ -25,8 +25,10 @@ is read at the start of any work session. The Claude transition (R0) is complete
   hooks also cover new, untracked files). See §6 and §7.
 - **Next increment:** group j — F60, a repository-managed host update path for the read-only
   `/boot/firmware` (operator, 2026-09-29): every APT run on the Pi fails, so unattended-upgrades has
-  installed no security update since at least 2026-09-26. It comes before R1.15. R1.15 (F57
-  `cap_drop` with a measured capability set) is planned; its baseline was measured on 2026-09-29
+  installed no security update since at least 2026-09-26. R1.15 (APT remount hook, ADR-0013) is in
+  progress on `fix/r1-boot-firmware-apt-hook`; R1.16 (postdeploy: `dpkg --audit` empty, boot files
+  match the running kernel) follows its deploy. R1.17 (F57 `cap_drop` with a measured capability
+  set) is planned; its baseline was measured on 2026-09-29
   (`CapEff` `0xa80425fb`, Docker's default set; `dmesg_restrict = 0`; `docker diff` shows no writes;
   56 `name=` families), the `bpftrace` trace is pending, and `bpftrace` stays installed on the Pi until
   then. Further candidates: (1) group b — F57's hardening

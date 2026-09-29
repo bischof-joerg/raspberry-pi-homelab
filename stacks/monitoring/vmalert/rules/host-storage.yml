@@ -2,6 +2,8 @@ groups:
 - name: host-storage
   rules:
   - alert: HostFilesystemReadOnly
+    # /boot/firmware is read-only by design (/etc/fstab); APT opens it only while dpkg runs
+    # (docs/architecture/adr/ADR-0013-read-only-boot-firmware-apt-hook.md, F60).
     expr: node_filesystem_readonly{mountpoint!="/boot/firmware"} == 1
     for: 1m
     labels:
