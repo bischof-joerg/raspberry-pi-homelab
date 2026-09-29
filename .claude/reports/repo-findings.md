@@ -98,6 +98,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | open | h |
 | F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | open | b |
 | F58 | vector's API listens on all interfaces of two networks | Privilege | Low | open | b |
+| F59 | `make ci` never runs the pre-commit hooks on new, untracked files | Toolchain | Low | open | h |
 
 ## Secrets and credentials
 
@@ -542,6 +543,14 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Test:** `tests/guards` — run `run_postdeploy_tests` (or an extracted helper) with a stub `make` that prints a pytest summary; assert the logged line carries the counts, and that a failing stub is logged as failed with its counts.
 - **Acceptance:** The next deploy log shows `tests: passed (<n> passed, <m> skipped …)`; the §7 log rows cite that line instead of an operator reading.
 - **Progress (2026-09-29):** the [I] part is answered. On the deploy of merge `68a3118` (R1.7) pytest's own summary line `63 passed, 4 skipped in 15.86s` reached the operator's terminal [V 2026-09-29, operator]. It was read from the terminal, not from a kept file, so the defect stands: `deploy.sh` still keeps no record of the counts. Status stays `open`.
+
+### F59 – `make ci` never runs the pre-commit hooks on new, untracked files
+
+- **Evidence:** `Makefile:263` (target `hooks`, called by `precommit` and so by `ci`) runs `pre-commit run --all-files`, which selects files from `git ls-files` — tracked files only. `.pre-commit-config.yaml:6-7` (`trailing-whitespace`, `end-of-file-fixer`) and `:49-51` (`ruff`, `ruff-format`) therefore skip a file that is not yet added, while pytest still collects and runs it. Measured twice [V 2026-09-29]: `tests/guards/test_43_postdeploy_markers.py` (commit `73cbb07`) and `tests/guards/test_54_vector_config_hash.py` (commit `f2e01b2`) passed `make ci` untracked, and the hooks rewrote them only when the operator committed (a line wrap in the first; trailing whitespace and a quote style change in the second).
+- **Impact:** "Validate first, commit afterwards" (IN4) holds only half for new files — exactly the files an increment adds most often. The operator's commit then fails once, or silently commits fixer output that nobody reviewed as a diff. Non-Python files (Markdown, YAML, shell) are not covered by any other check before the commit.
+- **Proposed fix:** Let `make hooks` also run the hooks on untracked, not-ignored files, e.g. a second run `pre-commit run --files $(git ls-files --others --exclude-standard)` when that list is not empty. Interim practice until then (recorded in `.claude/roadmap.md` §8): run `.venv/bin/ruff format --check --no-cache .` and `.venv/bin/ruff check --no-fix --no-cache .`, which read the file system, before handing over a commit with new Python files.
+- **Test:** `tests/guards` — the `hooks` recipe in `Makefile` covers untracked files (static check of the recipe); plus one manual negative control at fix time: an untracked file with trailing whitespace makes `make ci` fail.
+- **Acceptance:** `make ci` fails on a new, untracked file with trailing whitespace, and passes once it is fixed.
 
 ## Host runtime updates
 
