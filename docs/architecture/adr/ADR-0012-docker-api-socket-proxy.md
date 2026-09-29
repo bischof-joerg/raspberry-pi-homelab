@@ -103,3 +103,13 @@ amended then. Until R1.11 cadvisor keeps its direct socket mounts (F57), as allo
   403; no `blocked request` from a consumer; vector without socket mount and Docker group.
 - `tests/postdeploy/test_40_vector_pipeline.py` — container logs still reach VictoriaLogs.
 - `tests/postdeploy/test_35_network_and_ufw.py` — `docker-api` is internal.
+
+## Amendment 2026-09-29: cadvisor stays off the proxy (R1.11 reverted)
+
+The move of cadvisor announced after the Decision list was tried as R1.11 (PR #40) and reverted
+(PR #41). On the Pi, Docker 29.5.2 uses the containerd image store (`docker info`: driver-type
+`io.containerd.snapshotter.v1`); cadvisor v0.60.5's Docker integration then creates a containerd
+client and fails without `/run/containerd/containerd.sock`. The containerd API is gRPC and
+cannot be filtered by this proxy. Until that changes, cadvisor keeps its direct Docker and
+containerd sockets (allowlisted in `tests/guards/test_50_docker_socket_mounts.py`), and the
+proxy serves vector only. The options and their costs are recorded in finding F57.

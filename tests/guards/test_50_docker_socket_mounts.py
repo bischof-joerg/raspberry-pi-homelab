@@ -21,7 +21,7 @@ SOCKETS = ("/var/run/docker.sock", "/run/docker.sock", "/run/containerd/containe
 # Each entry names why the service may hold a runtime socket.
 SOCKET_ALLOWLIST: dict[str, str] = {
     "socket-proxy": "the filtering proxy itself (ADR-0012, F30)",
-    "cadvisor": "moves to socket-proxy in R1.11 (F57)",
+    "cadvisor": "containerd image store requires the containerd socket (F57, R1.11 reverted)",
 }
 
 

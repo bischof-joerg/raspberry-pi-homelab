@@ -32,9 +32,10 @@ implementation; a new stack copies its shape, not its service list.
 - **Read the Docker API through `socket-proxy`** (ADR-0012): `http://socket-proxy:2375` on the
   internal network `docker-api`, GET only, allowlisted paths only, client named in `-allowfrom`.
   No new service mounts a runtime socket or joins the Docker group; `SOCKET_ALLOWLIST` in
-  `tests/guards/test_50_docker_socket_mounts.py` names the only holders (socket-proxy; cadvisor
-  until R1.11). A consumer that needs another path amends ADR-0012 and the `-allowGET` pattern
-  together — never with another method.
+  `tests/guards/test_50_docker_socket_mounts.py` names the only holders (socket-proxy; cadvisor,
+  whose Docker integration needs the containerd socket while Docker uses the containerd image
+  store — R1.11 was reverted for this, F57). A consumer that needs another path amends ADR-0012
+  and the `-allowGET` pattern together — never with another method.
 - **Harden every service**: `read_only: true`, `cap_drop: [ALL]`,
   `security_opt: [no-new-privileges:true]`, a non-root `user:`, and a `healthcheck`.
 - **Use short service names** without prefixes: `grafana`, not `mon-grafana`.

@@ -205,8 +205,10 @@ cAdvisor runs without privileged mode, but as `user: root` with `pid: host` and 
 compromise of the host. The decision, the baseline measurement and the metric families the
 postdeploy tests require are recorded in
 [ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md), which supersedes
-[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md). Moving cAdvisor's Docker
-API access to socket-proxy is planned for R1.11 (F57).
+[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md). cAdvisor cannot move to
+socket-proxy for now: Docker on the Pi uses the containerd image store, and cAdvisor's Docker
+integration then requires the containerd socket, which the proxy cannot filter (tried and
+reverted on 2026-09-29, F57).
 
 ### socket-proxy
 
