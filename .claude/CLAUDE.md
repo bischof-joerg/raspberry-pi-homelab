@@ -169,7 +169,7 @@ archived record.
 | R0 archive: transition phases, decision log, guard design (§5.4), test matrix | `.claude/ClaudeTransition.md` |
 | How to work with Claude here, how to verify the safety set-up | `.claude/readme_claude.md` |
 | Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`; verifiers in `.claude/tools/` |
-| Repository findings F1–F60 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
+| Repository findings F1–F61 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
 | Architecture decisions | `docs/architecture/adr/` — ADR-0007 secrets, ADR-0008 bind mounts, ADR-009 backup, ADR-0010 cadvisor privileged, ADR-0011 cadvisor unprivileged, ADR-0012 Docker API socket proxy |
 | Operations | `docs/operations/` — `DevWorkflow.md`, `git-branch-workflow.md`, `runtime-updates.md`, `BackupVerifyRestore.md`, `GPG_config_for_backup_encryption.md`, `renovate.md` |
 | Monitoring | `docs/monitoring.md`, `docs/services/` |

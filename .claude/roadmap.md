@@ -23,7 +23,13 @@ is read at the start of any work session. The Claude transition (R0) is complete
   which no proxy can filter (§7, F57). R1.12 per-service config hash for vector (first slice of
   F1/F29, prerequisite for F58); F58 as R1.13 (vector API on loopback); F59 as R1.14 (`make ci`
   hooks also cover new, untracked files). See §6 and §7.
-- **Next increment:** to be chosen by the operator. Candidates: (1) group b — F57's hardening
+- **Next increment:** group j — F60, a repository-managed host update path for the read-only
+  `/boot/firmware` (operator, 2026-09-29): every APT run on the Pi fails, so unattended-upgrades has
+  installed no security update since at least 2026-09-26. It comes before R1.15. R1.15 (F57
+  `cap_drop` with a measured capability set) is planned; its baseline was measured on 2026-09-29
+  (`CapEff` `0xa80425fb`, Docker's default set; `dmesg_restrict = 0`; `docker diff` shows no writes;
+  56 `name=` families), the `bpftrace` trace is pending, and `bpftrace` stays installed on the Pi until
+  then. Further candidates: (1) group b — F57's hardening
   steps that do not touch the sockets (`cap_drop`, `no-new-privileges`, `read_only`, then
   `pid: host` and `/dev/kmsg`), one increment per step, each measured by `test_25`; F57's socket
   part needs a decision first: switch Docker to `overlay2` (own ADR, after the R3 backup is
@@ -135,10 +141,11 @@ first, then the mechanisms other fixes depend on.
 | e | Host reconciliation ADR | F16, F17, F18, F43, F19, F20 | — | Needs an ADR decision before code (R1 exit criterion) |
 | g | Supply chain | F3, F24, F44 | F37 | Digest pins together; F37 went with F8; F4 moved to R2d |
 | h | Toolchain and dead tests | F23, F25, F47, F11, F56 | F49, F21, F22, F59 | F21 + F22 done as R1.4–R1.6; F59 as R1.14; rest low risk, quick |
+| j | Host update path with a read-only firmware partition | F60 | — | Found 2026-09-29 while preparing the F57 capability trace; pulled forward from R3b by the operator the same day, before R1.15, because every APT run fails and security updates are blocked. No manual repair before its increment plan |
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2b | Documentation | F5, F6, F12 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26 |
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
-| R3b | Pi runtime lifecycle | F51, F52, F53, F54, F55, F60 | — | Stage R3, after backup, §9. F60 (read-only `/boot/firmware`, half-configured `initramfs-tools`) found 2026-09-29; its read-only diagnosis comes first, no reboot until then |
+| R3b | Pi runtime lifecycle | F51, F52, F53, F54, F55, F61 | — | Stage R3, after backup, §9. F61 (unattended-upgrades outside the documented flow) found 2026-09-29 with F60 |
 
 Closed without a group: F10, F14, F40. Groups a–h belong to R1; the others name their stage.
 
