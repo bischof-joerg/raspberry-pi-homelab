@@ -24,7 +24,7 @@ The design prioritizes:
 |------------|-----------|---------|
 | `monitoring` | external | Monitoring plane: VictoriaMetrics, vmagent, vmalert, VictoriaLogs, Grafana, exporters |
 | `apps`       | external | Application plane: app stacks (Home Assistant, AdGuard, etc.) |
-| `docker-api` | external, **internal** | Docker API plane: only the Docker socket proxy and the services that read the Docker API through it (planned R1.10/R1.11: vector, cadvisor; findings F30, F57). No default route, no way out of the host. Created since R1.9; no service uses it yet. |
+| `docker-api` | external, **internal** | Docker API plane: only `socket-proxy` and the services that read the Docker API through it — vector (since R1.10) and cadvisor (since R1.11); findings F30, F57, ADR-0012. No default route, no way out of the host. Created since R1.9. |
 
 ### Design principles
 

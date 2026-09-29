@@ -20,7 +20,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -45,7 +44,6 @@ MUST_ALLOW = (
 CADVISOR_GET = ("/_ping", "/version", "/v1.47/version", "/info", "/v1.47/info")
 CADVISOR = "cadvisor"
 CADVISOR_DOCKER_FLAG = "--docker=tcp://socket-proxy:2375"
-R1_11 = pytest.mark.xfail(strict=True, reason="R1.11: cadvisor not on socket-proxy yet (F57)")
 MUST_REFUSE = (
     "/v1.47/containers/0123abcd/archive",
     "/v1.47/containers/0123abcd/export",
@@ -126,7 +124,6 @@ def test_proxy_allows_get_only() -> None:
     assert flags.get("allowGET"), "❌ socket-proxy has no -allowGET allowlist.\nFix: add it."
 
 
-@R1_11
 def test_proxy_allows_head_on_ping_only() -> None:
     # moby's client pings with HEAD /_ping first (cadvisor, F57); nothing else needs HEAD.
     head = _flags().get("allowHEAD")
@@ -140,7 +137,6 @@ def test_proxy_allows_head_on_ping_only() -> None:
     )
 
 
-@R1_11
 def test_proxy_get_allowlist_covers_cadvisor() -> None:
     pattern = re.compile(f"^(?:{_flags()['allowGET']})$")
     refused = [p for p in CADVISOR_GET if not pattern.match(p)]
@@ -150,7 +146,6 @@ def test_proxy_get_allowlist_covers_cadvisor() -> None:
     )
 
 
-@R1_11
 def test_cadvisor_uses_the_proxy() -> None:
     cadvisor = _raw_services()[CADVISOR]
     command = [str(a) for a in cadvisor.get("command", [])]

@@ -30,11 +30,12 @@ implementation; a new stack copies its shape, not its service list.
   needs container metadata, treat a socket proxy as the default and a direct mount as an exception
   that needs an ADR.
 - **Read the Docker API through `socket-proxy`** (ADR-0012): `http://socket-proxy:2375` on the
-  internal network `docker-api`, GET only, allowlisted paths only, client named in `-allowfrom`.
-  No new service mounts a runtime socket or joins the Docker group; `SOCKET_ALLOWLIST` in
-  `tests/guards/test_50_docker_socket_mounts.py` names the only holders (socket-proxy; cadvisor
-  until R1.11). A consumer that needs another path amends ADR-0012 and the `-allowGET` pattern
-  together — never with another method.
+  internal network `docker-api`, GET on allowlisted paths only (plus HEAD on exactly `/_ping`,
+  ADR-0012 amendment R1.11), client named in `-allowfrom`. No service but socket-proxy mounts a
+  runtime socket or joins the Docker group; `SOCKET_ALLOWLIST` in
+  `tests/guards/test_50_docker_socket_mounts.py` names it as the only holder. A consumer that
+  needs another path amends ADR-0012 and the `-allowGET` pattern together — never with a
+  write method.
 - **Harden every service**: `read_only: true`, `cap_drop: [ALL]`,
   `security_opt: [no-new-privileges:true]`, a non-root `user:`, and a `healthcheck`.
 - **Use short service names** without prefixes: `grafana`, not `mon-grafana`.
@@ -52,8 +53,8 @@ implementation; a new stack copies its shape, not its service list.
 
 ## Documented exceptions — do not "fix" these
 
-- `cadvisor` runs as root with `pid: host`, `/dev/kmsg` and the Docker socket (`:ro` since F28 —
-  which does not restrict the API, see above), but **not** `privileged` since F46 step (4).
+- `cadvisor` runs as root with `pid: host` and `/dev/kmsg`, but **not** `privileged` since F46
+  step (4), and without runtime sockets since R1.11 (Docker API through socket-proxy, F57).
   Recorded in `docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md` (supersedes ADR-0010).
   No service may set `privileged: true`: `PRIVILEGED_ALLOWLIST` in
   `tests/guards/test_10_monitoring_compose_contract.py` is empty, and a new entry needs its own
