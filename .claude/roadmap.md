@@ -16,14 +16,15 @@ is read at the start of any work session. The Claude transition (R0) is complete
   F21 and F22 as R1.4–R1.6 (one dev dependency source, exact pins incl. `constraints-dev.txt`,
   pinned pip, idempotent `make venv`); F46 step (4) as R1.7 (cadvisor unprivileged, ADR-0011
   supersedes ADR-0010, F46 addressed); F34 as R1.8 (vector stays on `apps` by decision, networks
-  of every service pinned by a guard); R1.9 internal network `docker-api` bootstrapped. See §6 and
-  §7.
-- **Next increment:** the rest of group b, planned 2026-09-29 as R1.8–R1.11 with the operator's
-  decisions: vector stays on `apps` (F34, R1.8); Docker API access of vector and cadvisor through
-  `wollomatic/socket-proxy` with a GET-only allowlist (F30, F57), on an external internal network
-  `docker-api` bootstrapped by `scripts/network/bootstrap-networks.sh` — R1.9 network, R1.10 proxy
-  and vector, R1.11 cadvisor. One branch, PR and deploy each. The rest of F57's hardening follows.
-  R1.8 and R1.9 done; next is R1.10.
+  of every service pinned by a guard); R1.9 network `docker-api` bootstrapped (external, created
+  with `--internal`); F30 as R1.10 (vector reads the Docker API through `socket-proxy`, ADR-0012
+  Accepted). See §6 and §7.
+- **Next increment:** R1.11 — cadvisor reads the Docker API through `socket-proxy` and drops the
+  Docker and containerd sockets (F57, socket part; plan of 2026-09-29, one branch, PR and deploy).
+  It adds cadvisor's endpoints to the allowlist (likely `_ping`, `version`, `info`,
+  `containers/<id>/json`; possibly HEAD on `_ping` — to be read from the cadvisor source, not
+  assumed) and amends ADR-0012. The rest of F57's hardening and F58 (vector API on `0.0.0.0`)
+  follow as their own increments.
 - **Stages re-planned on 2026-09-26:** a new R2 (quality and lifecycle, §9) sits between R1 and
   backup (now R3); a new R4 (service standard, §9.7) follows backup; core and apps moved to R5
   and R6.
@@ -123,7 +124,7 @@ first, then the mechanisms other fixes depend on.
 | Group | Scope | Open | Done | Why this order / state |
 |---|---|---|---|---|
 | a | Alertmanager renderer: modes, errors, escaping, determinism | F26b | F26, F35, F36, F8, F39, F48 | Done except F26b's restore fixture test, which needs the R3 backup harness (F9) |
-| b | Docker socket and privilege | F30, F57, F58 | F28, F46, F34 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; F46 (4) `privileged` dropped in R1.7 (ADR-0011); F34 reason recorded and networks pinned in R1.8; `docker-api` network in R1.9. Planned: R1.10 socket proxy for vector (F30), R1.11 cadvisor on the proxy (F57) |
+| b | Docker socket and privilege | F57, F58 | F28, F46, F34, F30 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; F46 (4) `privileged` dropped in R1.7 (ADR-0011); F34 reason recorded and networks pinned in R1.8; `docker-api` network in R1.9; socket proxy for vector in R1.10 (F30, ADR-0012). Planned: R1.11 cadvisor on the proxy (F57), then F57 hardening and F58 |
 | c | LAN exposure and firewall contract | F45, F31, F42, F15 | — | F45 needs a Pi-side measurement first; decides F15 |
 | d | Config hash that works | F1, F2, F29, F13 | — | Makes every later config change actually deploy; candidate: `up --renew-anon-volumes` (F48) |
 | f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | — | One test file becomes the home of all hardening checks |
@@ -143,6 +144,7 @@ R1 onwards, newest first. R0 rows stay in `.claude/ClaudeTransition.md` §10.4 (
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
+| R1.10 F30 socket proxy for vector | 2026-09-29 | `099899a` (tests), `583e5d9` (fix); merge `393b99d` (PR #37). Fix-forward: `73cbb07` (guard), `bda03b0` (marker); merge `72a00dc` (PR #38) | green (both) | 1st deploy: socket-proxy created and healthy, vector recreated; postdeploy `64 passed, 4 skipped, 7 deselected` — test_26 had no `postdeploy` marker, its checks never ran (IN8 fix-forward). 2nd deploy: nothing recreated; postdeploy `71 passed, 4 skipped` (operator) | `wollomatic/socket-proxy:1.13.1` (tag from Docker Hub, arm64 present) is the only new socket holder: GET only on `events`, `containers/json`, `containers/<id>/json`, `containers/<id>/logs` — the calls in vector 0.53.0's `docker_logs` source — for client `vector`, on `docker-api` only. vector without socket and Docker group, `docker_host: http://socket-proxy:2375`. Measured on the Pi: proxy log holds exactly the two test probes from `127.0.0.1` (POST → 405 "method not allowed", `archive` → 403 "path not allowed") and no refused vector request; `test_40` shows logs still flow. 11 strict xfails verified with `--runxfail`. Side effect: vector's `group_add` no longer renders two equal empty items, so the F47 skip moved to "cadvisor image not present locally" (F47 stays open). New guard `test_43`: every postdeploy test carries the marker. ADR-0012 Accepted (operator); residual risk: inspect exposes container environments. F30 addressed. |
 | R1.9 `docker-api` network | 2026-09-29 | `861d373` (tests), `3c60b88` (fix); merge `71cab02` (PR #35) | green | deploy: done twice. First (08:53:03) logged `Network missing: docker-api` and `docker network create --driver bridge --internal docker-api`; second (08:54:19) `Network exists: docker-api`, Internal check passed — idempotent. Postdeploy green, operator reports 64 passed, 4 skipped | Prepares the socket proxy (F30, F57); no service joins the network yet. `bootstrap-networks.sh` creates `docker-api` with `--internal` and dies if an existing one is not internal (skipped under `DRY_RUN` while missing). Static guard `test_52` (script is never run off the Pi, not even with stubs), four strict xfails verified with `--runxfail`; postdeploy `test_35::test_docker_api_network_is_internal` measured on the Pi: Internal=true and no default route. The guard refused a direct ShellCheck call on the script; not worked around, ShellCheck ran through the pre-commit hook in `make ci`. `cleanup-ufw.sh` removes only `^(compose_default)$`, so it leaves `docker-api` alone. |
 | R1.8 F34 vector networks | 2026-09-29 | `71ec0cc`; merge `cbaecc4` (PR #33) | green | deploy: done, no container recreated (operator); postdeploy green, operator reports 63 passed, 4 skipped | Operator decision: vector stays on `apps` for data from the R6 apps stack; reason in a compose comment and `docs/services/vector.md`, no ADR. `EXPECTED_NETWORKS` in `test_10` pins every service's networks — a regression guard, green from the start, so no xfail; no negative control run. `make ci` failed once because `ruff format` rewrapped the new test, then passed. F34 addressed; new finding F58 (vector API on `0.0.0.0:8686`, group b). No runtime change: the compose edit is a comment outside the config hash. |
 | R1.7 F46 (4) cadvisor unprivileged | 2026-09-29 | `5d760d6` (tests), `f113690` (fix); merge `68a3118` (PR #31) | green | deploy: done, cadvisor recreated, `HostConfig.Privileged` = `false`; postdeploy green, operator reports 63 passed, 4 skipped | Baseline of cadvisor metric families measured by the operator before the branch, repeated after deploy: identical line for line, network families included — the assumed `CAP_SYS_PTRACE` need did not materialise, `cap_add` fallback unused. Two strict-xfail guards verified with `--runxfail`; postdeploy checks every family alerts and dashboards use. ADR-0011 Accepted, ADR-0010 Superseded (operator). `PRIVILEGED_ALLOWLIST` empty. F46 addressed. cadvisor's remaining Docker socket access, root and `pid: host` recorded as new finding F57 (group b). Postdeploy counts read from the terminal, not a kept log — F56 stays open. |
@@ -173,6 +175,10 @@ Each has a home in a rule or a test; listed here so a new session sees them at o
   A refusal is a result: get the evidence through a test that `make ci` runs, or ask the operator.
 - **Pi-side facts come from the operator.** Measured values (`stat`, `find`, `docker volume ls`) go
   into the findings as evidence with the date; never infer them.
+- **A green postdeploy run can hide tests that never ran.** R1.10's first deploy reported "64
+  passed" with `7 deselected`: test_26 lacked the `postdeploy` marker, and `make ci` never sees
+  `tests/postdeploy`. Read the whole summary line, deselected included. Answer:
+  `tests/guards/test_43_postdeploy_markers.py`.
 
 ## 9. Stage plans R2, R3b and R4
 

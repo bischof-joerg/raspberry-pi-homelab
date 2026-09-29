@@ -44,7 +44,7 @@ exception to a rule. Not for choices a future increment can reverse freely.
 
 Existing ADRs worth knowing: ADR-0001 networking and firewall, ADR-0007 secrets and env files,
 ADR-0008 bind mounts only, ADR-009 backup/verify/restore, ADR-0010 cadvisor privileged exception,
-ADR-0011 cadvisor unprivileged, ADR-0012 Docker API through a filtering socket proxy (Proposed).
+ADR-0011 cadvisor unprivileged, ADR-0012 Docker API through a filtering socket proxy.
 
 ## Keeping docs honest
 
