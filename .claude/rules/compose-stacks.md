@@ -29,6 +29,12 @@ implementation; a new stack copies its shape, not its service list.
   the `docker` group has host-root equivalence — `:ro` is not a mitigation (F28, F30). If a service
   needs container metadata, treat a socket proxy as the default and a direct mount as an exception
   that needs an ADR.
+- **Read the Docker API through `socket-proxy`** (ADR-0012): `http://socket-proxy:2375` on the
+  internal network `docker-api`, GET only, allowlisted paths only, client named in `-allowfrom`.
+  No new service mounts a runtime socket or joins the Docker group; `SOCKET_ALLOWLIST` in
+  `tests/guards/test_50_docker_socket_mounts.py` names the only holders (socket-proxy; cadvisor
+  until R1.11). A consumer that needs another path amends ADR-0012 and the `-allowGET` pattern
+  together — never with another method.
 - **Harden every service**: `read_only: true`, `cap_drop: [ALL]`,
   `security_opt: [no-new-privileges:true]`, a non-root `user:`, and a `healthcheck`.
 - **Use short service names** without prefixes: `grafana`, not `mon-grafana`.
@@ -74,7 +80,8 @@ Every new image also needs Renovate coverage in the same increment (`ci-renovate
 `stacks/monitoring/compose/docker-compose.yml`, `docs/architecture/adr/ADR-0008-bind-mounts-only.md`,
 `docs/architecture/adr/ADR-0007-secrets-and-env-files.md`,
 `docs/architecture/adr/ADR-0010-cadvisor-privileged-exception.md`,
-`docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md`, `deploy.sh`, `ChatGPTHint.txt`
+`docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md`,
+`docs/architecture/adr/ADR-0012-docker-api-socket-proxy.md`, `deploy.sh`, `ChatGPTHint.txt`
 §4 and §7.
 
 ## Violations

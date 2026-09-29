@@ -29,14 +29,16 @@ REQUIRED_SERVICES = {
     "cadvisor",
     "victorialogs",
     "vector",
+    "socket-proxy",
 }
 
 OPTIONAL_SERVICES = {}
 
 # Finding F34: every service's networks are fixed here, so joining a network is a reviewed change.
 # vector is on `apps` on purpose (operator, 2026-09-29): the apps stack (R6) is prepared, and
-# vector is to process data from app services there. docker_logs itself needs no network.
-# The renderer has none at all (`network_mode: none`, F8).
+# vector is to process data from app services there. docker_logs does not use `apps`.
+# The renderer has none at all (`network_mode: none`, F8). `docker-api` carries only the Docker
+# socket proxy and its consumers (F30, ADR-0012, tests/guards/test_53).
 EXPECTED_NETWORKS: dict[str, set[str]] = {
     "alertmanager": {"monitoring"},
     "alertmanager-config-render": set(),
@@ -47,7 +49,8 @@ EXPECTED_NETWORKS: dict[str, set[str]] = {
     "node-exporter": {"monitoring"},
     "cadvisor": {"monitoring"},
     "victorialogs": {"monitoring"},
-    "vector": {"monitoring", "apps"},
+    "vector": {"monitoring", "apps", "docker-api"},
+    "socket-proxy": {"docker-api"},
 }
 NO_NETWORK_SERVICES = {"alertmanager-config-render"}
 

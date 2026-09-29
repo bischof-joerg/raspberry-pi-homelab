@@ -27,7 +27,9 @@ Implementation goal including hardening:
 - All other services are internal-only Docker network
 - Read-only root filesystems where supported
 - No container runs privileged; cAdvisor still runs as root with `pid: host` and the Docker
-  socket ([ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md))
+  socket ([ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md)); vector reads the Docker
+  API only through the filtering socket-proxy
+  ([ADR-0012](architecture/adr/ADR-0012-docker-api-socket-proxy.md))
 - Secrets never stored in Git
 - Fixed Docker bridge + UFW rules
 
@@ -203,7 +205,27 @@ cAdvisor runs without privileged mode, but as `user: root` with `pid: host` and 
 compromise of the host. The decision, the baseline measurement and the metric families the
 postdeploy tests require are recorded in
 [ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md), which supersedes
-[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md).
+[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md). Moving cAdvisor's Docker
+API access to socket-proxy is planned for R1.11 (F57).
+
+### socket-proxy
+
+**Role:**
+Filtering Docker API proxy (`wollomatic/socket-proxy`). vector's `docker_logs` source reads
+container logs through it at `http://socket-proxy:2375` instead of mounting the Docker socket
+(F30). It allows GET only, on `events`, `containers/json`, `containers/<id>/json` and
+`containers/<id>/logs`, for the client `vector`; every other request is refused and logged as
+`blocked request`.
+
+**Persistence:**
+None – stateless.
+
+**Privileges:**
+The only service with the Docker socket (`:ro`) and the Docker group; uid 65534, read-only root
+filesystem, no capabilities, no published port. It joins only the internal network `docker-api`.
+It is still host-root equivalent itself; what the proxy does not protect (container environments,
+including secrets, are readable through `containers/<id>/json`) is recorded in
+[ADR-0012](architecture/adr/ADR-0012-docker-api-socket-proxy.md).
 
 ---
 
@@ -225,6 +247,7 @@ See the following backup and restore runbook
 
 - Node Exporter
 - cAdvisor
+- socket-proxy
 
 ### Git-friendly / Infrastructure as Code
 

@@ -6,7 +6,8 @@ api:
 sources:
   docker:
     type: docker_logs
-    docker_host: unix:///var/run/docker.sock
+    # Filtered Docker API (F30, ADR-0012); vector has no socket and no Docker group.
+    docker_host: http://socket-proxy:2375
     include_labels:
       # Filter to only include logs from the "homelab-home-prod-mon" stack and thus exclude logs from temporary containers by test executions
       - com.docker.compose.project=homelab-home-prod-mon

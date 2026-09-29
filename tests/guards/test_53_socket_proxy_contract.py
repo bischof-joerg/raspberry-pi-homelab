@@ -15,7 +15,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -45,8 +44,6 @@ MUST_REFUSE = (
     "/v1.47/containers/0123abcd/logs/../archive",
     "/v1.47/containers/../json",
 )
-
-pytestmark = pytest.mark.xfail(strict=True, reason="R1.10: socket-proxy not in compose yet (F30)")
 
 
 @cache

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,7 +35,6 @@ def _socket_mounts() -> list[tuple[str, str]]:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="R1.10: socket-proxy not in compose yet (F30)")
 def test_socket_mounts_exist_where_expected() -> None:
     # Guards the guard: if the mounts moved or changed syntax, the checks below pass vacuously,
     # and an allowlist entry for a service without a socket keeps a stale exception alive.
@@ -47,7 +45,6 @@ def test_socket_mounts_exist_where_expected() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.10: vector still mounts the Docker socket (F30)")
 def test_only_allowlisted_services_mount_runtime_sockets() -> None:
     offenders = sorted({name for name, _ in _socket_mounts()} - SOCKET_ALLOWLIST.keys())
     assert not offenders, (
