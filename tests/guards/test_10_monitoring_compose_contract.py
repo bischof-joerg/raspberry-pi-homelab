@@ -4,6 +4,9 @@ import re
 from functools import cache
 from pathlib import Path
 
+import pytest
+import yaml
+
 from tests._lib.compose import render_compose
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -11,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = REPO_ROOT / "stacks/monitoring/compose/docker-compose.yml"
 ENV_EXAMPLE = REPO_ROOT / "stacks/monitoring/compose/.env.example"
 MONITORING_DOC = REPO_ROOT / "docs/monitoring.md"
+VECTOR_CONFIG = REPO_ROOT / "stacks/monitoring/vector/vector.yaml"
 
 # Finding F46: `privileged: true` is an exception that needs an ADR (.claude/rules/docs-adr.md).
 # Each entry maps a service to the ADR that records why it is privileged. Empty since F46 step 4
@@ -208,4 +212,17 @@ def test_monitoring_doc_matches_cadvisor_privileges() -> None:
     assert adr_name in section.group(1), (
         f"❌ The cAdvisor section of docs/monitoring.md does not link {adr_name} (F46).\n"
         "Fix: link the ADR that records cadvisor's privileges."
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="R1.13: vector API still on 0.0.0.0 (F58)")
+def test_vector_api_listens_on_loopback_only() -> None:
+    # F58: vector joins monitoring, apps and docker-api; an API on 0.0.0.0 is reachable from every
+    # container on them. The only caller, postdeploy test_20, queries from vector's own namespace.
+    api = yaml.safe_load(VECTOR_CONFIG.read_text(encoding="utf-8")).get("api") or {}
+    address = str(api.get("address", ""))
+    host = address.rpartition(":")[0]
+    assert not api.get("enabled") or host == "127.0.0.1", (
+        f"❌ vector's API listens on {address!r} (F58).\n"
+        "Fix: set api.address to 127.0.0.1:8686 in stacks/monitoring/vector/vector.yaml."
     )
