@@ -314,6 +314,8 @@ services:
     image: timberio/vector:0.53.0-debian
     restart: unless-stopped
     command: ["--config", "/etc/vector/vector.yaml"]
+    # apps: on purpose (F34) - reserved for processing data from app services (apps stack, R6).
+    # docker_logs needs no network; it reads the Docker API. Pinned in tests/guards/test_10.
     networks:
       - monitoring
       - apps
