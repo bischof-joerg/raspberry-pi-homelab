@@ -17,6 +17,7 @@ difference between a fix that holds and one that is silently undone.
 | Script | Mode | Effect |
 |---|---|---|
 | `scripts/host/ensure-docker-daemon-json.sh` | `apply` | copies `stacks/core/docker/daemon.json` to `/etc/docker/daemon.json` and **restarts Docker on any change**, restarting every container (F18) |
+| `scripts/host/ensure-apt-boot-firmware-hook.sh` | `apply` | installs `/usr/local/sbin/homelab-boot-firmware` (root copy of `scripts/host/homelab-boot-firmware.sh`) and `/etc/apt/apt.conf.d/99homelab-boot-firmware`, so APT remounts the read-only `/boot/firmware` rw only while dpkg runs (F60, ADR-0013). Installed files stay after a revert; removal is manual |
 | `scripts/host/ensure-journald-read.sh` | `apply`, `TARGET_USER=admin` | adds the user to `systemd-journal`, `chgrp -R`/`chmod g+rx` on journal dirs, returns the GID |
 | `scripts/network/bootstrap-networks.sh` | create-if-missing | ensures `monitoring`, `apps` and the internal `docker-api` exist; `docker-api` is always checked to be internal (R1.9). Subnet/gateway/bridge are only validated or set **if** `MONITORING_SUBNET`/`…_BRIDGE_NAME` are in the environment — and `deploy.sh` does not export them (F16) |
 | `stacks/monitoring/compose/init-permissions.sh` | auto | data directory ownership and modes |

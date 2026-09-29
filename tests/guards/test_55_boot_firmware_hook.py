@@ -35,8 +35,6 @@ EXPECTED_DIRECTIVES = [
     f'DPkg::Post-Invoke {{ "{HELPER_DST} ro"; }};',
 ]
 
-pytestmark = pytest.mark.xfail(strict=True, reason="R1.15 (F60): APT hook not implemented yet")
-
 STUB = """#!/bin/sh
 echo "$(basename "$0") $*" >> "$STUB_LOG"
 case "$(basename "$0")" in

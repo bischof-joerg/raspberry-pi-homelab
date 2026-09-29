@@ -111,7 +111,20 @@ After the Pi pulls a Renovate-backed change, deploy and verify it through the no
 
 Do not use `make renovate-apply` as a substitute for host runtime maintenance. It changes repository-declared dependency references; it does not patch the running Raspberry Pi host.
 
-### 1.4 Acceptance criteria
+### 1.4 Read-only `/boot/firmware` and the APT hook
+
+`/boot/firmware` is mounted read-only (`/etc/fstab`). Kernel and initramfs updates copy files into
+it while dpkg runs, so `deploy.sh` installs an APT hook that remounts it read-write for each dpkg
+run and read-only afterwards ([ADR-0013](../architecture/adr/ADR-0013-read-only-boot-firmware-apt-hook.md),
+finding F60). It works for `make host-upgrade-apply`, unattended-upgrades and a manual `apt-get`.
+
+- Use `apt-get`, never `dpkg -i` or `dpkg --configure` directly: dpkg alone bypasses the hook and
+  fails on the read-only partition. To finish a pending configure, run `sudo apt-get -f install`.
+- Each remount is logged: `journalctl -t homelab-boot-firmware`.
+- After an APT run the partition must be read-only again (`findmnt -no OPTIONS /boot/firmware`);
+  `make postdeploy` checks it.
+
+### 1.5 Acceptance criteria
 
 A runtime maintenance change is accepted only when all of the following are true:
 

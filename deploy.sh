@@ -49,6 +49,10 @@ BOOTSTRAP_NETWORKS="${BOOTSTRAP_NETWORKS:-1}"            # 1|0
 ENSURE_DOCKER_DAEMON_JSON="${ENSURE_DOCKER_DAEMON_JSON:-1}"  # 1|0
 DOCKER_DAEMON_SCRIPT="${DOCKER_DAEMON_SCRIPT:-$REPO_ROOT/scripts/host/ensure-docker-daemon-json.sh}"
 
+# APT hook for the read-only /boot/firmware (F60, ADR-0013)
+ENSURE_APT_BOOT_FIRMWARE_HOOK="${ENSURE_APT_BOOT_FIRMWARE_HOOK:-1}"  # 1|0
+APT_BOOT_FIRMWARE_SCRIPT="${APT_BOOT_FIRMWARE_SCRIPT:-$REPO_ROOT/scripts/host/ensure-apt-boot-firmware-hook.sh}"
+
 # repo ownership handling
 FIX_REPO_OWNERSHIP="${FIX_REPO_OWNERSHIP:-auto}"         # auto|always|never
 REPO_OWNER_USER="${REPO_OWNER_USER:-admin}"
@@ -103,6 +107,17 @@ ensure_docker_daemon_json() {
   log "docker-daemon: ensure"
   "$DOCKER_DAEMON_SCRIPT" apply
   log "docker-daemon: ensure done"
+}
+
+ensure_apt_boot_firmware_hook() {
+  [[ "$ENSURE_APT_BOOT_FIRMWARE_HOOK" == "1" ]] || {
+    log "apt-boot-firmware: skipped (ENSURE_APT_BOOT_FIRMWARE_HOOK=0)"
+    return 0
+  }
+  [[ -x "$APT_BOOT_FIRMWARE_SCRIPT" ]] || die "apt-boot-firmware script not executable: $APT_BOOT_FIRMWARE_SCRIPT"
+  log "apt-boot-firmware: ensure"
+  "$APT_BOOT_FIRMWARE_SCRIPT" apply
+  log "apt-boot-firmware: ensure done"
 }
 
 refuse_repo_root_env() {
@@ -314,6 +329,7 @@ main() {
   check_prereqs
 
   ensure_docker_daemon_json
+  ensure_apt_boot_firmware_hook
 
   validate_secrets_file
 
