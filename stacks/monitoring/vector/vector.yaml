@@ -1,6 +1,7 @@
 api:
   enabled: true
-  address: 0.0.0.0:8686
+  # Loopback only (F58): the only caller, postdeploy test_20, queries from vector's namespace.
+  address: 127.0.0.1:8686
   playground: false
 
 sources:

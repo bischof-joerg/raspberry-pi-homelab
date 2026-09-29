@@ -4,7 +4,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
 import yaml
 
 from tests._lib.compose import render_compose
@@ -215,7 +214,6 @@ def test_monitoring_doc_matches_cadvisor_privileges() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.13: vector API still on 0.0.0.0 (F58)")
 def test_vector_api_listens_on_loopback_only() -> None:
     # F58: vector joins monitoring, apps and docker-api; an API on 0.0.0.0 is reachable from every
     # container on them. The only caller, postdeploy test_20, queries from vector's own namespace.

@@ -97,7 +97,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 | F55 | Plan output, audit and runtime-updates doc disagree; audit gaps pass silently | Host | Low | open | R3b |
 | F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | open | h |
 | F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | open | b |
-| F58 | vector's API listens on all interfaces of two networks | Privilege | Low | open | b |
+| F58 | vector's API listens on all interfaces of two networks | Privilege | Low | partly | b |
 | F59 | `make ci` never runs the pre-commit hooks on new, untracked files | Toolchain | Low | open | h |
 
 ## Secrets and credentials
@@ -231,6 +231,7 @@ The R1 column is the grouping into increments; per-group status and order in `.c
 - **Proposed fix:** Bind the API to `127.0.0.1:8686`; `test_20` keeps working because it queries from inside the namespace.
 - **Test:** `tests/guards/test_10_monitoring_compose_contract.py` — vector's API address in `stacks/monitoring/vector/vector.yaml` is loopback; `tests/postdeploy/test_20_health_endpoints.py` stays green.
 - **Acceptance:** The guard passes; after deploy, `http://vector:8686/health` from another container on `monitoring` is refused, while `test_20` passes.
+- **Progress (2026-09-29, R1.13):** fixed on `fix/r1-vector-api-loopback` after R1.12 made a `vector.yaml` change recreate vector (its own `VECTOR_CONFIG_HASH`). Tests commit `0c04817`: guard `test_vector_api_listens_on_loopback_only` in `tests/guards/test_10_monitoring_compose_contract.py` (strict xfail, failing with `vector's API listens on '0.0.0.0:8686'` under `--runxfail`); postdeploy `test_vector_api_is_not_reachable_from_other_containers` in `tests/postdeploy/test_40_vector_pipeline.py`, parametrised over `monitoring` and `apps`, requires curl exit 7 (refused) — exit 6 (name not resolved) fails, so it cannot pass for the wrong reason. Fix: `api.address: 127.0.0.1:8686`. Status `partly` until deploy and postdeploy are green; the [I] above is answered by that postdeploy check.
 
 ### F57 – cadvisor is host-root equivalent via the Docker socket, root and `pid: host`
 
