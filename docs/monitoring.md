@@ -203,7 +203,7 @@ cAdvisor runs without privileged mode, but as `user: root` with `pid: host` and 
 compromise of the host. The decision, the baseline measurement and the metric families the
 postdeploy tests require are recorded in
 [ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md), which supersedes
-[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md) once accepted.
+[ADR-0010](architecture/adr/ADR-0010-cadvisor-privileged-exception.md).
 
 ---
 

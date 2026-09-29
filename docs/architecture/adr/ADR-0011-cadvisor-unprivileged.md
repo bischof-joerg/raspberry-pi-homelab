@@ -1,10 +1,10 @@
 # ADR-0011: cadvisor runs without privileged mode
 
-- **Status:** Proposed — accepted by the operator once postdeploy is green on the Pi
+- **Status:** Accepted (operator, 2026-09-29, after postdeploy was green on the Pi)
 - **Date:** 2026-09-29
 - **Scope:** `cadvisor` in `stacks/monitoring/compose/docker-compose.yml`; `privileged: true` in
   any Compose service
-- **Supersedes:** [ADR-0010](ADR-0010-cadvisor-privileged-exception.md) once accepted
+- **Supersedes:** [ADR-0010](ADR-0010-cadvisor-privileged-exception.md)
 
 ## Context
 
@@ -36,6 +36,15 @@ without `CAP_SYS_PTRACE` may not be allowed to read.
    return to `privileged`. Only if that fails is the change reverted (IN8) and ADR-0010 amended
    with the measured result.
 
+## Result (measured 2026-09-29)
+
+Deployed with merge `68a3118` (PR #31). On the Pi, `HostConfig.Privileged` of the recreated
+cadvisor container is `false`. The metric families exported with `name=` for alertmanager, grafana
+and victoriametrics match the baseline line for line, including both network families. The
+operator reports postdeploy green: 63 passed, 4 skipped. The `cap_add` fallback of Decision 3 was
+not needed; the old claim that `privileged` is "non-negotiable on the Pi 5" is disproved for this
+image (`ghcr.io/google/cadvisor:v0.60.5`) and kernel.
+
 ## Alternatives considered
 
 - **Keep `privileged`.** Rejected: ADR-0010 held it only until this test; `privileged` grants every
@@ -54,7 +63,7 @@ without `CAP_SYS_PTRACE` may not be allowed to read.
 ### Negative / Tradeoffs
 
 - **cadvisor stays host-root equivalent.** The Docker socket gives full Docker API access; `:ro`
-  protects only the socket file, not the API (F30, F34). `pid: host` still exposes every host
+  protects only the socket file, not the API (F30). `pid: host` still exposes every host
   process. Dropping `privileged` removes all-capabilities and all-devices, not this path.
 - cadvisor still runs as root without `cap_drop`, `read_only` or a healthcheck; that hardening is
   group f (F7), not this decision.

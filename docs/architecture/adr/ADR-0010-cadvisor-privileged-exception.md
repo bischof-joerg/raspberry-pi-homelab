@@ -1,6 +1,6 @@
 # ADR-0010: cadvisor privileged exception
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0011](ADR-0011-cadvisor-unprivileged.md) (2026-09-29)
 - **Date:** 2026-09-28
 - **Scope:** `privileged: true` in any Compose service; today only `cadvisor` in
   `stacks/monitoring/compose/docker-compose.yml`
@@ -88,3 +88,12 @@ the exception as it exists, bounds it, and names the step that tests whether it 
 - `tests/guards/test_50_docker_socket_mounts.py` — runtime sockets mounted `:ro` only (F28).
 - `tests/postdeploy/test_25_cadvisor_metrics.py` — cadvisor exports named container metrics and
   its socket mount is read-only; this is the proof step (4) relies on.
+
+## Amendment 2026-09-29 — superseded
+
+F46 step (4) ran as Decision 4 describes: `privileged` was dropped (merge `68a3118`, PR #31) and
+every metric family the alerts and dashboards use still flows, measured on the Pi. The exception is
+gone; ADR-0011 records the result. The allowlist is empty, and
+`test_monitoring_doc_does_not_deny_privileged_containers` named above was replaced by
+`test_monitoring_doc_matches_cadvisor_privileges`. The text above is kept unchanged as the record
+of the decision at the time.

@@ -48,8 +48,8 @@ implementation; a new stack copies its shape, not its service list.
 
 - `cadvisor` runs as root with `pid: host`, `/dev/kmsg` and the Docker socket (`:ro` since F28 —
   which does not restrict the API, see above), but **not** `privileged` since F46 step (4).
-  Recorded in `docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md` (supersedes ADR-0010 once
-  accepted). No service may set `privileged: true`: `PRIVILEGED_ALLOWLIST` in
+  Recorded in `docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md` (supersedes ADR-0010).
+  No service may set `privileged: true`: `PRIVILEGED_ALLOWLIST` in
   `tests/guards/test_10_monitoring_compose_contract.py` is empty, and a new entry needs its own
   ADR. If cadvisor metrics go missing, restore them with the smallest `cap_add` set, not with
   `privileged` (ADR-0011 Decision 3).
