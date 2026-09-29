@@ -21,13 +21,14 @@ is read at the start of any work session. The Claude transition (R0) is complete
   Accepted). R1.11 (cadvisor through `socket-proxy`, F57) failed postdeploy and was reverted: with
   Docker's containerd image store, cadvisor's Docker integration needs the containerd socket,
   which no proxy can filter (§7, F57). R1.12 per-service config hash for vector (first slice of
-  F1/F29, prerequisite for F58); F58 as R1.13 (vector API on loopback). See §6 and §7.
+  F1/F29, prerequisite for F58); F58 as R1.13 (vector API on loopback); F59 as R1.14 (`make ci`
+  hooks also cover new, untracked files). See §6 and §7.
 - **Next increment:** to be chosen by the operator. Candidates: (1) group b — F57's hardening
   steps that do not touch the sockets (`cap_drop`, `no-new-privileges`, `read_only`, then
   `pid: host` and `/dev/kmsg`), one increment per step, each measured by `test_25`; F57's socket
   part needs a decision first: switch Docker to `overlay2` (own ADR, after the R3 backup is
-  proven) or accept the risk in an ADR. (2) group h — F59 (`make ci` hooks skip untracked files),
-  small and quick; it closes the gap the §8 interim practice covers.
+  proven) or accept the risk in an ADR. (2) the rest of group h — F47 (doctor test skips instead
+  of pulling), F23/F25 (`lint`-marked tests never run), F11, F56 — small, no Pi runtime effect.
 - **Stages re-planned on 2026-09-26:** a new R2 (quality and lifecycle, §9) sits between R1 and
   backup (now R3); a new R4 (service standard, §9.7) follows backup; core and apps moved to R5
   and R6.
@@ -133,7 +134,7 @@ first, then the mechanisms other fixes depend on.
 | f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | — | One test file becomes the home of all hardening checks |
 | e | Host reconciliation ADR | F16, F17, F18, F43, F19, F20 | — | Needs an ADR decision before code (R1 exit criterion) |
 | g | Supply chain | F3, F24, F44 | F37 | Digest pins together; F37 went with F8; F4 moved to R2d |
-| h | Toolchain and dead tests | F23, F25, F47, F11, F56, F59 | F49, F21, F22 | F21 + F22 done as R1.4–R1.6; rest low risk, quick |
+| h | Toolchain and dead tests | F23, F25, F47, F11, F56 | F49, F21, F22, F59 | F21 + F22 done as R1.4–R1.6; F59 as R1.14; rest low risk, quick |
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2b | Documentation | F5, F6, F12 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26 |
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
@@ -147,6 +148,7 @@ R1 onwards, newest first. R0 rows stay in `.claude/ClaudeTransition.md` §10.4 (
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
+| R1.14 F59 hooks on untracked files | 2026-09-29 | `36c5e38` (tests), `c0efdad` (fix); merge `f61ccf2` (PR #47) | green (operator) | no deploy needed — `hooks` is WSL-only (`_guard-wsl`), no runtime effect on the Pi; the next deploy's pull carries it | `scripts/dev/run-hooks.sh` (mode `100755`): `pre-commit run --all-files`, then `--files` over `git ls-files -z --others --exclude-standard`, only when non-empty (pre-commit 3.8.0 stashes and uses staged files on an empty `--files`, read in `.venv`). Behaviour test `test_44` against a stub pre-commit in a tmp git repo, 5 strict xfails verified with `--runxfail`. Measured in WSL: the second pass ran on the then-untracked script itself; an untracked probe file with trailing whitespace made `make precommit` fail (exit 2), removing it made `make ci` green. In CI the second pass is skipped (fresh checkout). The interim `ruff format --check` practice from §8 caught one formatting issue in `test_44` before the commit and is now retired. F59 addressed. |
 | R1.13 F58 vector API on loopback | 2026-09-29 | `0c04817` (tests), `ab56b17` (fix); merge `4b46c31` (PR #45) | green | deploy: done, only vector recreated; log `config-hash: VECTOR_CONFIG_HASH=e2843b6b6ee7c0b406c0566dfc655a908743a60479c84b4c4f23acef7581b337` (15:58:30); postdeploy `74 passed, 4 skipped` (operator) | `api.address: 127.0.0.1:8686`. First real content change under R1.12's per-service hash: the Pi's value equals the one computed in WSL before the deploy, and only vector was recreated. Postdeploy `test_vector_api_is_not_reachable_from_other_containers` [monitoring, apps] green — curl exit 7 (refused) with the name resolved, so the check did not pass for the wrong reason; `test_20` `vector-health` from vector's namespace still green. Guard verified with `--runxfail` first. F58 addressed; group b now holds only F57. |
 | R1.12 vector config hash (F1/F29 slice) | 2026-09-29 | `f2e01b2` (tests), `b215871` (fix); merge `4930f4c` (PR #43) | green | deploy: done, only vector recreated; log `config-hash: VECTOR_CONFIG_HASH=09eb03064f329a37662cc9153fcce0e9a11e205d901d668c495ca011fb641904` (15:43:55); postdeploy `72 passed, 4 skipped` (operator) | Operator chose the per-service variant of F1. `compute_file_hash` hashes content only and dies on a missing file (F2 lesson); vector carries `homelab.config-hash=${VECTOR_CONFIG_HASH:-unset}`. The Pi's value equals `sha256sum stacks/monitoring/vector/vector.yaml` in WSL character for character — the hash does not depend on the checkout path. Guard `test_54` (4 strict xfails, static), postdeploy `test_vector_label_matches_config_hash` ran green. The hooks rewrote `test_54` only at commit time (untracked during `make ci`) — recorded as F59. F1 and F29 stay open for the other services. |
 | R1.11 F57 cadvisor via socket-proxy — **reverted** | 2026-09-29 | `611e704` (tests), `cdf15f8` (fix); merge `768e3fb` (PR #40). Revert `82fe60f`; merge `4d498a1` (PR #41) | green (both) | 1st deploy: **postdeploy failed** — `test_cadvisor_exports_named_container_metrics`, `1 failed, 34 passed, 2 skipped` (maxfail=1), live `name=` count `0`. Revert deploy: postdeploy `71 passed, 4 skipped`, `634` `name=` series, proxy log only the two `127.0.0.1` probes (operator) | cadvisor logged `Registration of the docker container factory failed: unable to create containerd client … /run/containerd/containerd.sock: no such file or directory`; `docker info`: `overlayfs 29.5.2 [[driver-type io.containerd.snapshotter.v1]]`. cadvisor v0.60.5 needs a containerd client whenever Docker uses the containerd snapshotter; the gRPC containerd API cannot go through socket-proxy. Measured before the deploy, and still true: `--docker` supported (doctor `test_35` PASSED after the operator pulled the image); the moby client pings with HEAD `/_ping`. Neither static tests nor the doctor test could see a dependency on the host's storage driver. Revert per IN8 restored the tree of `5ce0854` exactly. F57 stays open with the socket part blocked (options in F57). Recorded the same day: F47 (doctor test skips instead of pulling) and F4 (helper images in postdeploy tests outside Renovate). |
