@@ -30,6 +30,13 @@ overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
   `tests/precommit` or `tests/guards`, runtime behaviour in `tests/postdeploy`.
 - Prefer a first increment that makes the contract **enforceable** (a failing test, marked `xfail`)
   over one that fixes the symptom. Then remove one marker per increment.
+- **Run every planned test against today's code before classifying it.** Only a test that fails
+  now, for the intended reason (`--runxfail`), is a strict xfail; one that already passes is a
+  guard without a marker. Do not promise "fails today" without having run it (IN17, B1 of the
+  findings lifecycle: three tests promised as failing passed).
+- **Fill the Prevention line (IN17)** for whatever finding or failure the increment fixes: the
+  earliest rung that could have caught it and the mechanism, preferring a test or guard over a
+  rule, skill or lesson.
 
 ## Output — one block per increment, template from `.claude/roadmap.md` §3
 
@@ -49,6 +56,7 @@ overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
 - Acceptance: <observable postdeploy criteria>
 - Rollback: git revert <merge-or-commit> on a fix branch → PR → merge → Pi: git pull --ff-only; sudo ./deploy.sh
 - Backup/docs/Renovate impact (IN9):
+- Prevention (IN17): how recurrence of what this increment fixes is caught earlier, and by which mechanism
 ```
 
 ## The IN9 question is not optional

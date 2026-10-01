@@ -64,6 +64,7 @@ and rules.
 | IN14 | **Capture.** Anything observed — in Pi output, code, logs or docs — that contradicts a repository rule, an ADR or a best practice of the platform *named with its source* is reported by Claude in the same answer as a finding candidate: evidence ([V]/[I]), proposed severity and Due. Confirmed by the operator, it is recorded in `.claude/reports/repo-findings.md` at the latest with the next log row; declined, the log row says so and why. A candidate is never fixed inside the running increment, unless it is Critical. |
 | IN15 | **Schedule by severity** (Due column of the report index): **Critical** → `next`; no other increment starts first, a running one is finished or reverted (IN8). **High** → the increment after the next planned one (`R<x>.<y>`); several High findings queue in the order found, Critical goes first. **Med** → the stage after the current one (`R<x>`), in that stage's first increment; **Low** → the stage after the current one, any order. At every stage close, each Med/Low finding of that stage gets its group in the next stage (§4). |
 | IN16 | **Override.** Only the operator changes a Due that IN15 gives — earlier (taking a finding along with a group of the current stage that touches the same files or ADR) or later — with a dated `**Scheduling:**` line in the entry that says why. An override changes the form, never the deadline: an overdue finding fails `check_findings.py` either way. |
+| IN17 | **Prevention.** Every finding (IN14) and every failure — CI, deploy or postdeploy red, a revert, a prediction that proved wrong, a claim or promise of Claude's that did not hold — comes with a proposal how it is caught **earlier or automatically** next time. (1) *Where:* the earliest rung that could have caught it — plan or skill → static test or guard (CI) → checker in `.claude/tools` → hook → postdeploy → stage-close audit → only at a reboot or outage. (2) *Which mechanism*, preferred in this order: test or guard > checker > hook > rule > skill or agent > a lesson in §8; a lesson alone needs the reason why nothing can check it. (3) *Where it goes:* into the fix increment's plan when it belongs there, otherwise its own finding candidate scheduled by IN15; declined, the log row says so. A finding from F64 on carries it as its **Prevention** field (`check_findings.py`); a failure carries it as "Prevention: …" in the notes of its log row. |
 
 Practice established in R1: tests first as a separate commit with `xfail(strict=True)`, verified
 with `--runxfail` to fail for the intended reason; the fix commit removes the markers. The log row
@@ -89,6 +90,7 @@ moves to `.claude/reports/repo-findings-archive.md` in the same commit.
 - Acceptance: <observable postdeploy criteria>
 - Rollback: git revert <merge-or-commit> on a fix branch → PR → merge → Pi: git pull --ff-only; sudo ./deploy.sh
 - Backup/docs/Renovate impact (IN9):
+- Prevention (IN17): how recurrence of what this increment fixes is caught earlier, and by which mechanism
 ```
 
 ## 4. Roadmap

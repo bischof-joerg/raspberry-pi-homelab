@@ -6,7 +6,8 @@ Open and partly addressed findings live in the report; `addressed` ones move to
 report's index keeps one row per finding, archived or not.
 
 Every finding entry (`### F<n> - title`), in either file, must carry non-empty **Evidence**,
-**Impact**, **Proposed fix**, **Test** and **Acceptance** fields. Every repository path cited in
+**Impact**, **Proposed fix**, **Test** and **Acceptance** fields, and from F64 on **Prevention**
+(IN17). Every repository path cited in
 backticks on the Evidence line must exist, and a path written as `path` (absent) must NOT exist --
 some findings are about a missing file, and that claim is checked too. The entries of both files
 together must equal the index; an entry sits in exactly one file; the archive holds only
@@ -46,6 +47,10 @@ ARCHIVE = (
 LOG = pathlib.Path(sys.argv[4]) if len(sys.argv) > 4 else ROOT / ".claude/increment-log.md"
 
 REQUIRED = ("Evidence", "Impact", "Proposed fix", "Test", "Acceptance")
+# Findings up to LEGACY_MAX predate the findings lifecycle (IN14-IN17): no Prevention field, and
+# R1 schedules them by group (stage Due, no Found date needed).
+LEGACY_MAX = 63
+REQUIRED_NEW = ("Prevention",)
 ENTRY = re.compile(r"^### (F\d+b?) ", re.MULTILINE)
 INDEX_ROW = re.compile(r"^\| (F\d+b?) \|", re.MULTILINE)
 BACKTICK = re.compile(r"`([^`]+)`(\s*\(absent\))?")
@@ -92,7 +97,8 @@ def check_entries(text: str) -> list[str]:
         end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
         block = text[head.start() : end]
         fields = {}
-        for name in REQUIRED:
+        legacy = int(re.match(r"F(\d+)", fid).group(1)) <= LEGACY_MAX
+        for name in REQUIRED if legacy else REQUIRED + REQUIRED_NEW:
             m = re.search(rf"^- \*\*{re.escape(name)}:\*\*(.*)$", block, re.MULTILINE)
             fields[name] = m.group(1).strip() if m else ""
             if not fields[name]:
@@ -219,7 +225,6 @@ elif not full_log or roadmap_rows[0] != full_log[0]:
 # line overrides the form, never the deadline. Findings up to LEGACY_MAX predate the model: R1
 # schedules that backlog by group, so they may keep a stage Due and need no Found date.
 SEVERITIES = ("Critical", "High", "Med", "Low")
-LEGACY_MAX = 63
 NONE = {"—", "–", "-", ""}
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 INCREMENT_DUE = re.compile(r"^R(\d+)\.(\d+)$")

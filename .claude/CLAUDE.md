@@ -156,7 +156,7 @@ One feature at a time, delivered in small increments, each with its own tests (D
   host configuration must also update the backup inventory, `.env.example`, the reconciliation
   scripts and their postdeploy checks, the network/firewall docs, and the Renovate rules.
 
-The full delivery rules (IN1–IN16), the roadmap R1–R6, the current stage and next increment, the
+The full delivery rules (IN1–IN17), the roadmap R1–R6, the current stage and next increment, the
 R1 findings groups and the newest increment log row are in **`.claude/roadmap.md` — read it at the
 start of every work session.** History is read on demand only, by entry or row, never in full:
 the increment log in `.claude/increment-log.md`, addressed findings in
@@ -196,3 +196,7 @@ the increment log in `.claude/increment-log.md`, addressed findings in
 - **Report what you notice as a finding candidate** (IN14): a deviation from a rule, an ADR or a
   best practice named with its source — evidence, proposed severity and Due (IN15) in the same
   answer. Do not fix it inside the running increment unless it is Critical.
+- **With every finding or failure, propose its prevention** (IN17): the earliest rung that would
+  have caught it and the mechanism — a test or guard before a checker, hook, rule, skill or agent;
+  a lesson in roadmap §8 only with the reason why nothing can check it. This includes Claude's own
+  wrong claims and predictions.

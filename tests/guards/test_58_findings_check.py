@@ -15,8 +15,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = REPO_ROOT / ".claude/tools/check_findings.py"
 
@@ -294,7 +292,6 @@ def _without_prevention(tmp_path: Path, fid: str) -> list[str]:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="findings lifecycle B4: Prevention not required yet")
 def test_new_finding_needs_a_prevention(tmp_path: Path) -> None:
     _fails_with(_without_prevention(tmp_path, "F70"), "F70: missing or empty **Prevention**")
 

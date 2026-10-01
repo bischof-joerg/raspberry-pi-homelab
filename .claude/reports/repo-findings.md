@@ -26,6 +26,7 @@
 | **Proposed fix** | The smallest change that removes the defect. Ordering hints where one fix depends on another. |
 | **Test** | Layer (`tests/precommit`, `tests/guards`, `tests/postdeploy`) and the file to extend or create — test-first per D1. |
 | **Acceptance** | An observable pass/fail statement. If you cannot check it, the finding is not closed. |
+| **Prevention** | Required from F64 on (IN17): where on the ladder the defect would have been caught earlier and by which mechanism — test or guard, checker, hook, rule, skill or agent, or (with a reason why nothing can check it) a lesson. Part of the fix increment, or its own finding. |
 | **Scheduling** | Optional. The operator's dated decision to schedule the finding other than IN15 says, with the reason (IN16), e.g. `2026-10-01, operator: pulled forward before F57, …`. |
 
 Verification dates: F1–F24 were first recorded 2026-09-16 on a Windows copy of the repository
@@ -489,6 +490,7 @@ what the scripts do not enforce. Scheduled in R3b, after backup (`.claude/roadma
 - **Proposed fix:** A host baseline in the repository: each item names its expected state, the source of the practice, and how to measure it read-only (for example persistent journal, NTP synchronised, SSH key-only, swap policy, memory cgroup, unattended-upgrades as decided in F61). A baseline audit compares the Pi against it and lists deviations; each deviation becomes a finding candidate (IN14), a postdeploy check, or a recorded exception. Measured once at every stage close. Each item has a stable ID and names the service classes that depend on it (for example the memory cgroup for every service with compose memory limits), so the R4 service DoD can refer to it under "Runtime prerequisites" (roadmap §9.7) and a changed item triggers a review of those services (roadmap §4).
 - **Test:** `tests/guards` — every baseline item has expected state, source and a read-only measurement; `tests/postdeploy` — the items that are reconciled hold on the Pi.
 - **Acceptance:** The baseline exists with sources, item IDs and dependent service classes; the first audit on the Pi is recorded and every deviation is a finding, a check or an exception; the stage-close step in roadmap §4 runs it.
+- **Prevention:** F64 is itself the prevention for F62 and F63 (rung: stage-close audit instead of "noticed at a reboot"). Its own gap — a practice the baseline does not list yet — shows when a later finding matches no baseline item: the IN17 proposal for that finding then adds the item, and the guard above requires its source and measurement.
 
 ## Documentation and ADRs
 
