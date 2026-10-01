@@ -15,8 +15,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = REPO_ROOT / ".claude/tools/check_findings.py"
 
@@ -199,10 +197,6 @@ def test_roadmap_row_is_the_newest_log_row(tmp_path: Path) -> None:
 
 # --- findings lifecycle, increment B: triage by severity (IN14-IN16) ------------------------------
 
-XFAIL_B = pytest.mark.xfail(
-    strict=True, reason="findings lifecycle B: triage by severity not implemented yet"
-)
-
 
 def _one(tmp_path: Path, row: dict[str, str], scheduling: str = "", **roadmap) -> list[str]:
     """A report with one finding under test plus the archived F2."""
@@ -215,26 +209,22 @@ def _one(tmp_path: Path, row: dict[str, str], scheduling: str = "", **roadmap) -
     )
 
 
-@XFAIL_B
 def test_severity_must_be_known(tmp_path: Path) -> None:
     args = _one(tmp_path, _row("F1", "open", sev="Severe"))
     _fails_with(args, "F1: severity 'Severe' is not one of Critical, High, Med, Low")
 
 
-@XFAIL_B
 def test_open_finding_needs_a_due(tmp_path: Path) -> None:
     args = _one(tmp_path, _row("F1", "open", due="—"))
     _fails_with(args, "F1: open but has no Due")
 
 
-@XFAIL_B
 def test_critical_must_be_due_next(tmp_path: Path) -> None:
     row = _row("F70", "open", sev="Critical", due="R1")
     args = _one(tmp_path, row, next_increment="R1.3 F70 fix")
     _fails_with(args, "F70: Critical must be due 'next', found 'R1'")
 
 
-@XFAIL_B
 def test_critical_must_be_the_next_increment(tmp_path: Path) -> None:
     row = _row("F70", "open", sev="Critical", due="next")
     args = _one(tmp_path, row, next_increment="R1.3 something else")
@@ -247,13 +237,11 @@ def test_critical_due_next_and_named_passes(tmp_path: Path) -> None:
     assert proc.returncode == 0, f"❌ A correctly scheduled Critical finding fails:\n{proc.stdout}"
 
 
-@XFAIL_B
 def test_high_needs_an_increment_due(tmp_path: Path) -> None:
     args = _one(tmp_path, _row("F70", "open", sev="High", due="R1"))
     _fails_with(args, "F70: High must be due at an increment (R<x>.<y>), found 'R1'")
 
 
-@XFAIL_B
 def test_med_needs_a_stage_due(tmp_path: Path) -> None:
     args = _one(tmp_path, _row("F70", "open", due="R1.5"))
     _fails_with(args, "F70: Med must be due at a stage (R<x>), found 'R1.5'")
@@ -264,25 +252,21 @@ def test_scheduling_override_allows_another_due(tmp_path: Path) -> None:
     assert proc.returncode == 0, f"❌ A Scheduling override is not honoured:\n{proc.stdout}"
 
 
-@XFAIL_B
 def test_high_is_overdue_once_its_increment_is_logged(tmp_path: Path) -> None:
     args = _one(tmp_path, _row("F70", "open", sev="High", due="R1.2"))
     _fails_with(args, "F70: overdue, due at R1.2, which the increment log already holds")
 
 
-@XFAIL_B
 def test_med_is_overdue_after_its_stage(tmp_path: Path) -> None:
     args = _one(tmp_path, _row("F70", "open", due="R1"), stage="R2")
     _fails_with(args, "F70: overdue, due in stage R1, the roadmap is at R2")
 
 
-@XFAIL_B
 def test_new_finding_needs_a_found_date(tmp_path: Path) -> None:
     args = _one(tmp_path, _row("F70", "open", found="—"))
     _fails_with(args, "F70: no Found date")
 
 
-@XFAIL_B
 def test_due_stage_matches_the_group_stage(tmp_path: Path) -> None:
     args = _one(tmp_path, _row("F70", "open", due="R2"))
     _fails_with(args, "F70: due in R2, but its group a belongs to R1")

@@ -61,6 +61,9 @@ and rules.
 | IN11 | One feature = one short-lived branch from current `main` (`feat/…`, `fix/…`, `chore/…`, `docs/…`). Increments are commits on that branch. Branch is deleted after merge. |
 | IN12 | Operator pushes the branch and opens a pull request; CI (`ci.yml`, trigger `pull_request`) must be green before merge. Claude proposes PR title and description but does not create the PR (`gh` denied). |
 | IN13 | Only `main` is deployed. On the Pi: `git pull --ff-only`, `sudo ./deploy.sh`. Feature branches are never checked out on the Pi. Every merged state must pass IN7. |
+| IN14 | **Capture.** Anything observed — in Pi output, code, logs or docs — that contradicts a repository rule, an ADR or a best practice of the platform *named with its source* is reported by Claude in the same answer as a finding candidate: evidence ([V]/[I]), proposed severity and Due. Confirmed by the operator, it is recorded in `.claude/reports/repo-findings.md` at the latest with the next log row; declined, the log row says so and why. A candidate is never fixed inside the running increment, unless it is Critical. |
+| IN15 | **Schedule by severity** (Due column of the report index): **Critical** → `next`; no other increment starts first, a running one is finished or reverted (IN8). **High** → the increment after the next planned one (`R<x>.<y>`); several High findings queue in the order found, Critical goes first. **Med** → the stage after the current one (`R<x>`), in that stage's first increment; **Low** → the stage after the current one, any order. At every stage close, each Med/Low finding of that stage gets its group in the next stage (§4). |
+| IN16 | **Override.** Only the operator changes a Due that IN15 gives — earlier (taking a finding along with a group of the current stage that touches the same files or ADR) or later — with a dated `**Scheduling:**` line in the entry that says why. An override changes the form, never the deadline: an overdue finding fails `check_findings.py` either way. |
 
 Practice established in R1: tests first as a separate commit with `xfail(strict=True)`, verified
 with `--runxfail` to fail for the intended reason; the fix commit removes the markers. The log row
@@ -101,6 +104,12 @@ moves to `.claude/reports/repo-findings-archive.md` in the same commit.
 | **R6.1** | App stack: Stirling PDF | R5 done | Per-app stack under `stacks/apps/stirling-pdf/`, behind Traefik, tests, docs, Renovate rule enabled; service docs and DoD per R4 |
 | **R6.2** | App stack: AdGuard Home | R6.1 done | Same as R6.1 plus DNS-specific tests |
 | **R6.3** | App stack: Home Assistant | R6.2 done | Same as R6.1 plus backup of HA data verified by restore test |
+
+**Every stage close (IN15)** adds to the exit criteria above: (1) each Med/Low finding found during
+the stage is assigned to a group of the next stage, with Due `R<x+1>` — none is left with the
+closing stage's Due, which `check_findings.py` reports as overdue once **Stage** in §1 moves on;
+(2) from the R2e baseline on (F64), the host best-practice audit is run on the Pi and each
+deviation becomes a finding candidate (IN14).
 
 Prerequisites to clarify at the start of the respective stage:
 
@@ -146,6 +155,7 @@ first, then the mechanisms other fixes depend on.
 | j | Host update path with a read-only firmware partition | — | F60 | Found 2026-09-29 while preparing the F57 capability trace; pulled forward from R3b by the operator the same day, before R1.15, because every APT run fails and security updates are blocked. R1.15 deployed (APT hook, ADR-0013); first unattended-upgrades run with the hook successful (2026-09-30); permanent postdeploy checks as R1.17 (2026-10-01). Group done |
 | k | Host evidence that survives a reboot | — | F62 | Found 2026-10-01 after R1.17 (volatile journal, `Storage=volatile` measured); pulled forward by the operator the same day as R1.18, before F57, so that every later reboot leaves evidence. Without an ADR: a reversible configuration installed like `daemon.json` and the APT hook. R1.18 deployed and proven by an attended reboot (2026-10-01). Group done |
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
+| R2e | Host best-practice baseline | F64 | — | Stage R2 (IN15: Med found in R1 → next stage). Found 2026-10-01 as the lesson of F62/F63: a baseline with sources, audited at every stage close, feeds IN14 |
 | R2b | Documentation | F5, F6, F12 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26 |
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
 | R3b | Pi runtime lifecycle | F51, F52, F53, F54, F55, F61 | — | Stage R3, after backup, §9. F61 (unattended-upgrades outside the documented flow) found 2026-09-29 with F60 |

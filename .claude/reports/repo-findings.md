@@ -26,6 +26,7 @@
 | **Proposed fix** | The smallest change that removes the defect. Ordering hints where one fix depends on another. |
 | **Test** | Layer (`tests/precommit`, `tests/guards`, `tests/postdeploy`) and the file to extend or create — test-first per D1. |
 | **Acceptance** | An observable pass/fail statement. If you cannot check it, the finding is not closed. |
+| **Scheduling** | Optional. The operator's dated decision to schedule the finding other than IN15 says, with the reason (IN16), e.g. `2026-10-01, operator: pulled forward before F57, …`. |
 
 Verification dates: F1–F24 were first recorded 2026-09-16 on a Windows copy of the repository
 (decision E1) and partly re-verified later; the date given is the latest read. On 2026-09-23 only
@@ -39,76 +40,87 @@ the cited lines before acting on any entry.
 
 ## Index
 
-Severity: **High** = credential exposure, host-root equivalence, or a safety mechanism that does
-not work; **Med** = drift, fragility or a missing test for a real contract; **Low** = hygiene.
-The R1 column is the grouping into increments; per-group status and order in `.claude/roadmap.md` §6.
+Severity: **Critical** = harm happening now or imminent — security updates blocked, a credential
+exposed on the network, data loss or a broken backup, a host that may not boot; **High** =
+credential exposure, host-root equivalence, or a safety mechanism that does not work; **Med** =
+drift, fragility, a missing test for a real contract, or a deviation from a named best practice;
+**Low** = hygiene.
 
-| ID | Title | Area | Sev | Status | R1 |
-|---|---|---|---|---|---|
-| F1 | Config hash is driven by a single runtime file | Deploy | High | open | d |
-| F2 | Hash list names a missing file and two unmounted ones | Deploy | Med | open | d |
-| F3 | Images pinned by tag, not by digest | Supply chain | Med | open | g |
-| F4 | Renovate manages compose images only | Supply chain | Med | open | R2d |
-| F5 | `README.md` describes a stack that no longer exists | Docs | Low | open | R2b |
-| F6 | ADR numbering and titles are inconsistent | Docs | Low | open | R2b |
-| F7 | Missing restart policy / healthchecks | Hardening | Med | partly | f |
-| F8 | Renderer installs `gettext` from the network at every run | Supply chain | Med | addressed | a |
-| F9 | Backup scripts have no tests although ADR-009 requires them | Backup | High | open | R3 |
-| F10 | pytest version drift between pre-commit and `.venv` | Toolchain | Low | addressed | – |
-| F11 | `.gitattributes` does not pin LF for all text types | Toolchain | Low | open | h |
-| F12 | `.env.example` duplicates keys and holds host-derived values | Secrets | Low | open | R2b |
-| F13 | Compose mounts a templates directory that does not exist | Deploy | Med | open | d |
-| F14 | DevWorkflow committed before `make ci` | Docs | Low | addressed | – |
-| F15 | UFW is not reconciled on deploy | Exposure | Med | open | c |
-| F16 | Network bootstrap on deploy skips subnet/bridge validation | Host | Med | open | e |
-| F17 | `daemon.json` applied before the network it references exists | Host | Med | open | e |
-| F18 | Any `daemon.json` change restarts Docker during deploy | Host | Med | open | e |
-| F19 | Host-specific literals in reconciliation scripts | Host | Low | open | e |
-| F20 | `ensure-journald-read.sh` default user does not match its use | Host | Low | open | e |
-| F21 | Toolchain drift between `.venv` and pre-commit | Toolchain | Med | addressed | h |
-| F22 | Three diverging sources of dev dependencies | Toolchain | Med | addressed | h |
-| F23 | Tests marked `lint` are never run by any gate | Tests | Med | open | h |
-| F24 | Renovate validator hook runs a floating image tag | Supply chain | Med | open | g |
-| F25 | JSON test scans git-ignored files | Tests | Low | open | h |
-| F26 | Alertmanager SMTP password written world-readable | Secrets | High | addressed | a |
-| F26b | The same password persists in every backup archive | Secrets | High | partly | a |
-| F27 | Container uid left to image defaults for 8 of 10 services | Hardening | Med | open | f |
-| F28 | cadvisor mounts the Docker socket read-write | Privilege | High | addressed | b |
-| F29 | Config-hash label missing on 5 of 10 services | Deploy | High | open | d |
-| F30 | vector is effectively host root via the Docker socket | Privilege | High | addressed | b |
-| F31 | Grafana admin credentials default to empty | Secrets | High | open | c |
-| F32 | Grafana runs without `read_only` on a wrong justification | Hardening | Med | open | f |
-| F33 | vector has no healthcheck | Hardening | Low | open | f |
-| F34 | vector joins the `apps` network without a reason | Privilege | Med | addressed | b |
-| F35 | Renderer swallows errors despite `set -euo pipefail` | Secrets | Med | addressed | a |
-| F36 | Renderer builds YAML without escaping | Secrets | Med | addressed | a |
-| F37 | `alpine:3.24` is a floating minor tag | Supply chain | Med | addressed | g |
-| F38 | `depends_on` ignores existing healthchecks | Hardening | Low | open | f |
-| F39 | German comment in the renderer script | Docs | Low | addressed | a |
-| F40 | Volume naming rule contradicted the implementation | Docs | Low | addressed | – |
-| F41 | No static guard for the compose hardening contract | Tests | Med | partly | f |
-| F42 | LAN exposure of 3000/9428 is recorded in no document | Exposure | Med | partly | c |
-| F43 | ADR-0001 promises subnet validation the deploy path skips | Docs | Med | open | e |
-| F44 | Stale image tag in a Markdown example | Supply chain | Low | open | g |
-| F45 | UFW very likely does not govern the published ports | Exposure | High | open | c |
-| F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | addressed | b |
-| F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | open | h |
-| F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | addressed | a |
-| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | addressed | h |
-| F50 | The WSL layer (Python, Docker Desktop, apt) is neither documented nor checked | Toolchain | Med | open | R2d |
-| F51 | Host upgrade apply does not execute the reviewed plan | Host | High | open | R3b |
-| F52 | Mutating host-runtime scripts have no backup gate | Host | High | open | R3b |
-| F53 | host-runtime scripts are untestable off the Pi and untested | Tests | Med | open | R3b |
-| F54 | Docker packages upgrade uncontrolled inside the routine APT upgrade | Host | Med | open | R3b |
-| F55 | Plan output, audit and runtime-updates doc disagree; audit gaps pass silently | Host | Low | open | R3b |
-| F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | open | h |
-| F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | open | b |
-| F58 | vector's API listens on all interfaces of two networks | Privilege | Low | addressed | b |
-| F59 | `make ci` never runs the pre-commit hooks on new, untracked files | Toolchain | Low | addressed | h |
-| F60 | `/boot/firmware` is read-only, so `initramfs-tools` stays half-configured and every APT run fails | Host | High | addressed | j |
-| F61 | unattended-upgrades runs on the Pi, outside the documented host update flow | Host | Med | open | R3b |
-| F62 | The Pi's journal is volatile; host evidence is lost at every reboot | Host | Med | addressed | k |
-| F63 | The memory cgroup Docker relies on is enabled by a hand-edited kernel command line outside the repository | Host | Low | open | e |
+**Found** is the date the finding was recorded (`—` only for F1–F63 where none is recorded).
+**Due** follows from the severity (`.claude/roadmap.md` §2, IN15): Critical → `next`, the next
+increment; High → `R<x>.<y>`, the increment after the next planned one; Med and Low → `R<x>`, the
+stage after the current one; `—` once addressed. A **Scheduling** line in the entry records an
+operator's override (IN16). Findings up to F63 predate the model and keep a stage Due from their R1
+group. The R1 column is the grouping into increments; per-group status and order in
+`.claude/roadmap.md` §6. `tools/check_findings.py` enforces Due and reports overdue findings.
+
+| ID | Title | Area | Sev | Found | Due | Status | R1 |
+|---|---|---|---|---|---|---|---|
+| F1 | Config hash is driven by a single runtime file | Deploy | High | — | R1 | open | d |
+| F2 | Hash list names a missing file and two unmounted ones | Deploy | Med | — | R1 | open | d |
+| F3 | Images pinned by tag, not by digest | Supply chain | Med | — | R1 | open | g |
+| F4 | Renovate manages compose images only | Supply chain | Med | — | R2 | open | R2d |
+| F5 | `README.md` describes a stack that no longer exists | Docs | Low | — | R2 | open | R2b |
+| F6 | ADR numbering and titles are inconsistent | Docs | Low | — | R2 | open | R2b |
+| F7 | Missing restart policy / healthchecks | Hardening | Med | — | R1 | partly | f |
+| F8 | Renderer installs `gettext` from the network at every run | Supply chain | Med | — | — | addressed | a |
+| F9 | Backup scripts have no tests although ADR-009 requires them | Backup | High | — | R3 | open | R3 |
+| F10 | pytest version drift between pre-commit and `.venv` | Toolchain | Low | — | — | addressed | – |
+| F11 | `.gitattributes` does not pin LF for all text types | Toolchain | Low | — | R1 | open | h |
+| F12 | `.env.example` duplicates keys and holds host-derived values | Secrets | Low | — | R2 | open | R2b |
+| F13 | Compose mounts a templates directory that does not exist | Deploy | Med | — | R1 | open | d |
+| F14 | DevWorkflow committed before `make ci` | Docs | Low | — | — | addressed | – |
+| F15 | UFW is not reconciled on deploy | Exposure | Med | — | R1 | open | c |
+| F16 | Network bootstrap on deploy skips subnet/bridge validation | Host | Med | — | R1 | open | e |
+| F17 | `daemon.json` applied before the network it references exists | Host | Med | — | R1 | open | e |
+| F18 | Any `daemon.json` change restarts Docker during deploy | Host | Med | — | R1 | open | e |
+| F19 | Host-specific literals in reconciliation scripts | Host | Low | — | R1 | open | e |
+| F20 | `ensure-journald-read.sh` default user does not match its use | Host | Low | — | R1 | open | e |
+| F21 | Toolchain drift between `.venv` and pre-commit | Toolchain | Med | — | — | addressed | h |
+| F22 | Three diverging sources of dev dependencies | Toolchain | Med | — | — | addressed | h |
+| F23 | Tests marked `lint` are never run by any gate | Tests | Med | — | R1 | open | h |
+| F24 | Renovate validator hook runs a floating image tag | Supply chain | Med | — | R1 | open | g |
+| F25 | JSON test scans git-ignored files | Tests | Low | — | R1 | open | h |
+| F26 | Alertmanager SMTP password written world-readable | Secrets | High | — | — | addressed | a |
+| F26b | The same password persists in every backup archive | Secrets | High | — | R1 | partly | a |
+| F27 | Container uid left to image defaults for 8 of 10 services | Hardening | Med | — | R1 | open | f |
+| F28 | cadvisor mounts the Docker socket read-write | Privilege | High | — | — | addressed | b |
+| F29 | Config-hash label missing on 5 of 10 services | Deploy | High | — | R1 | open | d |
+| F30 | vector is effectively host root via the Docker socket | Privilege | High | — | — | addressed | b |
+| F31 | Grafana admin credentials default to empty | Secrets | High | — | R1 | open | c |
+| F32 | Grafana runs without `read_only` on a wrong justification | Hardening | Med | — | R1 | open | f |
+| F33 | vector has no healthcheck | Hardening | Low | — | R1 | open | f |
+| F34 | vector joins the `apps` network without a reason | Privilege | Med | — | — | addressed | b |
+| F35 | Renderer swallows errors despite `set -euo pipefail` | Secrets | Med | — | — | addressed | a |
+| F36 | Renderer builds YAML without escaping | Secrets | Med | — | — | addressed | a |
+| F37 | `alpine:3.24` is a floating minor tag | Supply chain | Med | — | — | addressed | g |
+| F38 | `depends_on` ignores existing healthchecks | Hardening | Low | — | R1 | open | f |
+| F39 | German comment in the renderer script | Docs | Low | — | — | addressed | a |
+| F40 | Volume naming rule contradicted the implementation | Docs | Low | — | — | addressed | – |
+| F41 | No static guard for the compose hardening contract | Tests | Med | — | R1 | partly | f |
+| F42 | LAN exposure of 3000/9428 is recorded in no document | Exposure | Med | — | R1 | partly | c |
+| F43 | ADR-0001 promises subnet validation the deploy path skips | Docs | Med | — | R1 | open | e |
+| F44 | Stale image tag in a Markdown example | Supply chain | Low | — | R1 | open | g |
+| F45 | UFW very likely does not govern the published ports | Exposure | High | — | R1 | open | c |
+| F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | — | — | addressed | b |
+| F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | — | R1 | open | h |
+| F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | — | — | addressed | a |
+| F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | — | — | addressed | h |
+| F50 | The WSL layer (Python, Docker Desktop, apt) is neither documented nor checked | Toolchain | Med | — | R2 | open | R2d |
+| F51 | Host upgrade apply does not execute the reviewed plan | Host | High | — | R3 | open | R3b |
+| F52 | Mutating host-runtime scripts have no backup gate | Host | High | — | R3 | open | R3b |
+| F53 | host-runtime scripts are untestable off the Pi and untested | Tests | Med | — | R3 | open | R3b |
+| F54 | Docker packages upgrade uncontrolled inside the routine APT upgrade | Host | Med | — | R3 | open | R3b |
+| F55 | Plan output, audit and runtime-updates doc disagree; audit gaps pass silently | Host | Low | — | R3 | open | R3b |
+| F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | — | R1 | open | h |
+| F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | — | R1.19 | open | b |
+| F58 | vector's API listens on all interfaces of two networks | Privilege | Low | — | — | addressed | b |
+| F59 | `make ci` never runs the pre-commit hooks on new, untracked files | Toolchain | Low | — | — | addressed | h |
+| F60 | `/boot/firmware` is read-only, so `initramfs-tools` stays half-configured and every APT run fails | Host | High | 2026-09-29 | — | addressed | j |
+| F61 | unattended-upgrades runs on the Pi, outside the documented host update flow | Host | Med | 2026-09-29 | R3 | open | R3b |
+| F62 | The Pi's journal is volatile; host evidence is lost at every reboot | Host | Med | 2026-10-01 | — | addressed | k |
+| F63 | The memory cgroup Docker relies on is enabled by a hand-edited kernel command line outside the repository | Host | Low | 2026-10-01 | R1 | open | e |
+| F64 | No proactive host best-practice check; deviations surface only by accident | Host | Med | 2026-10-01 | R2 | open | R2e |
 
 ## Secrets and credentials
 
@@ -469,6 +481,14 @@ what the scripts do not enforce. Scheduled in R3b, after backup (`.claude/roadma
 - **Proposed fix:** Group e (which host state `deploy.sh` reconciles and which stays manual, by ADR). First, independent of that decision: a postdeploy check that makes the dependency explicit. Then either record `cmdline.txt` in the repository with a `check`-only reconciliation (no write to the read-only partition from `deploy.sh`) and a documented manual procedure through the ADR-0013 remount, or name it in the ADR as manual host state with the procedure in `docs/operations/runtime-updates.md`. Drop `cgroup_memory=1` in the same change.
 - **Test:** `tests/postdeploy` — `/sys/fs/cgroup/cgroup.controllers` contains `memory`; once recorded, the kernel command line (`/proc/cmdline`) contains `cgroup_enable=memory` and not `cgroup_memory=1`.
 - **Acceptance:** The postdeploy check is green on the Pi and fails with an actionable message when the memory controller is missing; the kernel command line, or the decision to keep it manual, is recorded in the repository.
+
+### F64 – No proactive host best-practice check; deviations surface only by accident
+
+- **Evidence:** F62 (volatile journal) was noticed while tracing F60 and F63 (kernel command line) in the first persistent boot journal (`.claude/increment-log.md`, R1.18) — neither by a check that looks for them. `scripts/host-runtime/audit-runtime.sh:16-66` prints host identity, APT, EEPROM, Docker, failed units, mounts and UFW, but compares none of it against an expected state, and covers neither journald storage, time sync, SSH, swap nor the cgroup controllers. `.claude/rules/host-runtime.md` lists what `deploy.sh` reconciles, not what the host should look like. The postdeploy checks test the deployed stack and the host state each increment touched (`tests/postdeploy/test_06_host_boot_firmware.py`, `tests/postdeploy/test_07_host_journald_persistent.py`). [V 2026-10-01]
+- **Impact:** A host setting that contradicts a well-known practice for a Raspberry Pi server stays until it costs something — F62 cost the evidence of two reboots. Nothing tells a deliberate deviation from an unnoticed one, so the triage rules (roadmap §2, IN14) only see what work happens to touch.
+- **Proposed fix:** A host baseline in the repository: each item names its expected state, the source of the practice, and how to measure it read-only (for example persistent journal, NTP synchronised, SSH key-only, swap policy, memory cgroup, unattended-upgrades as decided in F61). A baseline audit compares the Pi against it and lists deviations; each deviation becomes a finding candidate (IN14), a postdeploy check, or a recorded exception. Measured once at every stage close.
+- **Test:** `tests/guards` — every baseline item has expected state, source and a read-only measurement; `tests/postdeploy` — the items that are reconciled hold on the Pi.
+- **Acceptance:** The baseline exists with sources; the first audit on the Pi is recorded and every deviation is a finding, a check or an exception; the stage-close step in roadmap §4 runs it.
 
 ## Documentation and ADRs
 

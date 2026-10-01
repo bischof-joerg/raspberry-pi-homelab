@@ -156,7 +156,7 @@ One feature at a time, delivered in small increments, each with its own tests (D
   host configuration must also update the backup inventory, `.env.example`, the reconciliation
   scripts and their postdeploy checks, the network/firewall docs, and the Renovate rules.
 
-The full delivery rules (IN1–IN13), the roadmap R1–R6, the current stage and next increment, the
+The full delivery rules (IN1–IN16), the roadmap R1–R6, the current stage and next increment, the
 R1 findings groups and the newest increment log row are in **`.claude/roadmap.md` — read it at the
 start of every work session.** History is read on demand only, by entry or row, never in full:
 the increment log in `.claude/increment-log.md`, addressed findings in
@@ -172,7 +172,7 @@ the increment log in `.claude/increment-log.md`, addressed findings in
 | R0 archive: transition phases, decision log, guard design (§5.4), test matrix | `.claude/ClaudeTransition.md` |
 | How to work with Claude here, how to verify the safety set-up | `.claude/readme_claude.md` |
 | Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`; verifiers in `.claude/tools/` |
-| Repository findings F1–F63 (evidence, fix, test, acceptance): index of all, entries of open ones | `.claude/reports/repo-findings.md` |
+| Repository findings F1–F64 (evidence, fix, test, acceptance): index of all, entries of open ones | `.claude/reports/repo-findings.md` |
 | Addressed findings with their resolution (read by entry when history matters) | `.claude/reports/repo-findings-archive.md` |
 | Architecture decisions | `docs/architecture/adr/` — ADR-0007 secrets, ADR-0008 bind mounts, ADR-009 backup, ADR-0010 cadvisor privileged, ADR-0011 cadvisor unprivileged, ADR-0012 Docker API socket proxy, ADR-0013 read-only `/boot/firmware` APT hook |
 | Operations | `docs/operations/` — `DevWorkflow.md`, `git-branch-workflow.md`, `runtime-updates.md`, `BackupVerifyRestore.md`, `GPG_config_for_backup_encryption.md`, `renovate.md` |
@@ -193,3 +193,6 @@ the increment log in `.claude/increment-log.md`, addressed findings in
 - **Distinguish measured from assumed.** Say which one a statement is.
 - If a guard or deny rule blocks something, that is a result to report, not an obstacle to route
   around. Never weaken the guard to get work done.
+- **Report what you notice as a finding candidate** (IN14): a deviation from a rule, an ADR or a
+  best practice named with its source — evidence, proposed severity and Due (IN15) in the same
+  answer. Do not fix it inside the running increment unless it is Critical.

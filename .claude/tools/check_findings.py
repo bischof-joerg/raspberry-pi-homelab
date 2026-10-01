@@ -110,7 +110,12 @@ def check_entries(text: str) -> list[str]:
                 fail(f"{fid}: cited evidence path does not exist: `{path}`")
         if checked == 0:
             fail(f"{fid}: Evidence cites no repository path")
+        if re.search(r"^- \*\*Scheduling:\*\*\s*\S", block, re.MULTILINE):
+            overridden.add(fid)
     return [m.group(1) for m in heads]
+
+
+overridden: set[str] = set()  # entries with an operator's **Scheduling:** line (IN16)
 
 
 report = REPORT.read_text(encoding="utf-8")
@@ -133,13 +138,18 @@ for fid in own_index:
 for fid in sorted(set(entry_ids) - set(own_index)):
     fail(f"{fid}: has an entry but no row in the report's index")
 
-# Index row: | ID | Title | Area | Sev | Status | R1 |
+# Index row: | ID | Title | Area | Sev | Found | Due | Status | R1 |
 status: dict[str, str] = {}
 group_of: dict[str, str] = {}
+triage: dict[str, tuple[str, str, str]] = {}  # fid -> (Sev, Found, Due)
 for line in index_text.splitlines():
     if INDEX_ROW.match(line):
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         status[cells[0]], group_of[cells[0]] = cells[-2], cells[-1]
+        if len(cells) == 8:
+            triage[cells[0]] = (cells[3], cells[4], cells[5])
+        else:
+            fail(f"{cells[0]}: index row has {len(cells)} columns, expected 8")
 
 for fid in archive_ids:
     if fid in status and status[fid] != "addressed":
@@ -203,6 +213,73 @@ if len(roadmap_rows) != 1:
     fail(f"roadmap §7 must hold exactly one log row, found {len(roadmap_rows)}")
 elif not full_log or roadmap_rows[0] != full_log[0]:
     fail(f"roadmap §7 row differs from the newest row of {LOG.name}")
+
+# Triage by severity (roadmap §2, IN14-IN16). Due is `next`, an increment `R<x>.<y>` or a stage
+# `R<x>`: Critical -> next; High -> an increment; Med/Low -> a stage. An operator's **Scheduling:**
+# line overrides the form, never the deadline. Findings up to LEGACY_MAX predate the model: R1
+# schedules that backlog by group, so they may keep a stage Due and need no Found date.
+SEVERITIES = ("Critical", "High", "Med", "Low")
+LEGACY_MAX = 63
+NONE = {"—", "–", "-", ""}
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+INCREMENT_DUE = re.compile(r"^R(\d+)\.(\d+)$")
+STAGE_DUE = re.compile(r"^R(\d+)$")
+
+status_text = section(ROADMAP.read_text(encoding="utf-8"), "## 1.", "\n## ")
+m = re.search(r"^- \*\*Stage:\*\* R(\d+)", status_text, re.MULTILINE)
+current_stage = int(m.group(1)) if m else 0
+if not m:
+    fail("roadmap §1 has no '- **Stage:** R<n>' line")
+m = re.search(r"^- \*\*Next increment:\*\*(.*?)(?=^- \*\*|\Z)", status_text, re.M | re.S)
+next_ids = set(FID.findall(m.group(1))) if m else set()
+logged = {m.group(1) for row in full_log if (m := re.match(r"^\| (R\d+\.\d+)\b", row))}
+
+
+def group_stage(group: str) -> int | None:
+    """R1 groups are single letters; the others name their stage (R2d -> 2, R3 -> 3)."""
+    if re.fullmatch(r"[a-z]", group):
+        return 1
+    m = re.fullmatch(r"R(\d)[a-z]?", group)
+    return int(m.group(1)) if m else None
+
+
+for fid, (sev, found, due) in triage.items():
+    legacy = int(re.match(r"F(\d+)", fid).group(1)) <= LEGACY_MAX
+    override = fid in overridden
+    if sev not in SEVERITIES:
+        fail(f"{fid}: severity '{sev}' is not one of {', '.join(SEVERITIES)}")
+    if not DATE.match(found) and not (legacy and found in NONE):
+        fail(f"{fid}: no Found date" if found in NONE else f"{fid}: Found '{found}' is not a date")
+    if status.get(fid) == "addressed":
+        if due not in NONE:
+            fail(f"{fid}: addressed, so Due must be '—', found '{due}'")
+        continue
+    if due in NONE:
+        fail(f"{fid}: open but has no Due")
+        continue
+    inc, stg = INCREMENT_DUE.match(due), STAGE_DUE.match(due)
+    if due != "next" and not inc and not stg:
+        fail(f"{fid}: Due '{due}' is not 'next', an increment R<x>.<y> or a stage R<x>")
+        continue
+    if due == "next" and fid not in next_ids:
+        fail(f"{fid}: {sev}, but roadmap §1 'Next increment' does not name it")
+    if not override:
+        if sev == "Critical" and due != "next":
+            fail(f"{fid}: Critical must be due 'next', found '{due}'")
+        elif sev == "High" and stg and not legacy:
+            fail(f"{fid}: High must be due at an increment (R<x>.<y>), found '{due}'")
+        elif sev in ("Med", "Low") and not stg:
+            fail(f"{fid}: {sev} must be due at a stage (R<x>), found '{due}'")
+    due_stage = int((inc or stg).group(1)) if (inc or stg) else current_stage
+    stage_of_group = group_stage(group_of.get(fid, ""))
+    if stage_of_group and due_stage != stage_of_group and not override:
+        fail(
+            f"{fid}: due in R{due_stage}, but its group {group_of[fid]} belongs to R{stage_of_group}"
+        )
+    if inc and due in logged:
+        fail(f"{fid}: overdue, due at {due}, which the increment log already holds")
+    if due_stage < current_stage:
+        fail(f"{fid}: overdue, due in stage R{due_stage}, the roadmap is at R{current_stage}")
 
 print(f"{len(report_ids)} report entries, {len(archive_ids)} archived, {len(own_index)} index rows")
 print(f"{len(full_log)} increment log rows")

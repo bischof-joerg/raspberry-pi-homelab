@@ -14,6 +14,13 @@ A new feature starts only after the previous one is deployed **and** its postdep
 (IN1). If the last increment failed to deploy, the answer is not a new plan — it is fix-forward
 within the same scope, or `git revert` via a branch and PR (IN8).
 
+## Then check what is due
+
+Read the Due column of the index in `.claude/reports/repo-findings.md` (IN15). An open **Critical**
+finding (`next`) *is* the next increment; a **High** finding due at the increment number you are
+about to plan comes before anything else. Run `python3 .claude/tools/check_findings.py`: an
+overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
+
 ## How to split
 
 - One increment changes **one concern** and is small enough to review in one sitting.
