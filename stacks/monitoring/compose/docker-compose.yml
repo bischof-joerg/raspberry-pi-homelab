@@ -257,6 +257,10 @@ services:
     # of 2026-10-01 (ADR-0011, amendment 2026-10-01).
     cap_drop: [ALL]
     cap_add: [DAC_OVERRIDE]
+    # F57: cadvisor execs only its own binary, and its image has no setuid/setgid or file-capability
+    # files (measured 2026-10-01; ADR-0011, amendment "no-new-privileges").
+    security_opt:
+      - no-new-privileges=true
     networks: [monitoring]
     # Do NOT expose to LAN; vmagent scrapes it via Docker network
     # ports:

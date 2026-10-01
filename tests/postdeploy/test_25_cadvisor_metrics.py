@@ -188,3 +188,30 @@ def test_cadvisor_runs_with_measured_capabilities():
         f"❌ cadvisor (pid {pid}) has CapEff {cap_eff:#x}, expected {EXPECTED_CAP_EFF:#x} (F57).\n"
         "Fix: compare `grep Cap /proc/<pid>/status` with cap_drop/cap_add in the compose file."
     )
+
+
+@pytest.mark.postdeploy
+def test_cadvisor_runs_without_new_privileges():
+    """F57: cadvisor sets no-new-privileges, in config and in the process (ADR-0011)."""
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
+
+    fmt = "{{json .HostConfig.SecurityOpt}}|{{.State.Pid}}"
+    res = run(["docker", "inspect", CADVISOR_CONTAINER, "--format", fmt])
+    assert res.returncode == 0, f"❌ docker inspect {CADVISOR_CONTAINER} failed:\n{res.stderr}"
+    security_opt, pid = res.stdout.strip().split("|")
+    assert any(
+        opt.startswith("no-new-privileges") and not opt.endswith("false")
+        for opt in json.loads(security_opt) or []
+    ), (
+        f"❌ {CADVISOR_CONTAINER}: SecurityOpt={security_opt}, expected no-new-privileges (F57).\n"
+        "Fix: redeploy so the container is recreated from stacks/monitoring/compose/"
+        "docker-compose.yml."
+    )
+
+    status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
+    match = re.search(r"^NoNewPrivs:\s*(\d)$", status, flags=re.MULTILINE)
+    assert match and match.group(1) == "1", (
+        f"❌ cadvisor (pid {pid}) has NoNewPrivs={match and match.group(1)!r}, expected '1' (F57).\n"
+        "Fix: check `grep NoNewPrivs /proc/<pid>/status` and security_opt in the compose file."
+    )

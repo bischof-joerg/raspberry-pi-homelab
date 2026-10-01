@@ -256,6 +256,28 @@ def test_cadvisor_cap_add_is_the_measured_set() -> None:
     )
 
 
+# Docker accepts the option bare or with `:true` / `=true`; `false` switches it off.
+NO_NEW_PRIVILEGES = {"no-new-privileges", "no-new-privileges:true", "no-new-privileges=true"}
+NEW_PRIVILEGES_ALLOWED = {"no-new-privileges:false", "no-new-privileges=false"}
+
+
+def test_every_service_sets_no_new_privileges() -> None:
+    # F41 (no-new-privileges part), F57; .claude/rules/compose-stacks.md requires it everywhere.
+    def blocks_new_privileges(service: dict) -> bool:
+        opts = {str(opt).strip() for opt in service.get("security_opt", [])}
+        return bool(NO_NEW_PRIVILEGES & opts) and not NEW_PRIVILEGES_ALLOWED & opts
+
+    wrong = {
+        name: service.get("security_opt")
+        for name, service in _services().items()
+        if not blocks_new_privileges(service)
+    }
+    assert not wrong, (
+        f"❌ Services without `no-new-privileges` (F41, F57): {wrong}\n"
+        "Fix: add `security_opt: [no-new-privileges=true]` to each service."
+    )
+
+
 def test_monitoring_doc_matches_cadvisor_privileges() -> None:
     text = MONITORING_DOC.read_text(encoding="utf-8")
     claims = [
