@@ -25,7 +25,10 @@ is read at the start of any work session. The Claude transition (R0) is complete
   hooks also cover new, untracked files); group j — F60 as R1.15 (APT remount hook for the
   read-only `/boot/firmware`, ADR-0013) and R1.17 (permanent postdeploy checks: `dpkg --audit`
   empty, boot files equal the running kernel's); F7's `restart` part as R1.16. See §6 and §7.
-- **Next increment:** R1.18 F57 `cap_drop` with a measured capability set (group b); its baseline
+- **Next increment:** R1.18 F62 persistent journal (group k, operator 2026-10-01): a journald
+  drop-in from the repository, installed by `deploy.sh`; measure first which drop-in sets
+  `Storage=volatile` (`systemd-analyze cat-config systemd/journald.conf`, unfiltered). Then R1.19
+  F57 `cap_drop` with a measured capability set (group b); its baseline
   was measured on 2026-09-29 (`CapEff` `0xa80425fb`, Docker's default set; `dmesg_restrict = 0`;
   `docker diff` shows no writes; 56 `name=` families), the `bpftrace` trace is pending, and
   `bpftrace` stays installed on the Pi until then. Further candidates: (1) group b — F57's hardening
@@ -141,6 +144,7 @@ first, then the mechanisms other fixes depend on.
 | g | Supply chain | F3, F24, F44 | F37 | Digest pins together; F37 went with F8; F4 moved to R2d |
 | h | Toolchain and dead tests | F23, F25, F47, F11, F56 | F49, F21, F22, F59 | F21 + F22 done as R1.4–R1.6; F59 as R1.14; rest low risk, quick |
 | j | Host update path with a read-only firmware partition | — | F60 | Found 2026-09-29 while preparing the F57 capability trace; pulled forward from R3b by the operator the same day, before R1.15, because every APT run fails and security updates are blocked. R1.15 deployed (APT hook, ADR-0013); first unattended-upgrades run with the hook successful (2026-09-30); permanent postdeploy checks as R1.17 (2026-10-01). Group done |
+| k | Host evidence that survives a reboot | F62 | — | Found 2026-10-01 after R1.17 (volatile journal, `Storage=volatile` measured); pulled forward by the operator the same day as R1.18, before F57, so that every later reboot leaves evidence. Without an ADR: a reversible configuration installed like `daemon.json` and the APT hook |
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2b | Documentation | F5, F6, F12 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26 |
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
@@ -218,7 +222,8 @@ Each has a home in a rule or a test; listed here so a new session sees them at o
 - **Host evidence in the journal does not survive a reboot.** The Pi's journal is volatile
   (`journalctl --list-boots` shows only the current boot, 2026-09-30), and vector forwards only a
   few units to VictoriaLogs. Ask the operator for journal evidence before the next reboot, and let
-  postdeploy checks test state, not journal history (F60, F61).
+  postdeploy checks test state, not journal history (F60, F61). The journal is volatile by
+  configuration (`Storage=volatile`, measured 2026-10-01); making it persistent is F62.
 
 ## 9. Stage plans R2, R3b and R4
 
