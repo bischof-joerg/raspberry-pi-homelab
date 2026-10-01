@@ -123,6 +123,10 @@ finding F60). It works for `make host-upgrade-apply`, unattended-upgrades and a 
 - Each remount is logged: `journalctl -t homelab-boot-firmware`.
 - After an APT run the partition must be read-only again (`findmnt -no OPTIONS /boot/firmware`);
   `make postdeploy` checks it.
+- `make postdeploy` also checks that `dpkg --audit` is empty and that `kernel_2712.img` and
+  `initramfs_2712` in `/boot/firmware` equal the files of the running kernel in `/boot`. After a
+  kernel or initramfs update it therefore fails until the reboot, and its message says so; that is
+  intended (§1.5).
 
 ### 1.5 Acceptance criteria
 

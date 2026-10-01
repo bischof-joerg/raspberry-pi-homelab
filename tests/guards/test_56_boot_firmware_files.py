@@ -12,17 +12,13 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.xfail(
-    strict=True, reason="R1.17 (F60): boot-file classification not implemented yet"
-)
+from tests._lib.boot_firmware import BootFileStatus, check_boot_files, flavour
 
 RUNNING = "6.18.29+rpt-rpi-2712"
 NEWER = "6.18.30+rpt-rpi-2712"
 
 
-def _check(boot: Path, firmware: Path, release: str = RUNNING):
-    from tests._lib.boot_firmware import check_boot_files
-
+def _check(boot: Path, firmware: Path, release: str = RUNNING) -> dict[str, BootFileStatus]:
     return check_boot_files(boot, firmware, release)
 
 
@@ -39,15 +35,11 @@ def _tree(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_flavour_is_read_from_the_release_suffix() -> None:
-    from tests._lib.boot_firmware import flavour
-
     assert flavour(RUNNING) == "2712"
 
 
 @pytest.mark.parametrize("release", ["6.18.29+rpt-rpi-v7", "6.1.0-generic"])
 def test_unknown_release_is_refused_by_name(release: str) -> None:
-    from tests._lib.boot_firmware import flavour
-
     with pytest.raises(ValueError, match=release.replace("+", r"\+")):
         flavour(release)
 
