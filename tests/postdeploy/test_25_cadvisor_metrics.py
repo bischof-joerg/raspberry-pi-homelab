@@ -215,3 +215,42 @@ def test_cadvisor_runs_without_new_privileges():
         f"❌ cadvisor (pid {pid}) has NoNewPrivs={match and match.group(1)!r}, expected '1' (F57).\n"
         "Fix: check `grep NoNewPrivs /proc/<pid>/status` and security_opt in the compose file."
     )
+
+
+@pytest.mark.postdeploy
+def test_cadvisor_root_filesystem_is_read_only():
+    """F57: cadvisor runs with a read-only root filesystem (ADR-0011, amendment "read_only")."""
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
+
+    res = run(
+        ["docker", "inspect", CADVISOR_CONTAINER, "--format", "{{.HostConfig.ReadonlyRootfs}}"]
+    )
+    assert res.returncode == 0, f"❌ docker inspect {CADVISOR_CONTAINER} failed:\n{res.stderr}"
+    assert res.stdout.strip() == "true", (
+        f"❌ {CADVISOR_CONTAINER}: HostConfig.ReadonlyRootfs={res.stdout.strip()!r}, expected "
+        "'true' (F57).\nFix: redeploy so the container is recreated from stacks/monitoring/compose/"
+        "docker-compose.yml."
+    )
+
+
+@pytest.mark.postdeploy
+def test_cadvisor_logs_no_write_errors_since_start():
+    """F57: a read-only root filesystem must not break a write cadvisor needs (measured 2026-10-01:
+    none outside the mount targets). A refused write shows up in its log."""
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
+
+    res = run(["docker", "inspect", CADVISOR_CONTAINER, "--format", "{{.State.StartedAt}}"])
+    assert res.returncode == 0, f"❌ docker inspect {CADVISOR_CONTAINER} failed:\n{res.stderr}"
+    logs = run(["docker", "logs", "--since", res.stdout.strip(), CADVISOR_CONTAINER])
+    assert logs.returncode == 0, f"❌ docker logs {CADVISOR_CONTAINER} failed:\n{logs.stderr}"
+    hits = [
+        line
+        for line in (logs.stdout + logs.stderr).splitlines()
+        if re.search(r"read-only file system", line, flags=re.IGNORECASE)
+    ]
+    assert not hits, (
+        "❌ cadvisor logged refused writes since its start (F57):\n" + "\n".join(hits[:20]) + "\n"
+        "Fix: add a `tmpfs` for exactly the path named, measured as in ADR-0011 (read_only)."
+    )

@@ -261,6 +261,10 @@ services:
     # files (measured 2026-10-01; ADR-0011, amendment "no-new-privileges").
     security_opt:
       - no-new-privileges=true
+    # F57: `docker diff` over the container's life showed only the bind-mount targets, no writes of
+    # its own, and its image declares no VOLUME (measured 2026-10-01; ADR-0011, amendment
+    # "read_only"). No tmpfs: nothing was measured that needs one.
+    read_only: true
     networks: [monitoring]
     # Do NOT expose to LAN; vmagent scrapes it via Docker network
     # ports:

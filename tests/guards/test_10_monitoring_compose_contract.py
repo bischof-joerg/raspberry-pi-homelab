@@ -278,6 +278,45 @@ def test_every_service_sets_no_new_privileges() -> None:
     )
 
 
+# F41 (read_only part): services still writing to their root filesystem, each with the open finding
+# that tracks it. cadvisor left it in R1.21 (F57; `docker diff` showed only mount targets).
+READ_ONLY_EXCEPTIONS = {"grafana": "F41"}
+FINDINGS_REPORT = REPO_ROOT / ".claude/reports/repo-findings.md"
+
+
+def _writable_services() -> set[str]:
+    return {name for name, service in _services().items() if service.get("read_only") is not True}
+
+
+def test_every_service_has_a_read_only_rootfs() -> None:
+    wrong = {
+        name: _services()[name].get("read_only")
+        for name in sorted(_writable_services() - READ_ONLY_EXCEPTIONS.keys())
+    }
+    assert not wrong, (
+        f"❌ Services without `read_only: true` (F41, F57): {wrong}\n"
+        "Fix: measure the writes (`docker diff` minus the mount targets in `.Mounts`), set "
+        "`read_only: true` and add a `tmpfs` only for a measured path."
+    )
+
+
+def test_read_only_exceptions_are_current() -> None:
+    # Guards the guard: an exception for a service that is read-only now, or one whose finding
+    # is no longer in the report, keeps a gap open that nothing tracks.
+    stale = sorted(READ_ONLY_EXCEPTIONS.keys() - _writable_services())
+    report = FINDINGS_REPORT.read_text(encoding="utf-8")
+    untracked = sorted(
+        f"{name}: {finding}"
+        for name, finding in READ_ONLY_EXCEPTIONS.items()
+        if f"### {finding} " not in report
+    )
+    assert not stale and not untracked, (
+        f"❌ READ_ONLY_EXCEPTIONS is out of date (F41): read-only now {stale}, "
+        f"finding not open in {FINDINGS_REPORT.name} {untracked}\n"
+        "Fix: remove the entry, or name the open finding that tracks the service's writes."
+    )
+
+
 def test_monitoring_doc_matches_cadvisor_privileges() -> None:
     text = MONITORING_DOC.read_text(encoding="utf-8")
     claims = [
