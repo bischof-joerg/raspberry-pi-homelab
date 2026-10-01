@@ -174,7 +174,7 @@ first, then the mechanisms other fixes depend on.
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2e | Host best-practice baseline | F64 | — | Stage R2 (IN15: Med found in R1 → next stage). Found 2026-10-01 as the lesson of F62/F63: a baseline with sources, audited at every stage close, feeds IN14 |
 | R2a | Stack review against rules and guidelines (§9.3) | F65 | — | Stage R2 (IN15: Low found in R1 → next stage). F65 found 2026-10-01 in cadvisor's log during the R1.19 capability trace; decided together with F57's socket question |
-| R2b | Documentation | F5, F6, F12 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26 |
+| R2b | Documentation | F5, F6, F12, F68 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26. F68 (backup inventory lacks the host files deploy installs) found 2026-10-01 in R1.21's IN9 check, for R2b.6 |
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
 | R3b | Pi runtime lifecycle | F51, F52, F53, F54, F55, F61 | — | Stage R3, after backup, §9. F61 (unattended-upgrades outside the documented flow) found 2026-09-29 with F60 |
 
@@ -358,7 +358,7 @@ guidelines. Last in R2, so they describe the state after R2a/R2c.
 | R2b.3 | `docs/monitoring.md`, `docs/services/` — content only; the move into `docs/services/monitoring/` and the templates come in R4 | F42 |
 | R2b.4 | `docs/architecture/networking-and-firewall-model.md` | outcome of R1 groups c/e |
 | R2b.5 | `docs/operations/`: DevWorkflow, git-branch-workflow, runtime-updates (path `~/iac/…`, "Last verified", plan vs script — F55), renovate | F44, F55 |
-| R2b.6 | Backup docs and ADR-009, consistency only (content follows in R3) | — |
+| R2b.6 | Backup docs and ADR-009, consistency only (content follows in R3) | F68 |
 
 Method: `docs-steward` drift report with `file:line`, every claim verified by Claude; the operator
 reviews each diff. Gaps between doc and system are named, not smoothed over; a code defect becomes

@@ -134,6 +134,16 @@ This enables:
 - vmagent → Docker Engine metrics
 - No exposure to other networks or the host LAN
 
+### SSH (host access)
+
+SSH is the operator's only way onto the Pi, for `git pull --ff-only` and `sudo ./deploy.sh`. Since
+R1.21 (F67) `deploy.sh` installs `stacks/core/ssh/10-homelab-hardening.conf` into
+`/etc/ssh/sshd_config.d/` through `scripts/host/ensure-sshd-hardening.sh`: no TCP, agent, Unix
+socket or X11 forwarding, no tunnels, no root login, keys only. The Pi is a deploy target, so
+nothing needs a forwarded port or socket — VS Code Remote-SSH, for example, no longer connects.
+`tests/postdeploy/test_08_host_sshd_hardening.py` checks the effective values for `admin` with
+`sshd -T -C`. Which addresses may reach port 22 is not governed by this repository yet (F15).
+
 ---
 
 ## 5. Network & UFW Cleanup (`scripts/network/cleanup-ufw.sh`)

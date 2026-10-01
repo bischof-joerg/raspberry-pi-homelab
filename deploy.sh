@@ -57,6 +57,10 @@ APT_BOOT_FIRMWARE_SCRIPT="${APT_BOOT_FIRMWARE_SCRIPT:-$REPO_ROOT/scripts/host/en
 ENSURE_JOURNALD_PERSISTENT="${ENSURE_JOURNALD_PERSISTENT:-1}"  # 1|0
 JOURNALD_PERSISTENT_SCRIPT="${JOURNALD_PERSISTENT_SCRIPT:-$REPO_ROOT/scripts/host/ensure-journald-persistent.sh}"
 
+# sshd drop-in: no forwarding, no root login (F67)
+ENSURE_SSHD_HARDENING="${ENSURE_SSHD_HARDENING:-1}"  # 1|0
+SSHD_HARDENING_SCRIPT="${SSHD_HARDENING_SCRIPT:-$REPO_ROOT/scripts/host/ensure-sshd-hardening.sh}"
+
 # repo ownership handling
 FIX_REPO_OWNERSHIP="${FIX_REPO_OWNERSHIP:-auto}"         # auto|always|never
 REPO_OWNER_USER="${REPO_OWNER_USER:-admin}"
@@ -133,6 +137,17 @@ ensure_journald_persistent() {
   log "journald-persistent: ensure"
   "$JOURNALD_PERSISTENT_SCRIPT" apply
   log "journald-persistent: ensure done"
+}
+
+ensure_sshd_hardening() {
+  [[ "$ENSURE_SSHD_HARDENING" == "1" ]] || {
+    log "sshd-hardening: skipped (ENSURE_SSHD_HARDENING=0)"
+    return 0
+  }
+  [[ -x "$SSHD_HARDENING_SCRIPT" ]] || die "sshd-hardening script not executable: $SSHD_HARDENING_SCRIPT"
+  log "sshd-hardening: ensure"
+  "$SSHD_HARDENING_SCRIPT" apply
+  log "sshd-hardening: ensure done"
 }
 
 refuse_repo_root_env() {
@@ -351,6 +366,7 @@ main() {
   # before the read-access step, so it also covers /var/log/journal/<machine-id> (F62)
   ensure_journald_persistent
   ensure_journald_read_access
+  ensure_sshd_hardening
 
   bootstrap_networks
   maybe_init_permissions
