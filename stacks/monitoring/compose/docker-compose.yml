@@ -253,6 +253,10 @@ services:
     restart: unless-stopped
     # Root for the read-only host mounts; not privileged (F46 step 4, ADR-0011).
     user: root
+    # F57: only DAC_OVERRIDE was used with cadvisor's own credentials in the cap_capable trace
+    # of 2026-10-01 (ADR-0011, amendment 2026-10-01).
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     networks: [monitoring]
     # Do NOT expose to LAN; vmagent scrapes it via Docker network
     # ports:

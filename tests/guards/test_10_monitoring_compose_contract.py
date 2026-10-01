@@ -4,7 +4,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
 import yaml
 
 from tests._lib.compose import render_compose
@@ -224,7 +223,6 @@ def test_cadvisor_is_not_privileged() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.19: cadvisor has no cap_drop yet (F57)")
 def test_every_service_drops_all_capabilities() -> None:
     # F41 (cap_drop part), F57: a service keeps Docker's default capability set unless it drops it.
     wrong = {
@@ -238,7 +236,6 @@ def test_every_service_drops_all_capabilities() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.19: cadvisor has no cap_add yet (F57)")
 def test_cadvisor_cap_add_is_the_measured_set() -> None:
     cap_add = {
         name: sorted(service["cap_add"])
