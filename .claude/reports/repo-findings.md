@@ -122,6 +122,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F62 | The Pi's journal is volatile; host evidence is lost at every reboot | Host | Med | 2026-10-01 | — | addressed | k |
 | F63 | The memory cgroup Docker relies on is enabled by a hand-edited kernel command line outside the repository | Host | Low | 2026-10-01 | R1 | open | e |
 | F64 | No proactive host best-practice check; deviations surface only by accident | Host | Med | 2026-10-01 | R2 | open | R2e |
+| F65 | cadvisor cannot stat container root filesystems under the containerd image store | Monitoring | Low | 2026-10-01 | R2 | open | R2a |
 
 ## Secrets and credentials
 
@@ -493,6 +494,17 @@ what the scripts do not enforce. Scheduled in R3b, after backup (`.claude/roadma
 - **Test:** `tests/guards` — every baseline item has expected state, source and a read-only measurement; `tests/postdeploy` — the items that are reconciled hold on the Pi.
 - **Acceptance:** The baseline exists with sources, item IDs and dependent service classes; the first audit on the Pi is recorded and every deviation is a finding, a check or an exception; the stage-close step in roadmap §4 runs it.
 - **Prevention:** F64 is itself the prevention for F62 and F63 (rung: stage-close audit instead of "noticed at a reboot"). Its own gap — a practice the baseline does not list yet — shows when a later finding matches no baseline item: the IN17 proposal for that finding then adds the item, and the guard above requires its source and measurement.
+
+## Monitoring coverage
+
+### F65 – cadvisor cannot stat container root filesystems under the containerd image store
+
+- **Evidence:** cadvisor's log on the Pi during the R1.19 capability trace, before its capabilities changed: `E1001 10:47:10 fsHandler.go:121] failed to collect filesystem stats - rootDiskErr: could not stat "/var/lib/docker/rootfs/overlayfs/<id>" to get inode usage: ... no such file or directory` for two container IDs [V 2026-10-01, operator]. The error is `ENOENT`, not `EACCES`, so it predates and is independent of R1.19. Docker on the Pi uses the containerd image store (F57, `docker info` 2026-09-29). Cause [I]: cadvisor v0.60.5 resolves a container's root filesystem to a path that exists only for the classic graph drivers — check with `docker logs` counting `fsHandler` lines over a day and with a query for `container_fs_usage_bytes` per container. `tests/postdeploy/test_25_cadvisor_metrics.py` checks only the families in `REQUIRED_FAMILIES`, none of them `container_fs_*`.
+- **Impact:** Per-container filesystem metrics (`container_fs_*`) are missing or partial; a container filling its writable layer goes unseen. The log fills with errors that hide new ones. No alert or dashboard that the postdeploy tests protect depends on them today.
+- **Proposed fix:** Measure first which `container_fs_*` series exist; then check cadvisor's containerd-snapshotter support (a flag or a newer release) or accept the gap in ADR-0011 and filter the error. Decided together with F57's socket question, since both follow from the containerd image store.
+- **Test:** `tests/postdeploy/test_25_cadvisor_metrics.py` — `container_fs_usage_bytes` exported with `name=` for `NAMED_SERVICES`, or, if the gap is accepted, a test that pins the accepted state.
+- **Acceptance:** Either the filesystem families flow for every named service and cadvisor logs no `fsHandler` error after a restart, or ADR-0011 records the gap and the test pins it.
+- **Prevention:** Rung: postdeploy. A family check that lists every family the stack's dashboards query, not only the alerting ones, would have shown the gap at the first deploy on the containerd image store; the R4 service DoD (observability: key metrics with interpretation) makes that list part of each service's documentation.
 
 ## Documentation and ADRs
 

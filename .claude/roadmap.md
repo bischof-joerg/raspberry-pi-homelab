@@ -161,6 +161,7 @@ first, then the mechanisms other fixes depend on.
 | k | Host evidence that survives a reboot | — | F62 | Found 2026-10-01 after R1.17 (volatile journal, `Storage=volatile` measured); pulled forward by the operator the same day as R1.18, before F57, so that every later reboot leaves evidence. Without an ADR: a reversible configuration installed like `daemon.json` and the APT hook. R1.18 deployed and proven by an attended reboot (2026-10-01). Group done |
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2e | Host best-practice baseline | F64 | — | Stage R2 (IN15: Med found in R1 → next stage). Found 2026-10-01 as the lesson of F62/F63: a baseline with sources, audited at every stage close, feeds IN14 |
+| R2a | Stack review against rules and guidelines (§9.3) | F65 | — | Stage R2 (IN15: Low found in R1 → next stage). F65 found 2026-10-01 in cadvisor's log during the R1.19 capability trace; decided together with F57's socket question |
 | R2b | Documentation | F5, F6, F12 | — | Stage R2, §9 — the former R1 group i, moved 2026-09-26 |
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
 | R3b | Pi runtime lifecycle | F51, F52, F53, F54, F55, F61 | — | Stage R3, after backup, §9. F61 (unattended-upgrades outside the documented flow) found 2026-09-29 with F60 |
@@ -223,6 +224,14 @@ Each has a home in a rule or a test; listed here so a new session sees them at o
   the first `systemd-analyze cat-config` paste of 2026-10-01 ended after the main file and hid the
   drop-in that was the point of the measurement, and the commands after it never showed their
   output. Ask for `--no-pager` (or `| cat`) and a `grep` that keeps the `# /path` headers.
+- **A measurement proves its own coverage, and its decision rule is checked against a known
+  value.** R1.19's first capability trace missed cadvisor's start: the instructions asked for a
+  restart "in a second terminal while the trace runs", and the restart ran before it. The second
+  trace ran as one script and printed `StartedAt` after the trace began. The rule fixed in advance
+  ("add every capability with a granted check") would have granted `SYS_ADMIN`: overlayfs checks
+  the lower inode with its mounter's credentials, so a granted check is not the task's own right.
+  Cross-checking every granted capability against the process's `CapEff` exposed it. Nothing in
+  CI can see a measurement on the Pi (C5); the `increment-plan` skill carries the steps.
 
 ## 9. Stage plans R2, R3b and R4
 
