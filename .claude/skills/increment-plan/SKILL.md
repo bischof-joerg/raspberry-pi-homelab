@@ -39,7 +39,9 @@ overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
   that the measured window covers what matters — for example a container's `StartedAt` after the
   trace began. Check every decision rule fixed in advance against a known value before applying
   it; a capability trace counts only checks the process passed with its own credentials, so every
-  granted capability must also be in its `CapEff` (R1.19, roadmap §8). The script checks root,
+  granted capability must also be in its `CapEff` (R1.19, roadmap §8). A container's `docker diff`
+also lists every bind-mount target Docker created, so a write rule compares the diff minus the
+destinations in `.Mounts`, never "the diff is empty" (R1.21). The script checks root,
   the checkout path on the Pi (`/home/admin/iac/raspberry-pi-homelab`, not the WSL path) and every
   tool **before** it changes anything such as a restart. Read what you filter on instead of
   assuming it — print a container's entrypoint before seeding a trace on it. A tracing probe
