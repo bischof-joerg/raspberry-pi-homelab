@@ -1,20 +1,29 @@
 #!/usr/bin/env python3
-"""Validate .claude/reports/repo-findings.md mechanically (V6.2).
+"""Validate .claude/reports/repo-findings.md and its archive mechanically (V6.2).
 
-Every finding entry (`### F<n> - title`) must carry non-empty **Evidence**, **Test** and
-**Acceptance** fields. Every repository path cited in backticks on the Evidence line must exist,
-and a path written as `path` (absent) must NOT exist -- some findings are about a missing file,
-and that claim is checked too. The set of entry IDs must equal the report's own index table.
+Open and partly addressed findings live in the report; `addressed` ones move to
+.claude/reports/repo-findings-archive.md, so the files read in every session stay small. The
+report's index keeps one row per finding, archived or not.
+
+Every finding entry (`### F<n> - title`), in either file, must carry non-empty **Evidence**,
+**Impact**, **Proposed fix**, **Test** and **Acceptance** fields. Every repository path cited in
+backticks on the Evidence line must exist, and a path written as `path` (absent) must NOT exist --
+some findings are about a missing file, and that claim is checked too. The entries of both files
+together must equal the index; an entry sits in exactly one file; the archive holds only
+`addressed` findings and the report none.
 
 The R1 group table in .claude/roadmap.md section 6 must agree with the index: every ID it lists
 exists; an ID under "Open" is not `addressed`, one under "Done" is; every finding that is not
 `addressed` sits under "Open" of exactly one group, and every `addressed` finding with a group sits
 under "Done" of it; the group matches the index's R1 column. So "what is still open" stays complete.
 
+The increment log lives in .claude/increment-log.md, newest row first; roadmap section 7 keeps
+exactly one row, the newest one.
+
 What this cannot do: prove that a cited file *says* what the finding claims. That needs a human
 read, and is the lesson recorded in ClaudeTransition.md 5.2 (archive).
 
-Run: python3 .claude/tools/check_findings.py [REPORT [ROADMAP]]
+Run: python3 .claude/tools/check_findings.py [REPORT [ROADMAP [ARCHIVE [LOG]]]]
      (stdlib only, read-only, exit 1 on any failure; the optional paths serve negative controls)
 """
 
@@ -29,6 +38,12 @@ REPORT = (
     pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / ".claude/reports/repo-findings.md"
 )
 ROADMAP = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / ".claude/roadmap.md"
+ARCHIVE = (
+    pathlib.Path(sys.argv[3])
+    if len(sys.argv) > 3
+    else ROOT / ".claude/reports/repo-findings-archive.md"
+)
+LOG = pathlib.Path(sys.argv[4]) if len(sys.argv) > 4 else ROOT / ".claude/increment-log.md"
 
 REQUIRED = ("Evidence", "Impact", "Proposed fix", "Test", "Acceptance")
 ENTRY = re.compile(r"^### (F\d+b?) ", re.MULTILINE)
@@ -69,44 +84,54 @@ def fail(msg: str) -> None:
     failures += 1
 
 
+def check_entries(text: str) -> list[str]:
+    """Check every entry's fields and evidence paths; return the entry IDs in order."""
+    heads = list(ENTRY.finditer(text))
+    for i, head in enumerate(heads):
+        fid = head.group(1)
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        block = text[head.start() : end]
+        fields = {}
+        for name in REQUIRED:
+            m = re.search(rf"^- \*\*{re.escape(name)}:\*\*(.*)$", block, re.MULTILINE)
+            fields[name] = m.group(1).strip() if m else ""
+            if not fields[name]:
+                fail(f"{fid}: missing or empty **{name}**")
+        checked = 0
+        for token, absent in BACKTICK.findall(fields["Evidence"]):
+            path = repo_path(token)
+            if path is None:
+                continue
+            checked += 1
+            exists = (ROOT / path).exists()
+            if absent and exists:
+                fail(f"{fid}: `{path}` is cited as absent but exists")
+            elif not absent and not exists:
+                fail(f"{fid}: cited evidence path does not exist: `{path}`")
+        if checked == 0:
+            fail(f"{fid}: Evidence cites no repository path")
+    return [m.group(1) for m in heads]
+
+
 report = REPORT.read_text(encoding="utf-8")
-heads = list(ENTRY.finditer(report))
-entry_ids = [m.group(1) for m in heads]
+report_ids = check_entries(report)
+archive_ids = check_entries(ARCHIVE.read_text(encoding="utf-8"))
+entry_ids = report_ids + archive_ids
 
-for i, head in enumerate(heads):
-    fid = head.group(1)
-    end = heads[i + 1].start() if i + 1 < len(heads) else len(report)
-    block = report[head.start() : end]
-    fields = {}
-    for name in REQUIRED:
-        m = re.search(rf"^- \*\*{re.escape(name)}:\*\*(.*)$", block, re.MULTILINE)
-        fields[name] = m.group(1).strip() if m else ""
-        if not fields[name]:
-            fail(f"{fid}: missing or empty **{name}**")
-    checked = 0
-    for token, absent in BACKTICK.findall(fields["Evidence"]):
-        path = repo_path(token)
-        if path is None:
-            continue
-        checked += 1
-        exists = (ROOT / path).exists()
-        if absent and exists:
-            fail(f"{fid}: `{path}` is cited as absent but exists")
-        elif not absent and not exists:
-            fail(f"{fid}: cited evidence path does not exist: `{path}`")
-    if checked == 0:
-        fail(f"{fid}: Evidence cites no repository path")
-
-dupes = sorted({f for f in entry_ids if entry_ids.count(f) > 1})
-if dupes:
-    fail(f"duplicate entries: {dupes}")
+for name, ids in (("report", report_ids), ("archive", archive_ids)):
+    dupes = sorted({f for f in ids if ids.count(f) > 1})
+    if dupes:
+        fail(f"duplicate entries in the {name}: {dupes}")
+for fid in sorted(set(report_ids) & set(archive_ids)):
+    fail(f"{fid}: in both the report and the archive")
 
 index_text = section(report, "## Index", "\n## ")
 own_index = INDEX_ROW.findall(index_text)
-if set(own_index) != set(entry_ids):
-    missing = sorted(set(entry_ids) - set(own_index))
-    extra = sorted(set(own_index) - set(entry_ids))
-    fail(f"report index differs from entries: missing {missing}, extra {extra}")
+for fid in own_index:
+    if fid not in entry_ids:
+        fail(f"index lists {fid}, which is in neither the report nor the archive")
+for fid in sorted(set(entry_ids) - set(own_index)):
+    fail(f"{fid}: has an entry but no row in the report's index")
 
 # Index row: | ID | Title | Area | Sev | Status | R1 |
 status: dict[str, str] = {}
@@ -115,6 +140,13 @@ for line in index_text.splitlines():
     if INDEX_ROW.match(line):
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         status[cells[0]], group_of[cells[0]] = cells[-2], cells[-1]
+
+for fid in archive_ids:
+    if fid in status and status[fid] != "addressed":
+        fail(f"{fid}: in the archive but '{status[fid]}'; only addressed findings are archived")
+for fid in report_ids:
+    if status.get(fid) == "addressed":
+        fail(f"{fid}: 'addressed' but still in the report; move its entry to the archive")
 
 # Roadmap row: | Group | Scope | Open | Done | Why |  (group: R1 letter a-z, or a stage like R3, R2d)
 GROUP_ROW = re.compile(r"^\| ([a-z]|R\d[a-z]?) \|", re.MULTILINE)
@@ -155,7 +187,25 @@ for fid in entry_ids:
             f"{fid} ({status[fid]}) must be under {where} of exactly one roadmap group, found {groups}"
         )
 
-print(f"{len(entry_ids)} entries, {len(own_index)} report index rows")
+
+# Increment log: roadmap section 7 keeps exactly the newest row of the log file.
+def log_rows(text: str) -> list[str]:
+    return [
+        line.rstrip()
+        for line in text.splitlines()
+        if line.startswith("| ") and not line.startswith("| Increment |")
+    ]
+
+
+roadmap_rows = log_rows(section(ROADMAP.read_text(encoding="utf-8"), "## 7.", "\n## "))
+full_log = log_rows(LOG.read_text(encoding="utf-8"))
+if len(roadmap_rows) != 1:
+    fail(f"roadmap §7 must hold exactly one log row, found {len(roadmap_rows)}")
+elif not full_log or roadmap_rows[0] != full_log[0]:
+    fail(f"roadmap §7 row differs from the newest row of {LOG.name}")
+
+print(f"{len(report_ids)} report entries, {len(archive_ids)} archived, {len(own_index)} index rows")
+print(f"{len(full_log)} increment log rows")
 print(f"{len(open_seen)} open and {len(done_seen)} done findings in the roadmap groups")
 print(f"{failures} failure(s)")
 sys.exit(1 if failures else 0)

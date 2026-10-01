@@ -15,14 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = REPO_ROOT / ".claude/tools/check_findings.py"
-
-XFAIL = pytest.mark.xfail(
-    strict=True, reason="findings lifecycle A: archive and increment log not implemented yet"
-)
 
 FIELDS = ("Evidence", "Impact", "Proposed fix", "Test", "Acceptance")
 LOG_HEADER = (
@@ -120,55 +114,46 @@ def test_real_findings_and_roadmap_pass() -> None:
     )
 
 
-@XFAIL
 def test_valid_split_passes(tmp_path: Path) -> None:
     proc = _check(_valid(tmp_path))
     assert proc.returncode == 0, f"❌ A valid report/archive split fails:\n{proc.stdout}"
 
 
-@XFAIL
 def test_archived_entry_must_be_addressed(tmp_path: Path) -> None:
     args = _valid(tmp_path, index=[("F1", "open"), ("F2", "partly")], archive=[_entry("F2", "x")])
     _fails_with(args, "F2: in the archive but 'partly'")
 
 
-@XFAIL
 def test_addressed_entry_must_leave_the_report(tmp_path: Path) -> None:
     args = _valid(tmp_path, report=[_entry("F1", "Open one"), _entry("F2", "Done one")], archive=[])
     _fails_with(args, "F2: 'addressed' but still in the report")
 
 
-@XFAIL
 def test_entry_must_not_be_in_both_files(tmp_path: Path) -> None:
     args = _valid(tmp_path, report=[_entry("F1", "Open one"), _entry("F2", "Done one")])
     _fails_with(args, "F2: in both the report and the archive")
 
 
-@XFAIL
 def test_index_id_needs_an_entry(tmp_path: Path) -> None:
     args = _valid(tmp_path, index=[("F1", "open"), ("F2", "addressed"), ("F3", "open")])
     _fails_with(args, "index lists F3, which is in neither the report nor the archive")
 
 
-@XFAIL
 def test_archived_entry_keeps_its_required_fields(tmp_path: Path) -> None:
     args = _valid(tmp_path, archive=[_entry("F2", "Done one", skip="Test")])
     _fails_with(args, "F2: missing or empty **Test**")
 
 
-@XFAIL
 def test_archived_entry_paths_are_checked(tmp_path: Path) -> None:
     args = _valid(tmp_path, archive=[_entry("F2", "Done one", "`scripts/does-not-exist.sh`")])
     _fails_with(args, "F2: cited evidence path does not exist")
 
 
-@XFAIL
 def test_roadmap_keeps_only_the_newest_log_row(tmp_path: Path) -> None:
     args = _valid(tmp_path, roadmap_rows=(NEWEST, OLDER))
     _fails_with(args, "roadmap §7 must hold exactly one log row, found 2")
 
 
-@XFAIL
 def test_roadmap_row_is_the_newest_log_row(tmp_path: Path) -> None:
     args = _valid(tmp_path, roadmap_rows=(OLDER,))
     _fails_with(args, "roadmap §7 row differs from the newest row of")

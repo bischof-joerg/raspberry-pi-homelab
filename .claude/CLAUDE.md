@@ -157,19 +157,23 @@ One feature at a time, delivered in small increments, each with its own tests (D
   scripts and their postdeploy checks, the network/firewall docs, and the Renovate rules.
 
 The full delivery rules (IN1–IN13), the roadmap R1–R6, the current stage and next increment, the
-R1 findings groups and the increment log are in **`.claude/roadmap.md` — read it at the start of
-every work session.** R0 (the Claude transition) is complete; `.claude/ClaudeTransition.md` is its
-archived record.
+R1 findings groups and the newest increment log row are in **`.claude/roadmap.md` — read it at the
+start of every work session.** History is read on demand only, by entry or row, never in full:
+the increment log in `.claude/increment-log.md`, addressed findings in
+`.claude/reports/repo-findings-archive.md`. R0 (the Claude transition) is complete;
+`.claude/ClaudeTransition.md` is its archived record.
 
 ## 9. Where to look things up
 
 | Topic | File |
 |---|---|
-| Current stage, next increment, delivery rules, roadmap, increment log | `.claude/roadmap.md` |
+| Current stage, next increment, delivery rules, roadmap, newest log row | `.claude/roadmap.md` |
+| Increment log, newest first (read by row when history matters) | `.claude/increment-log.md` |
 | R0 archive: transition phases, decision log, guard design (§5.4), test matrix | `.claude/ClaudeTransition.md` |
 | How to work with Claude here, how to verify the safety set-up | `.claude/readme_claude.md` |
 | Topic rules, skills, subagents | `.claude/rules/`, `.claude/skills/`, `.claude/agents/`; verifiers in `.claude/tools/` |
-| Repository findings F1–F63 (evidence, fix, test, acceptance) | `.claude/reports/repo-findings.md` |
+| Repository findings F1–F63 (evidence, fix, test, acceptance): index of all, entries of open ones | `.claude/reports/repo-findings.md` |
+| Addressed findings with their resolution (read by entry when history matters) | `.claude/reports/repo-findings-archive.md` |
 | Architecture decisions | `docs/architecture/adr/` — ADR-0007 secrets, ADR-0008 bind mounts, ADR-009 backup, ADR-0010 cadvisor privileged, ADR-0011 cadvisor unprivileged, ADR-0012 Docker API socket proxy, ADR-0013 read-only `/boot/firmware` APT hook |
 | Operations | `docs/operations/` — `DevWorkflow.md`, `git-branch-workflow.md`, `runtime-updates.md`, `BackupVerifyRestore.md`, `GPG_config_for_backup_encryption.md`, `renovate.md` |
 | Monitoring | `docs/monitoring.md`, `docs/services/` |
