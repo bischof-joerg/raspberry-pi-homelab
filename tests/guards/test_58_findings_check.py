@@ -15,10 +15,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = REPO_ROOT / ".claude/tools/check_findings.py"
 
-FIELDS = ("Evidence", "Impact", "Proposed fix", "Test", "Acceptance")
+FIELDS = ("Evidence", "Impact", "Proposed fix", "Test", "Acceptance", "Prevention")
 LOG_HEADER = (
     "| Increment | Date | Commit | CI | Deploy + postdeploy | Notes |\n|---|---|---|---|---|---|\n"
 )
@@ -276,5 +278,30 @@ def test_legacy_high_may_keep_a_stage_due(tmp_path: Path) -> None:
     proc = _check(_one(tmp_path, _row("F5", "open", sev="High", found="—", due="R1")))
     assert proc.returncode == 0, (
         f"❌ A legacy finding (≤ F63) with a stage Due fails; R1 schedules the backlog by group:\n"
+        f"{proc.stdout}"
+    )
+
+
+# --- findings lifecycle, increment B4: prevention (IN17) ------------------------------------------
+
+
+def _without_prevention(tmp_path: Path, fid: str) -> list[str]:
+    return _write(
+        tmp_path,
+        index=[_row(fid, "open", found="—" if fid == "F5" else "2026-10-01"), ("F2", "addressed")],
+        report=[_entry(fid, "Under test", skip="Prevention")],
+        archive=[_entry("F2", "Done one")],
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="findings lifecycle B4: Prevention not required yet")
+def test_new_finding_needs_a_prevention(tmp_path: Path) -> None:
+    _fails_with(_without_prevention(tmp_path, "F70"), "F70: missing or empty **Prevention**")
+
+
+def test_legacy_finding_needs_no_prevention(tmp_path: Path) -> None:
+    proc = _check(_without_prevention(tmp_path, "F5"))
+    assert proc.returncode == 0, (
+        f"❌ A legacy finding (≤ F63) without **Prevention** fails; the field starts with F64:\n"
         f"{proc.stdout}"
     )
