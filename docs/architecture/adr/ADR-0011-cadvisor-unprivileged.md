@@ -120,3 +120,40 @@ another amendment.
 `test_every_service_drops_all_capabilities`, `test_cadvisor_cap_add_is_the_measured_set`.
 `tests/postdeploy/test_25_cadvisor_metrics.py`: `test_cadvisor_runs_with_measured_capabilities`
 (`CapDrop`, `CapAdd` and the process's `CapEff` on the Pi).
+
+## Amendment 2026-10-01 — no-new-privileges (F57, R1.20)
+
+cadvisor runs with `security_opt: [no-new-privileges=true]`, like every other service. This
+narrows the "Negative / Tradeoffs" point further; the socket, `pid: host`, `/dev/kmsg` and
+`read_only` points stay as written.
+
+**Measurement** (operator, on the Pi, 2026-10-01, before the change: `NoNewPrivs: 0`,
+`CapEff 0x2`). `no-new-privileges` takes nothing away that a process holds; it only stops
+`execve` from adding privileges through setuid/setgid bits or file capabilities. So the question
+was what cadvisor executes, and what such files exist:
+
+- The entrypoint `/usr/bin/entrypoint.sh` only runs `exec /usr/bin/cadvisor -logtostderr "$@"`.
+- `find` as root over the container's root filesystem (`/proc/<pid>/root`, `-xdev`, so without
+  the bind mounts) found no setuid or setgid file, and the host's `getcap` found no file
+  capability there.
+- A `bpftrace` trace of `sys_enter_execve` and `sys_enter_execveat`, following every fork of the
+  process that executed the entrypoint, ran across a cadvisor restart and a full postdeploy run
+  (88 passed, 3 skipped) plus 60 s. Before the restart the script checked that the probes were
+  attached and that they caught a known `/bin/true` exec with the same predicate; `StartedAt`
+  was after that check. The trace saw exactly the expected chain, `runc:[2:INIT]` →
+  `/usr/bin/entrypoint.sh` → `/usr/bin/cadvisor`, all in one process, and no other exec.
+
+Two earlier traces did not count: one ran without root, and one filtered on
+`sched:sched_process_exec`, whose `filename` field `bpftrace` v0.23.2 on kernel 6.18.29 returned
+empty, so it missed even the known start.
+
+**Decision.** `no-new-privileges=true`. Its effect is defence in depth: cadvisor execs nothing
+but itself, so it changes no behaviour. The bounding set already caps capabilities at
+`DAC_OVERRIDE` across any `execve`; `no-new-privileges` adds that an exec can no longer change the
+user or group through a setuid/setgid file — for example one under the host `/` mounted at
+`/rootfs` — and that the kernel refuses any privilege-gaining transition on exec.
+
+**Enforcement.** `tests/guards/test_10_monitoring_compose_contract.py`:
+`test_every_service_sets_no_new_privileges` (every service, F41).
+`tests/postdeploy/test_25_cadvisor_metrics.py`: `test_cadvisor_runs_without_new_privileges`
+(`HostConfig.SecurityOpt` and the process's `NoNewPrivs: 1` on the Pi).

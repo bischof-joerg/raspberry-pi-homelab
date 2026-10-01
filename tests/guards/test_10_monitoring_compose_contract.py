@@ -4,7 +4,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
 import yaml
 
 from tests._lib.compose import render_compose
@@ -262,7 +261,6 @@ NO_NEW_PRIVILEGES = {"no-new-privileges", "no-new-privileges:true", "no-new-priv
 NEW_PRIVILEGES_ALLOWED = {"no-new-privileges:false", "no-new-privileges=false"}
 
 
-@pytest.mark.xfail(strict=True, reason="R1.20: cadvisor has no no-new-privileges yet (F57)")
 def test_every_service_sets_no_new_privileges() -> None:
     # F41 (no-new-privileges part), F57; .claude/rules/compose-stacks.md requires it everywhere.
     def blocks_new_privileges(service: dict) -> bool:
