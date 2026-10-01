@@ -123,6 +123,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F63 | The memory cgroup Docker relies on is enabled by a hand-edited kernel command line outside the repository | Host | Low | 2026-10-01 | R1 | open | e |
 | F64 | No proactive host best-practice check; deviations surface only by accident | Host | Med | 2026-10-01 | R2 | open | R2e |
 | F65 | cadvisor cannot stat container root filesystems under the containerd image store | Monitoring | Low | 2026-10-01 | R2 | open | R2a |
+| F66 | Measurements on the Pi leave files and packages behind | Host | Low | 2026-10-01 | R1.21 | partly | l |
 
 ## Secrets and credentials
 
@@ -497,6 +498,18 @@ what the scripts do not enforce. Scheduled in R3b, after backup (`.claude/roadma
 - **Test:** `tests/guards` — every baseline item has expected state, source and a read-only measurement; `tests/postdeploy` — the items that are reconciled hold on the Pi.
 - **Acceptance:** The baseline exists with sources, item IDs and dependent service classes; the first audit on the Pi is recorded and every deviation is a finding, a check or an exception; the stage-close step in roadmap §4 runs it.
 - **Prevention:** F64 is itself the prevention for F62 and F63 (rung: stage-close audit instead of "noticed at a reboot"). Its own gap — a practice the baseline does not list yet — shows when a later finding matches no baseline item: the IN17 proposal for that finding then adds the item, and the guard above requires its source and measurement.
+- **Evidence (added 2026-10-01, with F66):** `ls -la ~` of the operator account on the Pi [V 2026-10-01, operator] shows development leftovers on a deploy-only host (`.claude/CLAUDE.md` §1): `.vscode-server` (2026-02-05, VS Code remote server), `.dotnet` (2026-01-02, origin unknown [I], possibly a VS Code extension), `.pytest_cache` in the home directory (2026-01-12, pytest once ran outside the checkout). Baseline item to add: no development tools or caches on the Pi, or a recorded exception. Whether `.vscode-server` is still in use is the operator's decision; nothing was removed.
+
+### F66 – Measurements on the Pi leave files and packages behind
+
+- **Evidence:** `sudo find /tmp -maxdepth 1 -newermt '2026-10-01 09:00'` on the Pi [V 2026-10-01, operator] listed six script and output files `/tmp/m1.sh`, `/tmp/m1.out`, `/tmp/m1b.sh`, `/tmp/m1b.out`, `/tmp/m1c.sh`, `/tmp/m1c.out` and four `mktemp` files `/tmp/tmp.*` from the R1.20 measurements, plus `/tmp/cap-trace.txt` (13:00 CEST) from R1.19's capability trace; all removed the same day, and the same `find` then listed only the system's entries. `/tmp` is a tmpfs (`findmnt /tmp`: `tmpfs … size=8303808k`), so the files held RAM until the next reboot. `bpftrace`, installed for R1.19, is still on the Pi. Cause: `.claude/skills/increment-plan/SKILL.md` asked for "one script" and, after R1.20, for running it as a file; neither it nor the delivery rules in `.claude/roadmap.md` §2 had a cleanup step, and Claude's scripts wrote `tee` output to `/tmp` and called `mktemp` without removing anything.
+- **Impact:** Every measurement makes the Pi drift from the repository (`.claude/CLAUDE.md` §1 deploy target only, §4 no manual drift). A leftover diagnostic tool widens the host's attack surface; a leftover file cannot later be told apart from one that matters, so nobody removes it.
+- **Proposed fix:** IN18 "Leave no trace": every temporary change is planned with its undo and proof in the increment's "Pi footprint and cleanup" line, undone before the deploy, and the log row records `Footprint: none` or `Footprint: cleaned — <evidence>`. Measurement scripts run over stdin (`sudo bash -s`) with every helper file in one `mktemp -d` directory that a `trap … EXIT` removes and confirms with `CLEANUP ok`. Diagnostic packages are on a denylist checked after every deploy.
+- **Test:** `tests/guards/test_58_findings_check.py` — a log row after R1.20 without a valid `Footprint:` fails `check_findings.py`; `tests/postdeploy` — no denylisted diagnostic package (`bpftrace`) is installed (part B).
+- **Acceptance:** Both checks in place and green; `bpftrace` removed from the Pi; the R1.21 log row carries a footprint with evidence.
+- **Prevention:** Rung: checker in CI — `check_findings.py` refuses a log row that does not state its footprint, so no increment can be closed without answering the question; rung: postdeploy for packages, so a forgotten tool fails the next deploy. Files in `/tmp` get no automatic check, because the system's own entries there change; the skill's skeleton removes its directory in a `trap` instead.
+- **Scheduling:** 2026-10-01, operator: pulled forward from R2 (IN15 for Low) to before R1.21, so that R1.21 already runs under IN18. Part A (IN18, checker, skill) as a process change before R1.21; part B (postdeploy package denylist) with R1.21.
+- **Progress (2026-10-01, part A):** IN18 in `.claude/roadmap.md` §2, IN7 extended, template line "Pi footprint and cleanup" (§3); footprint rule in `check_findings.py` with tests in `test_58` (two strict xfails verified with `--runxfail`); measurement skeleton in the `increment-plan` skill; working agreement in `.claude/CLAUDE.md` §10. Status `partly` until part B.
 
 ## Monitoring coverage
 

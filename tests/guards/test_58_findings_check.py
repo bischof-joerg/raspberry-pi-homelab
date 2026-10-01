@@ -316,13 +316,11 @@ def _log_with(tmp_path: Path, newest: str) -> list[str]:
     return _valid(tmp_path, roadmap_rows=(newest,), log_rows=(newest, BASELINE, OLDER))
 
 
-@pytest.mark.xfail(strict=True, reason="F66: check_findings.py has no footprint rule yet")
 def test_row_above_the_baseline_needs_a_footprint(tmp_path: Path) -> None:
     row = "| R1.21 next | 2026-10-02 | `ddd` | green | ok | no footprint |"
     _fails_with(_log_with(tmp_path, row), "R1.21 next: log row has no 'Footprint:' (IN18)")
 
 
-@pytest.mark.xfail(strict=True, reason="F66: check_findings.py has no footprint rule yet")
 def test_footprint_must_be_none_or_cleaned(tmp_path: Path) -> None:
     row = "| Process change | 2026-10-02 | `ddd` | green | ok | Footprint: later |"
     _fails_with(

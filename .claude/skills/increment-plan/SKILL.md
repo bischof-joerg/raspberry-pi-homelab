@@ -39,13 +39,35 @@ overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
   that the measured window covers what matters — for example a container's `StartedAt` after the
   trace began. Check every decision rule fixed in advance against a known value before applying
   it; a capability trace counts only checks the process passed with its own credentials, so every
-  granted capability must also be in its `CapEff` (R1.19, roadmap §8). The script is saved as a
-  file and run with `sudo bash <file>`, never pasted into a login shell; it checks root, the
-  checkout path on the Pi (not the WSL path) and every tool **before** it changes anything such as
-  a restart. Read what you filter on instead of assuming it — print a container's entrypoint
-  before seeding a trace on it. A tracing probe proves itself first: wait for a `BEGIN` marker,
-  then catch a known event (`/bin/true`) through the **same probe and predicate** the measurement
-  uses, and stop if it does not appear (R1.20, roadmap §8).
+  granted capability must also be in its `CapEff` (R1.19, roadmap §8). The script checks root,
+  the checkout path on the Pi (`/home/admin/iac/raspberry-pi-homelab`, not the WSL path) and every
+  tool **before** it changes anything such as a restart. Read what you filter on instead of
+  assuming it — print a container's entrypoint before seeding a trace on it. A tracing probe
+  proves itself first: wait for a `BEGIN` marker, then catch a known event (`/bin/true`) through
+  the **same probe and predicate** the measurement uses, and stop if it does not appear (R1.20,
+  roadmap §8).
+- **Leave no trace on the Pi (IN18).** Every measurement script uses this skeleton — no script
+  file, no `tee` into a file, no helper outside `$RUN`; the operator copies the output from the
+  terminal:
+
+  ```bash
+  sudo bash -s <<'EOF'
+  set -euo pipefail
+  RUN=$(mktemp -d /tmp/homelab-measure-XXXXXX)
+  cleanup() { kill $(jobs -p) 2>/dev/null || true; rm -rf "$RUN"
+              [ -e "$RUN" ] && echo "CLEANUP FAILED: $RUN" || echo "CLEANUP ok: $RUN"; }
+  trap cleanup EXIT
+  # preflight: root, paths, tools — before any change
+  # measurement: helper files only under $RUN; commands that may read stdin get </dev/null
+  EOF
+  ```
+
+  stdin *is* the script, so a command that reads stdin (`docker exec -i`, `read`) would swallow
+  the rest — hence `</dev/null`. `set -e` ends only the `bash -s`, not the operator's login shell.
+  A tool the measurement needs (`bpftrace`) is installed and removed as separate steps with proof
+  (`dpkg -l <pkg>`), never by the script. Fill the plan's "Pi footprint and cleanup" line with
+  every temporary change, its undo and the proving command, and undo it before the deploy; the
+  log row records `Footprint: none` or `Footprint: cleaned — <evidence>` (`check_findings.py`).
 - **Fill the Prevention line (IN17)** for whatever finding or failure the increment fixes: the
   earliest rung that could have caught it and the mechanism, preferring a test or guard over a
   rule, skill or lesson.
@@ -68,6 +90,7 @@ overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
 - Acceptance: <observable postdeploy criteria>
 - Rollback: git revert <merge-or-commit> on a fix branch → PR → merge → Pi: git pull --ff-only; sudo ./deploy.sh
 - Backup/docs/Renovate impact (IN9):
+- Pi footprint and cleanup (IN18): every temporary change on the Pi, its undo and the command that proves it — or "none"
 - Prevention (IN17): how recurrence of what this increment fixes is caught earlier, and by which mechanism
 ```
 

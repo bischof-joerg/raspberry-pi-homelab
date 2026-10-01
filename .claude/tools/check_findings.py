@@ -19,7 +19,8 @@ exists; an ID under "Open" is not `addressed`, one under "Done" is; every findin
 under "Done" of it; the group matches the index's R1 column. So "what is still open" stays complete.
 
 The increment log lives in .claude/increment-log.md, newest row first; roadmap section 7 keeps
-exactly one row, the newest one.
+exactly one row, the newest one. Every row above the R1.20 row - the last one before IN18 - names
+the footprint it left on the Pi: `Footprint: none` or `Footprint: cleaned — <evidence>` (F66).
 
 What this cannot do: prove that a cited file *says* what the finding claims. That needs a human
 read, and is the lesson recorded in ClaudeTransition.md 5.2 (archive).
@@ -219,6 +220,25 @@ if len(roadmap_rows) != 1:
     fail(f"roadmap §7 must hold exactly one log row, found {len(roadmap_rows)}")
 elif not full_log or roadmap_rows[0] != full_log[0]:
     fail(f"roadmap §7 row differs from the newest row of {LOG.name}")
+
+# Leave no trace (roadmap §2, IN18, F66): rows newer than the baseline row answer what the
+# increment left on the Pi. Without the baseline row (fixtures) no row is checked.
+FOOTPRINT_BASELINE = "R1.20"
+FOOTPRINT = re.compile(r"Footprint:\s*(none\b|cleaned — \S)")
+baseline_at = next(
+    (
+        i
+        for i, row in enumerate(full_log)
+        if re.match(rf"^\| {re.escape(FOOTPRINT_BASELINE)}\b", row)
+    ),
+    None,
+)
+for row in full_log[: baseline_at or 0]:
+    label = row.strip("|").split("|", 1)[0].strip()
+    if "Footprint:" not in row:
+        fail(f"{label}: log row has no 'Footprint:' (IN18)")
+    elif not FOOTPRINT.search(row):
+        fail(f"{label}: 'Footprint:' must be 'none' or 'cleaned — <evidence>' (IN18)")
 
 # Triage by severity (roadmap §2, IN14-IN16). Due is `next`, an increment `R<x>.<y>` or a stage
 # `R<x>`: Critical -> next; High -> an increment; Med/Low -> a stage. An operator's **Scheduling:**

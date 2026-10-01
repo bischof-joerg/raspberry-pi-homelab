@@ -156,7 +156,7 @@ One feature at a time, delivered in small increments, each with its own tests (D
   host configuration must also update the backup inventory, `.env.example`, the reconciliation
   scripts and their postdeploy checks, the network/firewall docs, and the Renovate rules.
 
-The full delivery rules (IN1–IN17), the roadmap R1–R6, the current stage and next increment, the
+The full delivery rules (IN1–IN18), the roadmap R1–R6, the current stage and next increment, the
 R1 findings groups and the newest increment log row are in **`.claude/roadmap.md` — read it at the
 start of every work session.** History is read on demand only, by entry or row, never in full:
 the increment log in `.claude/increment-log.md`, addressed findings in
@@ -200,3 +200,7 @@ the increment log in `.claude/increment-log.md`, addressed findings in
   have caught it and the mechanism — a test or guard before a checker, hook, rule, skill or agent;
   a lesson in roadmap §8 only with the reason why nothing can check it. This includes Claude's own
   wrong claims and predictions.
+- **Leave no trace on the Pi** (IN18): every command Claude hands the operator for the Pi undoes
+  its own temporary changes — measurement scripts run as `sudo bash -s` with a `trap` that removes
+  their `mktemp -d` directory; anything else (an installed tool, a config change) is planned with
+  its undo and proof, undone before the deploy, and the log row states the footprint.
