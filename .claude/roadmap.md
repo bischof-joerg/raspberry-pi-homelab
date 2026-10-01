@@ -34,7 +34,12 @@ is read at the start of any work session. The Claude transition (R0) is complete
   a writable path at start (for example `/tmp`) is [I], to be checked in the plan with a
   `tmpfs` only where measured. R1.21 also carries F66 part B (group l, Due R1.21): a postdeploy
   check that no diagnostic package (`bpftrace`) is installed — so `bpftrace` leaves the Pi before
-  R1.21's deploy, and any measurement runs under IN18. Then `pid: host` and `/dev/kmsg`, one
+  R1.21's deploy, and any measurement runs under IN18 — and F67 (group l, Due R1.21 by the
+  operator): an `sshd` drop-in from the repository that turns off every forwarding (VS Code
+  Remote-SSH), postdeploy checks for it, for no `~/.vscode-server` and for a denylist of
+  development packages shared with F66 part B. The development leftovers were removed by hand on
+  2026-10-01 (F67 Evidence). Three concerns: the plan decides whether R1.21 stays one increment
+  (IN2). Then `pid: host` and `/dev/kmsg`, one
   increment each, measured by `test_25`. F57's socket part needs a decision first: switch Docker to
   `overlay2` (own ADR, after the R3 backup is proven) or accept the risk in an ADR. Other
   candidates: the rest of group h — F47 (doctor test skips instead of pulling), F23/F25
@@ -165,7 +170,7 @@ first, then the mechanisms other fixes depend on.
 | h | Toolchain and dead tests | F23, F25, F47, F11, F56 | F49, F21, F22, F59 | F21 + F22 done as R1.4–R1.6; F59 as R1.14; rest low risk, quick |
 | j | Host update path with a read-only firmware partition | — | F60 | Found 2026-09-29 while preparing the F57 capability trace; pulled forward from R3b by the operator the same day, before R1.15, because every APT run fails and security updates are blocked. R1.15 deployed (APT hook, ADR-0013); first unattended-upgrades run with the hook successful (2026-09-30); permanent postdeploy checks as R1.17 (2026-10-01). Group done |
 | k | Host evidence that survives a reboot | — | F62 | Found 2026-10-01 after R1.17 (volatile journal, `Storage=volatile` measured); pulled forward by the operator the same day as R1.18, before F57, so that every later reboot leaves evidence. Without an ADR: a reversible configuration installed like `daemon.json` and the APT hook. R1.18 deployed and proven by an attended reboot (2026-10-01). Group done |
-| l | Leave no trace on the Pi | F66 | — | Found 2026-10-01 after R1.20 (measurement files in `/tmp` from R1.19 and R1.20, `bpftrace` still installed); pulled forward by the operator before R1.21 so that R1.21 runs under IN18. Part A (IN18, footprint check in `check_findings.py`, measurement skeleton in the `increment-plan` skill) before R1.21; part B (postdeploy denylist of diagnostic packages) with R1.21 |
+| l | Leave no trace on the Pi; no development on it | F66, F67 | — | F67 found 2026-10-01 in the cleanup after F66 (VS Code remote server, compiler chain, kernel headers, pip on the Pi), Due R1.21 by the operator. F66 found 2026-10-01 after R1.20 (measurement files in `/tmp` from R1.19 and R1.20, `bpftrace` still installed); pulled forward by the operator before R1.21 so that R1.21 runs under IN18. Part A (IN18, footprint check in `check_findings.py`, measurement skeleton in the `increment-plan` skill) before R1.21; part B (postdeploy denylist of diagnostic packages) with R1.21 |
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2e | Host best-practice baseline | F64 | — | Stage R2 (IN15: Med found in R1 → next stage). Found 2026-10-01 as the lesson of F62/F63: a baseline with sources, audited at every stage close, feeds IN14 |
 | R2a | Stack review against rules and guidelines (§9.3) | F65 | — | Stage R2 (IN15: Low found in R1 → next stage). F65 found 2026-10-01 in cadvisor's log during the R1.19 capability trace; decided together with F57's socket question |
