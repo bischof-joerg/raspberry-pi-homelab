@@ -25,16 +25,18 @@ is read at the start of any work session. The Claude transition (R0) is complete
   hooks also cover new, untracked files); group j — F60 as R1.15 (APT remount hook for the
   read-only `/boot/firmware`, ADR-0013) and R1.17 (permanent postdeploy checks: `dpkg --audit`
   empty, boot files equal the running kernel's); F7's `restart` part as R1.16; group k — F62 as
-  R1.18 (persistent journal, proven by an attended reboot). See §6 and `.claude/increment-log.md`.
-- **Next increment:** R1.19 F57 `cap_drop` with a measured capability set (group b); its baseline
-  was measured on 2026-09-29 (`CapEff` `0xa80425fb`, Docker's default set; `dmesg_restrict = 0`;
-  `docker diff` shows no writes; 56 `name=` families), the `bpftrace` trace is pending, and
-  `bpftrace` stays installed on the Pi until then. Further candidates: (1) group b — F57's hardening
-  steps that do not touch the sockets (`cap_drop`, `no-new-privileges`, `read_only`, then
-  `pid: host` and `/dev/kmsg`), one increment per step, each measured by `test_25`; F57's socket
-  part needs a decision first: switch Docker to `overlay2` (own ADR, after the R3 backup is
-  proven) or accept the risk in an ADR. (2) the rest of group h — F47 (doctor test skips instead
-  of pulling), F23/F25 (`lint`-marked tests never run), F11, F56 — small, no Pi runtime effect.
+  R1.18 (persistent journal, proven by an attended reboot); F57's `cap_drop` as R1.19 (cadvisor
+  keeps only `DAC_OVERRIDE`, measured by a `cap_capable` trace, ADR-0011 amendment 2026-10-01).
+  See §6 and `.claude/increment-log.md`.
+- **Next increment:** R1.20 F57 `no-new-privileges` for cadvisor (group b; Due moved to R1.20 by
+  the operator, IN16). Measured on 2026-09-29: `docker diff` shows no writes; cadvisor runs as
+  root with `CapEff 0x2` since R1.19, so `no-new-privileges` should only stop gains through
+  setuid binaries and file capabilities — whether cadvisor execs any is [I], to be checked in the
+  plan. Then the remaining F57 steps, one increment each, measured by `test_25`: `read_only`,
+  then `pid: host` and `/dev/kmsg`. F57's socket part needs a decision first: switch Docker to
+  `overlay2` (own ADR, after the R3 backup is proven) or accept the risk in an ADR. Other
+  candidates: the rest of group h — F47 (doctor test skips instead of pulling), F23/F25
+  (`lint`-marked tests never run), F11, F56 — small, no Pi runtime effect.
 - **Stages re-planned on 2026-09-26:** a new R2 (quality and lifecycle, §9) sits between R1 and
   backup (now R3); a new R4 (service standard, §9.7) follows backup; core and apps moved to R5
   and R6.
@@ -150,7 +152,7 @@ first, then the mechanisms other fixes depend on.
 | Group | Scope | Open | Done | Why this order / state |
 |---|---|---|---|---|
 | a | Alertmanager renderer: modes, errors, escaping, determinism | F26b | F26, F35, F36, F8, F39, F48 | Done except F26b's restore fixture test, which needs the R3 backup harness (F9) |
-| b | Docker socket and privilege | F57 | F28, F46, F34, F30, F58 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; F46 (4) `privileged` dropped in R1.7 (ADR-0011); F34 reason recorded and networks pinned in R1.8; `docker-api` network in R1.9; socket proxy for vector in R1.10 (F30, ADR-0012). R1.11 cadvisor on the proxy reverted — containerd image store needs the containerd socket (F57 socket part blocked, decision open). R1.12 per-service config hash for vector, R1.13 vector API on loopback (F58). Next: F57 hardening without the sockets |
+| b | Docker socket and privilege | F57 | F28, F46, F34, F30, F58 | Host-root equivalence. F46 (2)+(3) docs/ADR-0010/allowlist in R1.3; F46 (4) `privileged` dropped in R1.7 (ADR-0011); F34 reason recorded and networks pinned in R1.8; `docker-api` network in R1.9; socket proxy for vector in R1.10 (F30, ADR-0012). R1.11 cadvisor on the proxy reverted — containerd image store needs the containerd socket (F57 socket part blocked, decision open). R1.12 per-service config hash for vector, R1.13 vector API on loopback (F58). R1.19 cadvisor `cap_drop: [ALL]` + `DAC_OVERRIDE` (F57, measured). Next: R1.20 `no-new-privileges`, then `read_only`, `pid: host`, `/dev/kmsg` |
 | c | LAN exposure and firewall contract | F45, F31, F42, F15 | — | F45 needs a Pi-side measurement first; decides F15 |
 | d | Config hash that works | F1, F2, F29, F13 | — | Makes every later config change actually deploy; candidate: `up --renew-anon-volumes` (F48) |
 | f | Compose contract guard test | F41, F7, F33, F27, F32, F38 | — | One test file becomes the home of all hardening checks. F7's `restart` part done as R1.16 (2026-09-29); its healthchecks stay here |
@@ -175,7 +177,7 @@ increment's history matters. This section holds only the newest row.
 
 | Increment | Date | Commit | CI | Deploy + postdeploy | Notes |
 |---|---|---|---|---|---|
-| Findings lifecycle (A archive + log, B triage, B4 prevention) | 2026-10-01 | A `def1c30` (tests), `d4eb6a3`; B `b44aa4d` (tests), `07221dd`, `2905397`; B4 `71f2399` (tests), `a21f02b`; merge `1eeffe0` (PR #60) | green (local `make ci` after every commit; PR CI before merge per IN12, operator) | no deploy needed — `.claude/` and `tests/guards` only, no runtime effect on the Pi | Prompted by F62/F63 surfacing by accident. A: 21 addressed findings to `repo-findings-archive.md`, 22 log rows to `increment-log.md`, moves verified byte-identical against `HEAD` except F56 (intended wording) and F40 (trailing blank line); report 120 → 62 KB, roadmap 55 → 37 KB. B: IN14 capture, IN15 schedule by severity (Critical next, High increment after next, Med/Low next stage), IN16 operator override; index gains Found/Due (64 rows migrated, F57 `R1.19`), severity Critical, F64 (host best-practice baseline, Med, R2e); B3 links the R4 service DoD ("Runtime prerequisites") and stage-close service reviews to it. B4: IN17 prevention for every finding and failure, **Prevention** required from F64 on. `check_findings.py` now runs in `make ci` via `test_58` (25 tests, each new rule verified with `--runxfail`). Failures on the way: `make ci` red twice on `ruff format`/`ruff` rewrites (A2, B2) and once on the checker's path rule (`cmdline.txt` in F63's evidence, fixed with `(absent)`); B1 promised three tests as "fail today" that already passed — they became guards without a marker. Prevention: the latter is now a step of the `increment-plan` skill (run every planned test against today's code before classifying it); the ruff rewrites need none, since the gate itself catches them and only formatting changed. Open: F26b (High, `partly`, Due R1) needs an operator decision (IN16) before R1 closes — its restore test belongs to R3/F9. |
+| R1.19 F57 cadvisor `cap_drop` | 2026-10-01 | `daf5b27` (tests), `4d6f830` (fix), `e9d404d` (F65, lessons); merge `0eb4678` (PR #62) | green (local `make ci` after every commit; PR CI before merge per IN12, operator) | deploy 13:16: `tests: passed`, postdeploy `88 passed, 3 skipped` (predicted 88: 87 before + `test_cadvisor_runs_with_measured_capabilities`); cadvisor `CapEff 0000000000000002` (operator) | Measured first on the Pi (operator): no BTF, so kprobe/kretprobe on `cap_capable`. The first trace missed cadvisor's start (restart ran before it); the second ran as one script, `StartedAt` 10 s after the trace began, one process, `CapEff 0xa80425fb`. Only `DAC_OVERRIDE` was used with cadvisor's own credentials; `DAC_READ_SEARCH`, `FOWNER`, `SYS_ADMIN` were granted only below overlayfs's mounter-credential paths (`DAC_READ_SEARCH`, `SYS_ADMIN` not in `CapEff`). Result `cap_drop: [ALL]`, `cap_add: [DAC_OVERRIDE]`, ADR-0011 amendment 2026-10-01. Guards `test_every_service_drops_all_capabilities` (cap_drop part of F41) and `test_cadvisor_cap_add_is_the_measured_set`, both strict xfail verified with `--runxfail`. Guard refusals: a heredoc append (`/status` in the text read as a redirect target; done with Edit) and `docker compose --env-file … config` (rendering covered by the guards). Failures: the first trace's coverage and Claude's advance rule "add every granted capability", which would have granted `SYS_ADMIN`. Prevention: `increment-plan` skill step "Measure on the Pi with one script" and lesson §8 — nothing in CI sees a Pi measurement (C5). New F65 (Low, R2a): cadvisor `fsHandler` `ENOENT` on container root filesystems under the containerd image store. F57 stays `open`; Due moved to R1.20 by the operator (IN16) for `no-new-privileges`. `bpftrace` may be removed from the Pi. |
 
 ## 8. Lessons from R1 worth keeping in mind
 
