@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from tests._helpers import REPO_ROOT, run
+from tests._lib.journald import effective_settings
 
 pytestmark = pytest.mark.postdeploy
 
@@ -41,8 +42,6 @@ def test_installed_dropin_is_root_owned() -> None:
 
 
 def test_effective_journald_storage_is_persistent() -> None:
-    from tests._lib.journald import effective_settings
-
     res = run(["systemd-analyze", "--no-pager", "cat-config", "systemd/journald.conf"])
     assert res.returncode == 0, f"❌ systemd-analyze cat-config failed:\n{res.stderr}"
     storage = effective_settings(res.stdout).get("Storage")

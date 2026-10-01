@@ -22,9 +22,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.xfail(
-    strict=True, reason="R1.18 (F62): persistent journald drop-in not implemented yet"
-)
+from tests._lib.journald import effective_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DROPIN = REPO_ROOT / "stacks/core/journald/60-homelab-persistent.conf"
@@ -41,8 +39,6 @@ exit 0
 
 
 def _settings(text: str) -> dict[str, str]:
-    from tests._lib.journald import effective_settings
-
     return effective_settings(text)
 
 

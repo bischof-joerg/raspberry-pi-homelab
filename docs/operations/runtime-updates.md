@@ -141,6 +141,24 @@ A runtime maintenance change is accepted only when all of the following are true
 - No unexpected failed systemd units remain.
 - Exposed services are reachable only through the intended routes and ports.
 
+### 1.6 Persistent journal
+
+Raspberry Pi OS ships `/usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf` with
+`Storage=volatile`, so by default every reboot erased the host journal (finding F62). `deploy.sh`
+installs `stacks/core/journald/60-homelab-persistent.conf` to `/etc/systemd/journald.conf.d/`
+(`scripts/host/ensure-journald-persistent.sh`); it sorts after the distribution's drop-in and sets
+`Storage=persistent`, `SystemMaxUse=1G` and `SystemKeepFree=4G`. journald is restarted and flushed
+only when the file changed. `/var/log/journal` is not backed up (ADR-009 §4); it is evidence, not
+state.
+
+- After a reboot, `journalctl --list-boots` lists the earlier boots; `journalctl -b -1` shows the
+  previous one, for example the unattended-upgrades run and the `homelab-boot-firmware` remounts
+  before it.
+- `make postdeploy` checks the installed file, the merged configuration
+  (`systemd-analyze cat-config systemd/journald.conf`) and `/var/log/journal/<machine-id>/`.
+- A `git revert` of the drop-in leaves the installed file in place. To return to a volatile journal:
+  `sudo rm /etc/systemd/journald.conf.d/60-homelab-persistent.conf && sudo systemctl restart systemd-journald`.
+
 ---
 
 ## 2. Background: update domains
