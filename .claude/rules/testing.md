@@ -52,6 +52,11 @@ with** the implementation, never afterwards.
   `make ci` never runs that directory — the seven checks of `test_26_docker_socket_proxy.py`
   were lost this way on the first R1.10 deploy. `tests/guards/test_43_postdeploy_markers.py` now
   fails on any unmarked postdeploy test; mark the module with `pytestmark`.
+- `make ci`'s pytest pre-commit hook **imports** every module under `tests/postdeploy` before the
+  marker filter deselects it. In a tests-first commit, a postdeploy test must therefore not import
+  a module the fix commit creates at module level — import it inside the test function, and move
+  the import up in the fix commit (R1.18: `ModuleNotFoundError: No module named
+  'tests._lib.journald'`).
 
 ## Backup has no tests yet
 

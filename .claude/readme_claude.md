@@ -31,9 +31,11 @@ Claude Code **2.1.280** installed (live hook tests last run on 2.1.280 — see �
 | `rules/*.md` (8) | Topic rules, each path-scoped via `paths` | when Claude **reads** a matching file | Claude, operator reviews | `tools/check_rules.py` |
 | `skills/*/SKILL.md` (8) | Invokable procedures | description every turn, body on invocation | Claude, operator reviews | `tools/check_skills.py` |
 | `agents/*.md` (4) | Read-only subagents (`tools: Read, Grep, Glob`) | description at startup; edits hot-reloaded | Claude, operator reviews | `tools/check_agents.py` |
-| `tools/*.py` (4) | Verifiers for rules, skills, agents, findings | run by hand | Claude, operator reviews | `ruff check` |
-| `reports/repo-findings.md` | Findings F1–F57 (+F26b) with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
-| `roadmap.md` | Living plan: status and next increment, delivery rules IN1–IN13, roadmap R1–R6 with stage plans, findings groups, increment log | read at session start | Claude, operator reviews | `tools/check_findings.py` (groups) |
+| `tools/*.py` (4) | Verifiers for rules, skills, agents, findings | run by hand; `check_findings.py` also by `make ci` (`tests/guards/test_58_findings_check.py`) | Claude, operator reviews | `ruff check` |
+| `reports/repo-findings.md` | Index of all findings; entries of open and partly addressed ones with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
+| `reports/repo-findings-archive.md` | Entries of `addressed` findings, unchanged, with their resolution | only when read, by entry | Claude, operator reviews | `tools/check_findings.py` |
+| `roadmap.md` | Living plan: status and next increment, delivery rules IN1–IN17, roadmap R1–R6 with stage plans, findings groups, newest increment log row | read at session start | Claude, operator reviews | `tools/check_findings.py` (groups, §7) |
+| `increment-log.md` | Increment log R1 onwards, newest first | only when read, by row | Claude, operator reviews | `tools/check_findings.py` (newest row = roadmap §7) |
 | `ClaudeTransition.md` | **Archive** (R0, complete, since 2026-09-26 not maintained): decision log, guard design §5.4, verification records | only when read | nobody; frozen | – |
 | `scratch/` | Drafts (ADR drafts, patch proposals) — **git-ignored** | – | Claude | not in a fresh clone |
 | `logs/guard.log`, `logs/instructions.log` | Guard decisions (JSON lines), instruction-load events — **git-ignored** | – | written by hooks | grow unbounded; truncate by hand |
@@ -329,7 +331,7 @@ reason `path_glob_match`, and that `docs-adr.md`, `host-runtime.md` and `backup-
 .venv/bin/python .claude/tools/check_rules.py      # 8 rules, all with `paths`, cited files exist
 .venv/bin/python .claude/tools/check_skills.py     # 8 skills, description budget ~1,236 chars
 .venv/bin/python .claude/tools/check_agents.py     # 4 agents, `tools` present and read-only
-python3 .claude/tools/check_findings.py            # 48 findings, all fields, index in sync
+python3 .claude/tools/check_findings.py            # findings + archive + index + roadmap §6/§7 in sync
 ```
 
 Each prints `0 failure(s)` and exits 0 when healthy. Finally, run the read-only gate — **one** of:
@@ -398,7 +400,7 @@ settings denies `Edit(/.claude/hooks/**)`, `Edit(/.claude/settings.json)`,
    source under `.claude/hooks/` is refused by the settings layer.
 2. Claude patches and tests the copy there, including a differential run against the live guard
    when existing behaviour must not change. It records what changed and why in the relevant
-   record (the increment log in `roadmap.md` §7).
+   record (the increment log, `increment-log.md`).
 3. You review with `diff -u`, then `cp` the files into place.
 4. Claude verifies the result with `cmp` against the tested copy and runs §5.2.
 
@@ -423,15 +425,21 @@ with `/hooks`.
 
 - The report is the source of truth, with its own index. The R1 grouping (open/done per group)
   is in `roadmap.md` §6.
-- New finding: add an entry with all five fields and a row in the report index. If its status is
-  not `addressed`, add it under "Open" of its group in `roadmap.md` §6. Then run
+- New finding (IN14): add an entry with all five fields plus **Prevention** (IN17, required from
+  F64 on) and a row in the report index with its
+  severity, the **Found** date and the **Due** that IN15 gives (Critical `next`, High `R<x>.<y>`,
+  Med/Low `R<x>`); an operator override goes into a `**Scheduling:**` line (IN16). If its status
+  is not `addressed`, add it under "Open" of its group in `roadmap.md` §6. Then run
   `tools/check_findings.py`, which checks both.
-- Finding fixed: set the index status to `addressed` and move it from "Open" to "Done" of its group.
+- Finding fixed: set the index status to `addressed`, move it from "Open" to "Done" of its group,
+  and move its entry unchanged to `reports/repo-findings-archive.md`; the index row stays.
+  `make ci` runs the checker through `tests/guards/test_58_findings_check.py`.
 - Mark a missing file as `` `path` (absent) ``. The checker verifies that it really is absent.
 
 ### 6.7 After a Claude Code update
 
-1. `claude --version`, and record it as a row in the increment log (`roadmap.md` §7).
+1. `claude --version`, and record it as a row in the increment log (`increment-log.md`, and as
+   the single row of `roadmap.md` §7).
 2. Run §5 completely, including the live checks in §5.4.
 3. Skim the version notes of the settings, hooks, memory, skills and sub-agents docs. The URLs are
    in `ClaudeTransition.md` §11 (archive, still valid as a link list).

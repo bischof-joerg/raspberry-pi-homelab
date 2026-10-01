@@ -14,6 +14,13 @@ A new feature starts only after the previous one is deployed **and** its postdep
 (IN1). If the last increment failed to deploy, the answer is not a new plan — it is fix-forward
 within the same scope, or `git revert` via a branch and PR (IN8).
 
+## Then check what is due
+
+Read the Due column of the index in `.claude/reports/repo-findings.md` (IN15). An open **Critical**
+finding (`next`) *is* the next increment; a **High** finding due at the increment number you are
+about to plan comes before anything else. Run `python3 .claude/tools/check_findings.py`: an
+overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
+
 ## How to split
 
 - One increment changes **one concern** and is small enough to review in one sitting.
@@ -23,6 +30,13 @@ within the same scope, or `git revert` via a branch and PR (IN8).
   `tests/precommit` or `tests/guards`, runtime behaviour in `tests/postdeploy`.
 - Prefer a first increment that makes the contract **enforceable** (a failing test, marked `xfail`)
   over one that fixes the symptom. Then remove one marker per increment.
+- **Run every planned test against today's code before classifying it.** Only a test that fails
+  now, for the intended reason (`--runxfail`), is a strict xfail; one that already passes is a
+  guard without a marker. Do not promise "fails today" without having run it (IN17, B1 of the
+  findings lifecycle: three tests promised as failing passed).
+- **Fill the Prevention line (IN17)** for whatever finding or failure the increment fixes: the
+  earliest rung that could have caught it and the mechanism, preferring a test or guard over a
+  rule, skill or lesson.
 
 ## Output — one block per increment, template from `.claude/roadmap.md` §3
 
@@ -42,6 +56,7 @@ within the same scope, or `git revert` via a branch and PR (IN8).
 - Acceptance: <observable postdeploy criteria>
 - Rollback: git revert <merge-or-commit> on a fix branch → PR → merge → Pi: git pull --ff-only; sudo ./deploy.sh
 - Backup/docs/Renovate impact (IN9):
+- Prevention (IN17): how recurrence of what this increment fixes is caught earlier, and by which mechanism
 ```
 
 ## The IN9 question is not optional
