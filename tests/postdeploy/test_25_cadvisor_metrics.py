@@ -1,6 +1,9 @@
 # tests/postdeploy/test_25_cadvisor_metrics.py
+import json
 import os
+import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -147,4 +150,41 @@ def test_cadvisor_docker_socket_is_read_only():
     assert rw == "false", (
         f"❌ {CADVISOR_CONTAINER}: /var/run/docker.sock mount RW={rw!r}, expected 'false' (F28).\n"
         "Fix: mount it with :ro in stacks/monitoring/compose/docker-compose.yml and redeploy."
+    )
+
+
+# F57: cap_drop [ALL] plus the measured set (ADR-0011, amendment 2026-10-01). Bit 1 = DAC_OVERRIDE.
+EXPECTED_CAP_ADD = {"DAC_OVERRIDE"}
+EXPECTED_CAP_EFF = 1 << 1
+
+
+def _caps(raw: str) -> set[str]:
+    # Docker may store a capability with or without the CAP_ prefix.
+    return {cap.upper().removeprefix("CAP_") for cap in json.loads(raw) or []}
+
+
+@pytest.mark.postdeploy
+def test_cadvisor_runs_with_measured_capabilities():
+    """F57: cadvisor runs with cap_drop ALL and only DAC_OVERRIDE, in config and in the process."""
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
+
+    fmt = "{{json .HostConfig.CapDrop}}|{{json .HostConfig.CapAdd}}|{{.State.Pid}}"
+    res = run(["docker", "inspect", CADVISOR_CONTAINER, "--format", fmt])
+    assert res.returncode == 0, f"❌ docker inspect {CADVISOR_CONTAINER} failed:\n{res.stderr}"
+    cap_drop, cap_add, pid = res.stdout.strip().split("|")
+    assert _caps(cap_drop) == {"ALL"} and _caps(cap_add) == EXPECTED_CAP_ADD, (
+        f"❌ {CADVISOR_CONTAINER}: CapDrop={cap_drop}, CapAdd={cap_add}; expected CapDrop "
+        f"[ALL] and CapAdd {sorted(EXPECTED_CAP_ADD)} (F57).\n"
+        "Fix: redeploy so the container is recreated from stacks/monitoring/compose/"
+        "docker-compose.yml."
+    )
+
+    status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
+    match = re.search(r"^CapEff:\s*([0-9a-f]+)$", status, flags=re.MULTILINE)
+    assert match, f"❌ /proc/{pid}/status has no CapEff line:\n{status}"
+    cap_eff = int(match.group(1), 16)
+    assert cap_eff == EXPECTED_CAP_EFF, (
+        f"❌ cadvisor (pid {pid}) has CapEff {cap_eff:#x}, expected {EXPECTED_CAP_EFF:#x} (F57).\n"
+        "Fix: compare `grep Cap /proc/<pid>/status` with cap_drop/cap_add in the compose file."
     )

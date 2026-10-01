@@ -83,3 +83,40 @@ image (`ghcr.io/google/cadvisor:v0.60.5`) and kernel.
   - `test_cadvisor_exports_named_container_metrics` — every family above is exported with
     `name=` for each checked service;
   - `test_cadvisor_docker_socket_is_read_only` — the socket mount stays `:ro` (F28).
+
+## Amendment 2026-10-01 — capabilities (F57, R1.19)
+
+cadvisor drops every capability and adds back only `DAC_OVERRIDE`. This narrows the
+"Negative / Tradeoffs" point that it runs without `cap_drop`; the socket, `pid: host`, `/dev/kmsg`
+and `read_only` points stay as written.
+
+**Measurement** (operator, on the Pi, 2026-10-01). Before: one cadvisor process with Docker's
+default set, `CapEff 0xa80425fb`. A `bpftrace` kprobe/kretprobe pair on `cap_capable`, filtered to
+`comm == "cadvisor"`, ran for 240 s across a cadvisor restart (`StartedAt` ten seconds after the
+trace began) and a full postdeploy run (87 passed, 3 skipped). The kernel has no BTF, so `fexit`
+was not available. Result per capability (granted / denied), with the kernel stacks of 1–3:
+
+| Capability | Granted | Denied | Credentials of the check |
+|---|---|---|---|
+| `DAC_OVERRIDE` (1) | 8 | 0 | cadvisor's own: `generic_permission` called directly from `ovl_permission` |
+| `DAC_READ_SEARCH` (2) | 16 | 8 | denied on the same direct path; granted only below `ovl_permission`'s `inode_permission` call and `ovl_path_open` |
+| `FOWNER` (3) | 120 | 0 | only below `ovl_path_open` |
+| `NET_ADMIN` (12) | 0 | 4 | `CAP_OPT_NOAUDIT` |
+| `SYS_ADMIN` (21) | 3732 | 57 | no stack recorded; the denials with `CAP_OPT_NOAUDIT` |
+
+overlayfs checks the overlay inode with the task's credentials and the underlying inode with
+the credentials of the mounter. `DAC_READ_SEARCH` and `SYS_ADMIN` are not in cadvisor's
+`CapEff`, so their granted checks cannot have used its own credentials; `FOWNER` appears only on
+the mounter's paths. `DAC_OVERRIDE` is the only capability cadvisor used itself. Denied checks
+fail today already and grant nothing.
+
+**Decision.** `cap_drop: [ALL]` and `cap_add: [DAC_OVERRIDE]`; the expected `CapEff` is
+`0x0000000000000002`. Which overlay directories need `DAC_OVERRIDE` was not measured; without it
+those opens would fail with `EACCES`, and whether a metric family depends on them is not known,
+so it is granted rather than assumed away. A further capability needs a new measurement and
+another amendment.
+
+**Enforcement.** `tests/guards/test_10_monitoring_compose_contract.py`:
+`test_every_service_drops_all_capabilities`, `test_cadvisor_cap_add_is_the_measured_set`.
+`tests/postdeploy/test_25_cadvisor_metrics.py`: `test_cadvisor_runs_with_measured_capabilities`
+(`CapDrop`, `CapAdd` and the process's `CapEff` on the Pi).

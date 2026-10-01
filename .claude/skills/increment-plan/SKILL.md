@@ -34,6 +34,12 @@ overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
   now, for the intended reason (`--runxfail`), is a strict xfail; one that already passes is a
   guard without a marker. Do not promise "fails today" without having run it (IN17, B1 of the
   findings lifecycle: three tests promised as failing passed).
+- **Measure on the Pi with one script.** When an increment needs an operator measurement, give it
+  as one script that enforces the order (no "meanwhile, in a second terminal") and prints evidence
+  that the measured window covers what matters — for example a container's `StartedAt` after the
+  trace began. Check every decision rule fixed in advance against a known value before applying
+  it; a capability trace counts only checks the process passed with its own credentials, so every
+  granted capability must also be in its `CapEff` (R1.19, roadmap §8).
 - **Fill the Prevention line (IN17)** for whatever finding or failure the increment fixes: the
   earliest rung that could have caught it and the mechanism, preferring a test or guard over a
   rule, skill or lesson.
