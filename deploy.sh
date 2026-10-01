@@ -53,6 +53,10 @@ DOCKER_DAEMON_SCRIPT="${DOCKER_DAEMON_SCRIPT:-$REPO_ROOT/scripts/host/ensure-doc
 ENSURE_APT_BOOT_FIRMWARE_HOOK="${ENSURE_APT_BOOT_FIRMWARE_HOOK:-1}"  # 1|0
 APT_BOOT_FIRMWARE_SCRIPT="${APT_BOOT_FIRMWARE_SCRIPT:-$REPO_ROOT/scripts/host/ensure-apt-boot-firmware-hook.sh}"
 
+# Persistent journal: journald drop-in overriding Raspberry Pi OS's Storage=volatile (F62)
+ENSURE_JOURNALD_PERSISTENT="${ENSURE_JOURNALD_PERSISTENT:-1}"  # 1|0
+JOURNALD_PERSISTENT_SCRIPT="${JOURNALD_PERSISTENT_SCRIPT:-$REPO_ROOT/scripts/host/ensure-journald-persistent.sh}"
+
 # repo ownership handling
 FIX_REPO_OWNERSHIP="${FIX_REPO_OWNERSHIP:-auto}"         # auto|always|never
 REPO_OWNER_USER="${REPO_OWNER_USER:-admin}"
@@ -118,6 +122,17 @@ ensure_apt_boot_firmware_hook() {
   log "apt-boot-firmware: ensure"
   "$APT_BOOT_FIRMWARE_SCRIPT" apply
   log "apt-boot-firmware: ensure done"
+}
+
+ensure_journald_persistent() {
+  [[ "$ENSURE_JOURNALD_PERSISTENT" == "1" ]] || {
+    log "journald-persistent: skipped (ENSURE_JOURNALD_PERSISTENT=0)"
+    return 0
+  }
+  [[ -x "$JOURNALD_PERSISTENT_SCRIPT" ]] || die "journald-persistent script not executable: $JOURNALD_PERSISTENT_SCRIPT"
+  log "journald-persistent: ensure"
+  "$JOURNALD_PERSISTENT_SCRIPT" apply
+  log "journald-persistent: ensure done"
 }
 
 refuse_repo_root_env() {
@@ -333,6 +348,8 @@ main() {
 
   validate_secrets_file
 
+  # before the read-access step, so it also covers /var/log/journal/<machine-id> (F62)
+  ensure_journald_persistent
   ensure_journald_read_access
 
   bootstrap_networks
