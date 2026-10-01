@@ -39,7 +39,13 @@ overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
   that the measured window covers what matters — for example a container's `StartedAt` after the
   trace began. Check every decision rule fixed in advance against a known value before applying
   it; a capability trace counts only checks the process passed with its own credentials, so every
-  granted capability must also be in its `CapEff` (R1.19, roadmap §8).
+  granted capability must also be in its `CapEff` (R1.19, roadmap §8). The script is saved as a
+  file and run with `sudo bash <file>`, never pasted into a login shell; it checks root, the
+  checkout path on the Pi (not the WSL path) and every tool **before** it changes anything such as
+  a restart. Read what you filter on instead of assuming it — print a container's entrypoint
+  before seeding a trace on it. A tracing probe proves itself first: wait for a `BEGIN` marker,
+  then catch a known event (`/bin/true`) through the **same probe and predicate** the measurement
+  uses, and stop if it does not appear (R1.20, roadmap §8).
 - **Fill the Prevention line (IN17)** for whatever finding or failure the increment fixes: the
   earliest rung that could have caught it and the mechanism, preferring a test or guard over a
   rule, skill or lesson.
