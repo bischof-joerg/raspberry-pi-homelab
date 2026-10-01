@@ -157,3 +157,32 @@ user or group through a setuid/setgid file — for example one under the host `/
 `test_every_service_sets_no_new_privileges` (every service, F41).
 `tests/postdeploy/test_25_cadvisor_metrics.py`: `test_cadvisor_runs_without_new_privileges`
 (`HostConfig.SecurityOpt` and the process's `NoNewPrivs: 1` on the Pi).
+
+## Amendment 2026-10-01 — read_only (F57, R1.21)
+
+cadvisor runs with `read_only: true` and no `tmpfs`. This settles the `read_only` point of
+"Negative / Tradeoffs"; the socket, `pid: host` and `/dev/kmsg` points stay as written.
+
+**Measurement** (operator, on the Pi, 2026-10-01, one script, `ReadonlyRootfs false`). The image
+`ghcr.io/google/cadvisor:v0.60.5` declares no `VOLUME`. cadvisor was restarted and ran for 90 s,
+longer than `--max_housekeeping_interval=60s`; its log since the restart had no `read-only`,
+`permission denied` or `no space` line. `docker diff` over the container's whole life (created at
+the R1.20 deploy) listed ten entries, all of them bind-mount targets from the compose file and
+their parent directories: `A /etc/machine-id`, `A /rootfs`, `A /run/containerd/containerd.sock`,
+`A /run/docker.sock` (`/var/run` is a symlink to `/run`), `A /var/lib/docker`, and `C /etc`,
+`C /run`, `C /var`, `C /var/lib`. Docker creates these mount points when it creates the container,
+a read-only root filesystem included. A self-test after the measurement checked that `docker diff`
+shows a file the container writes (`A /tmp/.r121probe`); the file was removed again.
+
+The decision rule fixed in advance ("an empty diff means no `tmpfs`") did not foresee the mount
+targets; the rule that held is "the diff minus the mount targets in `.Mounts`".
+
+**Decision.** `read_only: true`. A write cadvisor did not show in this window would fail with
+`EROFS`; the postdeploy check below reads its log for that. A `tmpfs` is added only for a path
+measured that way, with another amendment.
+
+**Enforcement.** `tests/guards/test_10_monitoring_compose_contract.py`:
+`test_every_service_has_a_read_only_rootfs` (every service; grafana is the one exception, tracked
+by F41) and `test_read_only_exceptions_are_current`.
+`tests/postdeploy/test_25_cadvisor_metrics.py`: `test_cadvisor_root_filesystem_is_read_only`
+(`HostConfig.ReadonlyRootfs` on the Pi) and `test_cadvisor_logs_no_write_errors_since_start`.
