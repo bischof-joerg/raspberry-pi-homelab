@@ -4,6 +4,7 @@ import re
 from functools import cache
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tests._lib.compose import render_compose
@@ -22,6 +23,10 @@ VECTOR_CONFIG = REPO_ROOT / "stacks/monitoring/vector/vector.yaml"
 PRIVILEGED_ALLOWLIST: dict[str, str] = {}
 # F46 step 4: the ADR that records cadvisor running without `privileged` (supersedes ADR-0010).
 CADVISOR_ADR = "docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md"
+# F57: the capabilities cadvisor adds back after `cap_drop: [ALL]`. DAC_OVERRIDE is the only one
+# it used with its own credentials in the cap_capable trace of 2026-10-01; every other granted
+# check ran with overlayfs's mounter credentials (ADR-0011, amendment 2026-10-01).
+CADVISOR_CAP_ADD = {"DAC_OVERRIDE"}
 
 REQUIRED_SERVICES = {
     "victoriametrics",
@@ -216,6 +221,41 @@ def test_cadvisor_is_not_privileged() -> None:
         f"❌ cadvisor sets privileged={privileged!r} (F46 step 4).\n"
         f"Fix: drop `privileged: true`; {CADVISOR_ADR} records that it is not needed. If metrics "
         "are missing without it, add the smallest `cap_add` set instead."
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="R1.19: cadvisor has no cap_drop yet (F57)")
+def test_every_service_drops_all_capabilities() -> None:
+    # F41 (cap_drop part), F57: a service keeps Docker's default capability set unless it drops it.
+    wrong = {
+        name: service.get("cap_drop")
+        for name, service in _services().items()
+        if service.get("cap_drop") != ["ALL"]
+    }
+    assert not wrong, (
+        f"❌ Services without `cap_drop: [ALL]` (F41, F57): {wrong}\n"
+        "Fix: add `cap_drop: [ALL]` and add back only measured capabilities with `cap_add`."
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="R1.19: cadvisor has no cap_add yet (F57)")
+def test_cadvisor_cap_add_is_the_measured_set() -> None:
+    cap_add = {
+        name: sorted(service["cap_add"])
+        for name, service in _services().items()
+        if service.get("cap_add")
+    }
+    expected = {"cadvisor": sorted(CADVISOR_CAP_ADD)}
+    assert cap_add == expected, (
+        f"❌ cap_add differs from the measured set (F57): {cap_add}, expected {expected}\n"
+        "Fix: add a capability only after measuring that the service needs it, and record it in "
+        "the service's ADR and here."
+    )
+    adr_text = (REPO_ROOT / CADVISOR_ADR).read_text(encoding="utf-8")
+    unnamed = sorted(cap for cap in CADVISOR_CAP_ADD if cap not in adr_text)
+    assert not unnamed, (
+        f"❌ {CADVISOR_ADR} does not name cadvisor's added capabilities {unnamed} (F57).\n"
+        "Fix: record the measurement that justifies each one in the ADR."
     )
 
 
