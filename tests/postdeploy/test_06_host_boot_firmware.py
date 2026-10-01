@@ -4,6 +4,11 @@
 # read-write only while dpkg runs (scripts/host/ensure-apt-boot-firmware-hook.sh). These checks prove
 # on the Pi that the installed files equal the repository, are root-owned, and that the partition
 # is read-only again after the deploy. The static contract is tests/guards/test_55_boot_firmware_hook.py.
+#
+# R1.17 adds the state F60 left behind unnoticed: dpkg has no half-configured package, and the boot
+# files in /boot/firmware are those of the running kernel. The check is strict: after a kernel
+# update it fails until the reboot (docs/operations/runtime-updates.md §1.5). The classification
+# is proven by tests/guards/test_56_boot_firmware_files.py.
 
 from __future__ import annotations
 
@@ -14,11 +19,13 @@ from pathlib import Path
 import pytest
 
 from tests._helpers import REPO_ROOT, run
+from tests._lib.boot_firmware import FIRMWARE_FILES, check_boot_files, flavour
 
 pytestmark = pytest.mark.postdeploy
 
 ENSURE = REPO_ROOT / "scripts/host/ensure-apt-boot-firmware-hook.sh"
 MOUNTPOINT = "/boot/firmware"
+BOOT = Path("/boot")
 INSTALLED = {
     Path("/etc/apt/apt.conf.d/99homelab-boot-firmware"): 0o644,
     Path("/usr/local/sbin/homelab-boot-firmware"): 0o755,
@@ -56,3 +63,41 @@ def test_boot_firmware_is_read_only_after_deploy() -> None:
         "`journalctl -t homelab-boot-firmware`).\nFix: sudo mount -o remount,ro /boot/firmware "
         "once no process writes to it."
     )
+
+
+def test_dpkg_audit_is_empty() -> None:
+    res = run(["dpkg", "--audit"])
+    assert res.returncode == 0 and not res.stdout.strip(), (
+        f"❌ `dpkg --audit` reports packages in an unfinished state (F60), exit {res.returncode}:\n"
+        f"{res.stdout}{res.stderr}\nEvery further APT run fails until they are configured.\n"
+        "Fix: sudo apt-get -f install (never `dpkg --configure`: dpkg alone bypasses the "
+        "/boot/firmware hook, ADR-0013)."
+    )
+
+
+@pytest.mark.parametrize("name", list(FIRMWARE_FILES["2712"]))
+def test_firmware_boot_file_matches_running_kernel(name: str) -> None:
+    release = os.uname().release
+    try:
+        flavour(release)
+    except ValueError as e:
+        pytest.fail(f"❌ {e} (F60); this check knows only the Pi 5 kernel.")
+    s = check_boot_files(BOOT, Path(MOUNTPOINT), release)[name]
+    if s.state == "reboot-pending":
+        detail = (
+            f"{s.firmware} holds the {name} of {s.other_release}, but {release} is running.\n"
+            "A kernel update is waiting for its reboot; the new boot path is untested.\n"
+            "Fix: sudo reboot, then make postdeploy."
+        )
+    elif s.state == "copy-failed":
+        detail = (
+            f"{s.firmware} equals neither {s.expected} nor any other installed {name}.\n"
+            "The copy into /boot/firmware failed or was changed by hand. Check the hook "
+            "(test_apt_hook_matches_the_repository, `journalctl -t homelab-boot-firmware`).\n"
+            "Fix: reinstall the kernel package with apt-get, after a reviewed host-upgrade plan."
+        )
+    elif s.state == "missing":
+        detail = f"{s.missing} does not exist.\nFix: check the kernel packages before a reboot."
+    else:
+        return
+    pytest.fail(f"❌ Boot file '{name}' does not match the running kernel (F60):\n{detail}")

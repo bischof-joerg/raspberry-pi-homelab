@@ -101,3 +101,8 @@ that fires this trigger changes the boot path; the next reboot is its test.
 - `tests/postdeploy/test_06_host_boot_firmware.py` — on the Pi the installed files equal the
   repository and are `root:root` with modes `0755`/`0644`, and `/boot/firmware` is read-only after
   the deploy.
+- **Amendment (operator, 2026-10-01, R1.17):** the same postdeploy module also checks that
+  `dpkg --audit` is empty and that `kernel_2712.img` and `initramfs_2712` hash-equal the files of the
+  running kernel in `/boot`. The check is strict: after a kernel or initramfs update it fails until
+  the reboot, and its message distinguishes a pending reboot from a failed copy. The
+  classification is proven by `tests/guards/test_56_boot_firmware_files.py`.
