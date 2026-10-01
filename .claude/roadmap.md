@@ -109,7 +109,10 @@ moves to `.claude/reports/repo-findings-archive.md` in the same commit.
 the stage is assigned to a group of the next stage, with Due `R<x+1>` — none is left with the
 closing stage's Due, which `check_findings.py` reports as overdue once **Stage** in §1 moves on;
 (2) from the R2e baseline on (F64), the host best-practice audit is run on the Pi and each
-deviation becomes a finding candidate (IN14).
+deviation becomes a finding candidate (IN14); (3) from R4 on, `service-doc` in *review* mode runs
+for every service changed during the stage (new, upgraded by Renovate, compose or config changed)
+and for every service whose runtime prerequisites name a baseline item that changed — its gaps
+become finding candidates too.
 
 Prerequisites to clarify at the start of the respective stage:
 
@@ -389,12 +392,17 @@ added):
   with a reason, or mandatory only once the mechanism or stage exists; an image scanner is its own
   topic, not introduced through the DoD.
 - Acceptance per IN7 (CI, deploy, postdeploy, log row), not "one successful deployment".
+- **Runtime prerequisites** (added 2026-10-01 with IN14–IN16): the host settings the service
+  relies on but cannot show in its own compose file — for example compose memory limits need the
+  memory cgroup (F63), logs in VictoriaLogs need the journal or the Docker source vector reads.
+  Each refers to an item of the host baseline (R2e, F64) by its ID instead of restating it, with
+  the same evidence rule.
 
 **Claude artefacts.** Rule `service-docs.md` (paths `docs/services/**`, `stacks/**/compose/**`):
 templates are binding; a service change updates its docs in the same increment; evidence, not
 claims. Skill `service-doc` with modes *onboard* (new service: docs from templates, classification,
 derived DoD, increment plan) and *review* (existing service against compose, tests and DoD → gap
-list → findings); it uses the existing agents `compose-reviewer`, `security-reviewer`,
+list → findings, each a finding candidate with severity and Due per IN14/IN15); it uses the existing agents `compose-reviewer`, `security-reviewer`,
 `test-author`, `docs-steward`. No new subagent. `new-stack-proposal` requires both documents.
 
 | Inc | Content | Deploy |
@@ -403,7 +411,7 @@ list → findings); it uses the existing agents `compose-reviewer`, `security-re
 | R4.2 | Guard `tests/guards/test_70_service_docs.py` (strict xfail per missing service): docs exist for every compose service; front matter consistent with compose (stateful ⇔ bind mount under `/srv/data`, exposure ⇔ port bindings, privilege ⇔ `privileged` or runtime socket); every mandatory DoD item has evidence. Rule `service-docs.md` | no |
 | R4.3 | Skill `service-doc`; `new-stack-proposal` updated | no |
 | R4.4 … R4.8 | The ten monitoring services (nine long-running plus the one-shot renderer) in packages of two or three; each package lifts its xfail markers and yields a DoD gap list | no |
-| R4.9 … | Fixes for gaps that are mandatory and High; others fixed or assigned to a later stage (group column) | as needed |
+| R4.9 … | Fixes for the gaps, scheduled by IN15 like any finding: Critical next, High at the increment after next, Med/Low in the next stage; an earlier fix is an operator override (IN16) | as needed |
 
 Exit: guard green for every compose service; no open gap that is mandatory and High; IN7 met for
 the fix increments.
