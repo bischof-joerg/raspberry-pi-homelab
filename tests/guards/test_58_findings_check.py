@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = REPO_ROOT / ".claude/tools/check_findings.py"
 
@@ -301,4 +303,43 @@ def test_legacy_finding_needs_no_prevention(tmp_path: Path) -> None:
     assert proc.returncode == 0, (
         f"❌ A legacy finding (≤ F63) without **Prevention** fails; the field starts with F64:\n"
         f"{proc.stdout}"
+    )
+
+
+# --- leave no trace on the Pi (IN18, F66) ---------------------------------------------------------
+
+BASELINE = "| R1.20 baseline | 2026-10-01 | `ccc` | green | ok | last row before IN18 |"
+
+
+def _log_with(tmp_path: Path, newest: str) -> list[str]:
+    """A log whose newest row sits above the R1.20 baseline row; roadmap §7 repeats it."""
+    return _valid(tmp_path, roadmap_rows=(newest,), log_rows=(newest, BASELINE, OLDER))
+
+
+def test_row_above_the_baseline_needs_a_footprint(tmp_path: Path) -> None:
+    row = "| R1.21 next | 2026-10-02 | `ddd` | green | ok | no footprint |"
+    _fails_with(_log_with(tmp_path, row), "R1.21 next: log row has no 'Footprint:' (IN18)")
+
+
+def test_footprint_must_be_none_or_cleaned(tmp_path: Path) -> None:
+    row = "| Process change | 2026-10-02 | `ddd` | green | ok | Footprint: later |"
+    _fails_with(
+        _log_with(tmp_path, row),
+        "Process change: 'Footprint:' must be 'none' or 'cleaned — <evidence>' (IN18)",
+    )
+
+
+@pytest.mark.parametrize(
+    "footprint", ["Footprint: none", "Footprint: cleaned — /tmp empty (find output)"]
+)
+def test_footprint_none_or_cleaned_passes(tmp_path: Path, footprint: str) -> None:
+    row = f"| R1.21 next | 2026-10-02 | `ddd` | green | ok | x. {footprint}. |"
+    proc = _check(_log_with(tmp_path, row))
+    assert proc.returncode == 0, f"❌ A valid footprint is refused:\n{proc.stdout}"
+
+
+def test_rows_up_to_the_baseline_need_no_footprint(tmp_path: Path) -> None:
+    proc = _check(_valid(tmp_path, roadmap_rows=(BASELINE,), log_rows=(BASELINE, OLDER)))
+    assert proc.returncode == 0, (
+        f"❌ A log row up to R1.20 without 'Footprint:' fails; IN18 starts after it:\n{proc.stdout}"
     )

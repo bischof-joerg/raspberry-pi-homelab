@@ -34,7 +34,7 @@ Claude Code **2.1.280** installed (live hook tests last run on 2.1.280 — see �
 | `tools/*.py` (4) | Verifiers for rules, skills, agents, findings | run by hand; `check_findings.py` also by `make ci` (`tests/guards/test_58_findings_check.py`) | Claude, operator reviews | `ruff check` |
 | `reports/repo-findings.md` | Index of all findings; entries of open and partly addressed ones with evidence, fix, test, acceptance | only when read | Claude, operator reviews | `tools/check_findings.py` |
 | `reports/repo-findings-archive.md` | Entries of `addressed` findings, unchanged, with their resolution | only when read, by entry | Claude, operator reviews | `tools/check_findings.py` |
-| `roadmap.md` | Living plan: status and next increment, delivery rules IN1–IN17, roadmap R1–R6 with stage plans, findings groups, newest increment log row | read at session start | Claude, operator reviews | `tools/check_findings.py` (groups, §7) |
+| `roadmap.md` | Living plan: status and next increment, delivery rules IN1–IN18, roadmap R1–R6 with stage plans, findings groups, newest increment log row | read at session start | Claude, operator reviews | `tools/check_findings.py` (groups, §7) |
 | `increment-log.md` | Increment log R1 onwards, newest first | only when read, by row | Claude, operator reviews | `tools/check_findings.py` (newest row = roadmap §7) |
 | `ClaudeTransition.md` | **Archive** (R0, complete, since 2026-09-26 not maintained): decision log, guard design §5.4, verification records | only when read | nobody; frozen | – |
 | `scratch/` | Drafts (ADR drafts, patch proposals) — **git-ignored** | – | Claude | not in a fresh clone |
@@ -435,6 +435,9 @@ with `/hooks`.
   and move its entry unchanged to `reports/repo-findings-archive.md`; the index row stays.
   `make ci` runs the checker through `tests/guards/test_58_findings_check.py`.
 - Mark a missing file as `` `path` (absent) ``. The checker verifies that it really is absent.
+- Log row (IN18): every row after R1.20 states `Footprint: none` or
+  `Footprint: cleaned — <evidence>` for what the increment left on the Pi; the checker refuses
+  a row without it.
 
 ### 6.7 After a Claude Code update
 

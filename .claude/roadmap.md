@@ -32,8 +32,10 @@ is read at the start of any work session. The Claude transition (R0) is complete
 - **Next increment:** R1.21 F57 `read_only` for cadvisor (group b; Due moved to R1.21 by the
   operator, IN16). Measured on 2026-09-29: `docker diff` shows no writes — whether cadvisor needs
   a writable path at start (for example `/tmp`) is [I], to be checked in the plan with a
-  `tmpfs` only where measured. Then `pid: host` and `/dev/kmsg`, one increment each, measured by
-  `test_25`. F57's socket part needs a decision first: switch Docker to
+  `tmpfs` only where measured. R1.21 also carries F66 part B (group l, Due R1.21): a postdeploy
+  check that no diagnostic package (`bpftrace`) is installed — so `bpftrace` leaves the Pi before
+  R1.21's deploy, and any measurement runs under IN18. Then `pid: host` and `/dev/kmsg`, one
+  increment each, measured by `test_25`. F57's socket part needs a decision first: switch Docker to
   `overlay2` (own ADR, after the R3 backup is proven) or accept the risk in an ADR. Other
   candidates: the rest of group h — F47 (doctor test skips instead of pulling), F23/F25
   (`lint`-marked tests never run), F11, F56 — small, no Pi runtime effect.
@@ -56,7 +58,7 @@ and rules.
 | IN4 | Local gate before commit: Claude runs `make ci` (or the non-mutating `readonly-gate` skill) and reports the result verbatim. Validate first, commit afterwards. |
 | IN5 | Claude proposes a Conventional Commit message and a short change summary. The operator reviews the diff and commits personally. Claude never commits, pushes, or deploys (C4, C5). |
 | IN6 | Deployment is manual by the operator: on the Pi `git pull --ff-only`, then `sudo ./deploy.sh` (which runs `make postdeploy`). |
-| IN7 | An increment is **done** only when: CI green, deploy succeeded, postdeploy green, increment log updated (`.claude/increment-log.md`, §7). |
+| IN7 | An increment is **done** only when: CI green, deploy succeeded, postdeploy green, its Pi footprint cleaned up and verified (IN18), increment log updated (`.claude/increment-log.md`, §7). |
 | IN8 | If deploy or postdeploy fails: no new increment. Either fix forward within the same increment scope or roll back with `git revert` (via branch + PR per IN11/IN12) + pull + deploy. |
 | IN9 | Every increment that adds or changes persistent data, host secrets, ports, UFW rules, Docker networks, or host configuration also updates: backup inventory (ADR-009 §4/§5), `.env.example`, reconciliation scripts (`.claude/rules/host-runtime.md`) and their postdeploy checks, network/firewall docs, and Renovate package rules. |
 | IN10 | Version pins only (no `latest`); new images go through the pinning rule and Renovate coverage in the same increment. |
@@ -67,6 +69,7 @@ and rules.
 | IN15 | **Schedule by severity** (Due column of the report index): **Critical** → `next`; no other increment starts first, a running one is finished or reverted (IN8). **High** → the increment after the next planned one (`R<x>.<y>`); several High findings queue in the order found, Critical goes first. **Med** → the stage after the current one (`R<x>`), in that stage's first increment; **Low** → the stage after the current one, any order. At every stage close, each Med/Low finding of that stage gets its group in the next stage (§4). |
 | IN16 | **Override.** Only the operator changes a Due that IN15 gives — earlier (taking a finding along with a group of the current stage that touches the same files or ADR) or later — with a dated `**Scheduling:**` line in the entry that says why. An override changes the form, never the deadline: an overdue finding fails `check_findings.py` either way. |
 | IN17 | **Prevention.** Every finding (IN14) and every failure — CI, deploy or postdeploy red, a revert, a prediction that proved wrong, a claim or promise of Claude's that did not hold — comes with a proposal how it is caught **earlier or automatically** next time. (1) *Where:* the earliest rung that could have caught it — plan or skill → static test or guard (CI) → checker in `.claude/tools` → hook → postdeploy → stage-close audit → only at a reboot or outage. (2) *Which mechanism*, preferred in this order: test or guard > checker > hook > rule > skill or agent > a lesson in §8; a lesson alone needs the reason why nothing can check it. (3) *Where it goes:* into the fix increment's plan when it belongs there, otherwise its own finding candidate scheduled by IN15; declined, the log row says so. A finding from F64 on carries it as its **Prevention** field (`check_findings.py`); a failure carries it as "Prevention: …" in the notes of its log row. |
+| IN18 | **Leave no trace.** Every temporary change on the Pi — a file, an installed package, a configuration or sysctl change, a stopped service — is planned in the increment's "Pi footprint and cleanup" line with its undo and a command that proves the undo, undone **before the deploy**, and recorded in the log row as `Footprint: none` or `Footprint: cleaned — <evidence>` (`check_findings.py` from the row after R1.20 on). Measurement scripts run over stdin (`sudo bash -s`), keep every helper file in one `mktemp -d` directory that a `trap … EXIT` removes, and never install anything themselves; a tool a measurement needs is installed and removed as separate, proven steps. A container restart is no footprint; a leftover is a finding (F66). |
 
 Practice established in R1: tests first as a separate commit with `xfail(strict=True)`, verified
 with `--runxfail` to fail for the intended reason; the fix commit removes the markers. The log row
@@ -92,6 +95,7 @@ moves to `.claude/reports/repo-findings-archive.md` in the same commit.
 - Acceptance: <observable postdeploy criteria>
 - Rollback: git revert <merge-or-commit> on a fix branch → PR → merge → Pi: git pull --ff-only; sudo ./deploy.sh
 - Backup/docs/Renovate impact (IN9):
+- Pi footprint and cleanup (IN18): every temporary change on the Pi, its undo and the command that proves it — or "none"
 - Prevention (IN17): how recurrence of what this increment fixes is caught earlier, and by which mechanism
 ```
 
@@ -161,6 +165,7 @@ first, then the mechanisms other fixes depend on.
 | h | Toolchain and dead tests | F23, F25, F47, F11, F56 | F49, F21, F22, F59 | F21 + F22 done as R1.4–R1.6; F59 as R1.14; rest low risk, quick |
 | j | Host update path with a read-only firmware partition | — | F60 | Found 2026-09-29 while preparing the F57 capability trace; pulled forward from R3b by the operator the same day, before R1.15, because every APT run fails and security updates are blocked. R1.15 deployed (APT hook, ADR-0013); first unattended-upgrades run with the hook successful (2026-09-30); permanent postdeploy checks as R1.17 (2026-10-01). Group done |
 | k | Host evidence that survives a reboot | — | F62 | Found 2026-10-01 after R1.17 (volatile journal, `Storage=volatile` measured); pulled forward by the operator the same day as R1.18, before F57, so that every later reboot leaves evidence. Without an ADR: a reversible configuration installed like `daemon.json` and the APT hook. R1.18 deployed and proven by an attended reboot (2026-10-01). Group done |
+| l | Leave no trace on the Pi | F66 | — | Found 2026-10-01 after R1.20 (measurement files in `/tmp` from R1.19 and R1.20, `bpftrace` still installed); pulled forward by the operator before R1.21 so that R1.21 runs under IN18. Part A (IN18, footprint check in `check_findings.py`, measurement skeleton in the `increment-plan` skill) before R1.21; part B (postdeploy denylist of diagnostic packages) with R1.21 |
 | R2d | Dev-environment lifecycle | F4, F50 | — | Stage R2, directly after R2.1 (§9) |
 | R2e | Host best-practice baseline | F64 | — | Stage R2 (IN15: Med found in R1 → next stage). Found 2026-10-01 as the lesson of F62/F63: a baseline with sources, audited at every stage close, feeds IN14 |
 | R2a | Stack review against rules and guidelines (§9.3) | F65 | — | Stage R2 (IN15: Low found in R1 → next stage). F65 found 2026-10-01 in cadvisor's log during the R1.19 capability trace; decided together with F57's socket question |
@@ -168,7 +173,8 @@ first, then the mechanisms other fixes depend on.
 | R3 | Backup tests | F9 | — | Stage R3 (was R2 before 2026-09-26) |
 | R3b | Pi runtime lifecycle | F51, F52, F53, F54, F55, F61 | — | Stage R3, after backup, §9. F61 (unattended-upgrades outside the documented flow) found 2026-09-29 with F60 |
 
-Closed without a group: F10, F14, F40. Groups a–h belong to R1; the others name their stage.
+Closed without a group: F10, F14, F40. Groups named by a letter belong to R1; the others name
+their stage.
 
 ## 7. Increment log
 
@@ -243,6 +249,11 @@ Each has a home in a rule or a test; listed here so a new session sees them at o
   paths and tools before changing anything, waited for a `BEGIN` marker and caught `/bin/true`
   through the exact probe and predicate of the measurement. CI cannot see this either (C5); the
   `increment-plan` skill carries the steps.
+- **A measurement leaves traces unless it removes them itself.** R1.19 and R1.20 left eleven files
+  in `/tmp` (scripts, `tee` outputs, `mktemp` files; a tmpfs, so they held RAM until a reboot) and
+  `bpftrace` installed (F66). "Run it as a file" from the lesson above was itself a cause. Since
+  IN18 a script runs over stdin (`sudo bash -s`), keeps its helpers in one `mktemp -d` directory
+  removed by a `trap … EXIT`, and every log row states its footprint (`check_findings.py`).
 
 ## 9. Stage plans R2, R3b and R4
 
