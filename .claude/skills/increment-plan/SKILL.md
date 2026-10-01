@@ -63,7 +63,10 @@ overdue finding is a failure, not a hint. Only the operator moves a Due (IN16).
   ```
 
   stdin *is* the script, so a command that reads stdin (`docker exec -i`, `read`) would swallow
-  the rest — hence `</dev/null`. `set -e` ends only the `bash -s`, not the operator's login shell.
+  the rest — hence `</dev/null`. A proof line that is *expected* to fail (`ls` of a removed path)
+  never runs in a pipe under `pipefail` or `set -e`, and never as `ls a b c || echo none` — one
+  missing path prints "none" next to real hits; capture the output and test it (`[ -z "$x" ]`),
+  and self-test every deny pattern against a known line before it guards anything (F67). `set -e` ends only the `bash -s`, not the operator's login shell.
   A tool the measurement needs (`bpftrace`) is installed and removed as separate steps with proof
   (`dpkg -l <pkg>`), never by the script. Fill the plan's "Pi footprint and cleanup" line with
   every temporary change, its undo and the proving command, and undo it before the deploy; the
