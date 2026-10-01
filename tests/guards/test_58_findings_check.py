@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHECKER = REPO_ROOT / ".claude/tools/check_findings.py"
 
@@ -26,39 +28,75 @@ NEWEST = "| R1.2 second | 2026-10-02 | `bbb` | green | ok | newest |"
 OLDER = "| R1.1 first | 2026-10-01 | `aaa` | green | ok | older |"
 
 
-def _entry(fid: str, title: str, evidence: str = "`deploy.sh` does it", skip: str = "") -> str:
+SCHEDULING = "2026-10-01, operator: taken along with group a"
+
+
+def _entry(
+    fid: str,
+    title: str,
+    evidence: str = "`deploy.sh` does it",
+    skip: str = "",
+    scheduling: str = "",
+) -> str:
     lines = [f"### {fid} – {title}", ""]
     for name in FIELDS:
         if name == skip:
             continue
         value = evidence if name == "Evidence" else "x"
         lines.append(f"- **{name}:** {value}")
+    if scheduling:
+        lines.append(f"- **Scheduling:** {scheduling}")
     return "\n".join(lines) + "\n"
+
+
+def _row(fid: str, status: str, **cells: str) -> dict[str, str]:
+    """One index row; defaults: Med, found 2026-10-01, due R1 (or — when addressed), group a."""
+    row = {"fid": fid, "sev": "Med", "found": "2026-10-01", "status": status, "group": "a"}
+    row["due"] = "—" if status == "addressed" else "R1"
+    row.update(cells)
+    return row
 
 
 def _write(
     tmp_path: Path,
     *,
-    index: list[tuple[str, str]],
+    index: list,
     report: list[str],
     archive: list[str],
-    groups: tuple[str, str] = ("F1", "F2"),
+    stage: str = "R1",
+    next_increment: str = "R1.3 something",
     roadmap_rows: tuple[str, ...] = (NEWEST,),
     log_rows: tuple[str, ...] = (NEWEST, OLDER),
 ) -> list[str]:
-    """Write a report, archive, roadmap and log; return the checker's arguments."""
+    """Write a report, archive, roadmap and log; return the checker's arguments.
+
+    `index` holds `_row` dicts or `(fid, status)` pairs; roadmap §6 gets one row per group, with
+    every non-addressed ID under Open and every addressed one under Done.
+    """
+    rows = [r if isinstance(r, dict) else _row(*r) for r in index]
     index_rows = "".join(
-        f"| {fid} | Title {fid} | Host | Med | {status} | a |\n" for fid, status in index
+        f"| {r['fid']} | Title {r['fid']} | Host | {r['sev']} | {r['found']} | {r['due']} "
+        f"| {r['status']} | {r['group']} |\n"
+        for r in rows
     )
     report_text = (
         "# Repository findings\n\n## Index\n\n"
-        "| ID | Title | Area | Sev | Status | R1 |\n|---|---|---|---|---|---|\n"
+        "| ID | Title | Area | Sev | Found | Due | Status | R1 |\n"
+        "|---|---|---|---|---|---|---|---|\n"
         f"{index_rows}\n## Host\n\n" + "\n".join(report) + "\n## R1 increments\n\nx\n"
     )
     archive_text = "# Archived findings\n\n## Host\n\n" + "\n".join(archive)
+    group_rows = ""
+    for group in dict.fromkeys(r["group"] for r in rows):
+        members = [r for r in rows if r["group"] == group]
+        open_ids = ", ".join(r["fid"] for r in members if r["status"] != "addressed") or "—"
+        done_ids = ", ".join(r["fid"] for r in members if r["status"] == "addressed") or "—"
+        group_rows += f"| {group} | Test | {open_ids} | {done_ids} | x |\n"
     roadmap_text = (
-        "# Roadmap\n\n## 6. R1 plan\n\n| Group | Scope | Open | Done | Why |\n"
-        f"|---|---|---|---|---|\n| a | Test | {groups[0]} | {groups[1]} | x |\n\n"
+        f"# Roadmap\n\n## 1. Status\n\n- **Stage:** {stage} — x\n"
+        f"- **Next increment:** {next_increment}\n- **Other:** x\n\n"
+        "## 6. R1 plan\n\n| Group | Scope | Open | Done | Why |\n"
+        f"|---|---|---|---|---|\n{group_rows}\n"
         "## 7. Increment log\n\nFull log: `.claude/increment-log.md`.\n\n"
         + LOG_HEADER
         + "".join(f"{row}\n" for row in roadmap_rows)
@@ -157,3 +195,102 @@ def test_roadmap_keeps_only_the_newest_log_row(tmp_path: Path) -> None:
 def test_roadmap_row_is_the_newest_log_row(tmp_path: Path) -> None:
     args = _valid(tmp_path, roadmap_rows=(OLDER,))
     _fails_with(args, "roadmap §7 row differs from the newest row of")
+
+
+# --- findings lifecycle, increment B: triage by severity (IN14-IN16) ------------------------------
+
+XFAIL_B = pytest.mark.xfail(
+    strict=True, reason="findings lifecycle B: triage by severity not implemented yet"
+)
+
+
+def _one(tmp_path: Path, row: dict[str, str], scheduling: str = "", **roadmap) -> list[str]:
+    """A report with one finding under test plus the archived F2."""
+    return _write(
+        tmp_path,
+        index=[row, ("F2", "addressed")],
+        report=[_entry(row["fid"], "Under test", scheduling=scheduling)],
+        archive=[_entry("F2", "Done one")],
+        **roadmap,
+    )
+
+
+@XFAIL_B
+def test_severity_must_be_known(tmp_path: Path) -> None:
+    args = _one(tmp_path, _row("F1", "open", sev="Severe"))
+    _fails_with(args, "F1: severity 'Severe' is not one of Critical, High, Med, Low")
+
+
+@XFAIL_B
+def test_open_finding_needs_a_due(tmp_path: Path) -> None:
+    args = _one(tmp_path, _row("F1", "open", due="—"))
+    _fails_with(args, "F1: open but has no Due")
+
+
+@XFAIL_B
+def test_critical_must_be_due_next(tmp_path: Path) -> None:
+    row = _row("F70", "open", sev="Critical", due="R1")
+    args = _one(tmp_path, row, next_increment="R1.3 F70 fix")
+    _fails_with(args, "F70: Critical must be due 'next', found 'R1'")
+
+
+@XFAIL_B
+def test_critical_must_be_the_next_increment(tmp_path: Path) -> None:
+    row = _row("F70", "open", sev="Critical", due="next")
+    args = _one(tmp_path, row, next_increment="R1.3 something else")
+    _fails_with(args, "F70: Critical, but roadmap §1 'Next increment' does not name it")
+
+
+def test_critical_due_next_and_named_passes(tmp_path: Path) -> None:
+    row = _row("F70", "open", sev="Critical", due="next")
+    proc = _check(_one(tmp_path, row, next_increment="R1.3 F70 fix"))
+    assert proc.returncode == 0, f"❌ A correctly scheduled Critical finding fails:\n{proc.stdout}"
+
+
+@XFAIL_B
+def test_high_needs_an_increment_due(tmp_path: Path) -> None:
+    args = _one(tmp_path, _row("F70", "open", sev="High", due="R1"))
+    _fails_with(args, "F70: High must be due at an increment (R<x>.<y>), found 'R1'")
+
+
+@XFAIL_B
+def test_med_needs_a_stage_due(tmp_path: Path) -> None:
+    args = _one(tmp_path, _row("F70", "open", due="R1.5"))
+    _fails_with(args, "F70: Med must be due at a stage (R<x>), found 'R1.5'")
+
+
+def test_scheduling_override_allows_another_due(tmp_path: Path) -> None:
+    proc = _check(_one(tmp_path, _row("F70", "open", due="R1.5"), scheduling=SCHEDULING))
+    assert proc.returncode == 0, f"❌ A Scheduling override is not honoured:\n{proc.stdout}"
+
+
+@XFAIL_B
+def test_high_is_overdue_once_its_increment_is_logged(tmp_path: Path) -> None:
+    args = _one(tmp_path, _row("F70", "open", sev="High", due="R1.2"))
+    _fails_with(args, "F70: overdue, due at R1.2, which the increment log already holds")
+
+
+@XFAIL_B
+def test_med_is_overdue_after_its_stage(tmp_path: Path) -> None:
+    args = _one(tmp_path, _row("F70", "open", due="R1"), stage="R2")
+    _fails_with(args, "F70: overdue, due in stage R1, the roadmap is at R2")
+
+
+@XFAIL_B
+def test_new_finding_needs_a_found_date(tmp_path: Path) -> None:
+    args = _one(tmp_path, _row("F70", "open", found="—"))
+    _fails_with(args, "F70: no Found date")
+
+
+@XFAIL_B
+def test_due_stage_matches_the_group_stage(tmp_path: Path) -> None:
+    args = _one(tmp_path, _row("F70", "open", due="R2"))
+    _fails_with(args, "F70: due in R2, but its group a belongs to R1")
+
+
+def test_legacy_high_may_keep_a_stage_due(tmp_path: Path) -> None:
+    proc = _check(_one(tmp_path, _row("F5", "open", sev="High", found="—", due="R1")))
+    assert proc.returncode == 0, (
+        f"❌ A legacy finding (≤ F63) with a stage Due fails; R1 schedules the backlog by group:\n"
+        f"{proc.stdout}"
+    )
