@@ -15,8 +15,6 @@ import sys
 import tomllib
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = REPO_ROOT / "Makefile"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
@@ -66,7 +64,6 @@ def test_gate_selections_match_the_makefile() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.25: the four lint-marked tests run in no gate (F23)")
 def test_every_test_is_collected_by_a_gate() -> None:
     every = _collect(["tests", "-m", ""])
     assert every, "❌ pytest collected no tests at all."

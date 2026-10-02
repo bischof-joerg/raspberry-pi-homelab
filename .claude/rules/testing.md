@@ -44,9 +44,10 @@ with** the implementation, never afterwards.
   the rest passed — check the count.
 - `addopts` also contains `-m "not postdeploy"` and `testpaths = ["tests"]`. Passing an explicit
   path overrides `testpaths` but **not** the marker filter.
-- `make precommit` runs `pytest tests/precommit -m precommit`, so a test in that directory marked
-  `lint` is silently deselected — that is F23, and it is currently hiding a real failure in
-  `test_15_json_valid.py` (F25). Check the marker before assuming a test runs.
+- `make precommit` runs `pytest tests/precommit -m precommit`, so a test in that directory with
+  any other marker is deselected. Four `lint`-marked files sat there unrun until R1.25 (F23, F25).
+  `tests/guards/test_63_every_test_runs_in_a_gate.py` now fails on any test that no gate's
+  selection collects, and on a registered marker that no test uses.
 - `make test` ignores `tests/precommit` entirely.
 - A test in `tests/postdeploy` without the `postdeploy` marker is deselected on the Pi, and
   `make ci` never runs that directory — the seven checks of `test_26_docker_socket_proxy.py`

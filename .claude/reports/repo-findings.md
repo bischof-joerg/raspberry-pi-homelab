@@ -401,19 +401,21 @@ group. The R1 column is the grouping into increments; per-group status and order
 
 ### F23 – Tests marked `lint` are never run by any gate
 
-- **Evidence:** `tests/precommit/test_15_json_valid.py:22`, `tests/precommit/test_20_yamllint.py:11`, `tests/precommit/test_25_no_merge_conflict_markers.py:31`, `tests/precommit/test_35_large_files.py:54` carry `@pytest.mark.lint`; `Makefile:286` selects `-m precommit`, `Makefile:292` ignores `tests/precommit`; nothing in `Makefile`, `pyproject.toml` or `.github/workflows/ci.yml` selects `lint`. Three files say the check moved to pre-commit hooks. [V 2026-09-23]
+- **Evidence:** `tests/precommit/test_15_json_valid.py:22` (absent), `tests/precommit/test_20_yamllint.py:11` (absent), `tests/precommit/test_25_no_merge_conflict_markers.py:31` (absent), `tests/precommit/test_35_large_files.py:54` (absent) carry `@pytest.mark.lint`; `Makefile:286` selects `-m precommit`, `Makefile:292` ignores `tests/precommit`; nothing in `Makefile`, `pyproject.toml` or `.github/workflows/ci.yml` selects `lint`. Three files say the check moved to pre-commit hooks. [V 2026-09-23]
 - **Impact:** Four test files are dead code that looks like coverage. (Sharpened 2026-09-23: originally recorded for `test_15` only.)
 - **Proposed fix:** Delete the four files (pre-commit hooks `check-json`, `check-yaml`, `check-merge-conflict`, `check-added-large-files` cover them), or run `-m lint` in a gate.
 - **Test:** `tests/precommit` — every marker registered in `pyproject.toml` is selected by at least one `Makefile` target.
 - **Acceptance:** No test exists that no gate runs.
+- **Progress (2026-10-02, R1.25):** `tests/precommit/test_15_json_valid.py`, `test_20_yamllint.py`, `test_25_no_merge_conflict_markers.py` and `test_35_large_files.py` deleted, and the `lint` marker removed from `pyproject.toml`. Their checks run as the pre-commit hooks `check-json`, `check-yaml` with `yamllint -s`, `check-merge-conflict` and `check-added-large-files --maxkb=2048`. The hook's limit is 2048 KB; the deleted test had 1024 KB and never ran. Guard `tests/guards/test_63_every_test_runs_in_a_gate.py` collects all tests (`-m ""`) and each Makefile gate's selection: before the fix, its strict xfail listed exactly these four tests under `--runxfail` [V 2026-10-02: 343 collected, gates 15 + 222 + 102]. It also checks the gate selections against the `Makefile`, and that every registered marker is used — self-tested by deleting the files first, which made it report `['lint']`. Status: `addressed` once the PR's CI is green.
 
 ### F25 – JSON test scans git-ignored files
 
-- **Evidence:** `tests/precommit/test_15_json_valid.py:13-19` rglobs every `*.json`, including git-ignored files; it fails on the operator's JSONC editor settings. [V 2026-09-18, run result `1 failed, 3 passed`]
+- **Evidence:** `tests/precommit/test_15_json_valid.py:13-19` (absent) rglobs every `*.json`, including git-ignored files; it fails on the operator's JSONC editor settings. [V 2026-09-18, run result `1 failed, 3 passed`]
 - **Impact:** Invisible today only because of F23; would fail as soon as the test is re-enabled.
 - **Proposed fix:** Resolved by deleting the test (F23), or iterate `git ls-files '*.json'` instead of `rglob`.
 - **Test:** The test itself on a fixture tree with an ignored invalid file.
 - **Acceptance:** An ignored invalid JSON file does not fail the test; a tracked one does.
+- **Progress (2026-10-02, R1.25):** resolved by deleting the test with F23's other three `lint` files. JSON validity is checked by the `check-json` pre-commit hook, which runs on tracked and, since R1.14, untracked not-ignored files (`scripts/dev/run-hooks.sh`), so git-ignored files are never scanned. Status: `addressed` once the PR's CI is green.
 
 ### F11 – `.gitattributes` does not pin LF for all text types
 
