@@ -104,7 +104,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F44 | Stale image tag in a Markdown example | Supply chain | Low | — | R1 | open | g |
 | F45 | UFW very likely does not govern the published ports | Exposure | High | — | R1 | open | c |
 | F46 | cadvisor's privileged mode is undocumented; docs say the opposite | Privilege | High | — | — | addressed | b |
-| F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | — | R1 | open | h |
+| F47 | cadvisor doctor test never runs; its skip hides a compose error | Tests | Med | — | — | addressed | h |
 | F48 | Orphaned named alertmanager-config volumes held an old SMTP password | Secrets | High | — | — | addressed | a |
 | F49 | Postdeploy as root writes `__pycache__` into the Pi checkout | Tests | Low | — | — | addressed | h |
 | F50 | The WSL layer (Python, Docker Desktop, apt) is neither documented nor checked | Toolchain | Med | — | R2 | open | R2d |
@@ -406,17 +406,6 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Proposed fix:** Delete the four files (pre-commit hooks `check-json`, `check-yaml`, `check-merge-conflict`, `check-added-large-files` cover them), or run `-m lint` in a gate.
 - **Test:** `tests/precommit` — every marker registered in `pyproject.toml` is selected by at least one `Makefile` target.
 - **Acceptance:** No test exists that no gate runs.
-
-### F47 – The cadvisor doctor test never runs; its skip hides a compose error
-
-- **Evidence:** `tests/doctor/test_35_cadvisor_flags.py:36-55` renders the compose file with a test env that sets neither `DOCKER_GID` nor `SYSTEMD_JOURNAL_GID`, and calls `pytest.skip` on **any** non-zero exit of `docker compose config`. `stacks/monitoring/compose/docker-compose.yml:377` `group_add` then receives two empty values. Measured in `make ci` on 2026-09-24: `SKIPPED [1] tests/doctor/test_35_cadvisor_flags.py:52: … services.vector.group_add items at 0 and 1 are equal`. [V 2026-09-24]
-- **Impact:** The cadvisor flag checks have never run in CI or locally, but the result reads "1 skipped", which looks like a platform limitation. It is the same false-green class as F23: a test that exists but cannot fail.
-- **Proposed fix:** Set both GIDs to distinct dummy values in the test env. Skip only when the compose plugin is missing; any other `config` failure must `pytest.fail` with stderr.
-- **Test:** The test itself. A negative check: an env without the GIDs must make it **fail**, not skip.
-- **Acceptance:** `make ci` shows `test_35_cadvisor_flags` as PASSED. Removing a GID from its env produces FAILED with the compose stderr.
-- **Progress (2026-09-29):** the compose error disappeared as a side effect of R1.10 (F30): vector's `group_add` now holds only `${SYSTEMD_JOURNAL_GID}`, so there are no longer two equal empty items. Measured in `make ci` on `feat/r1-socket-proxy` [V 2026-09-29]: the skip moved to `tests/doctor/test_35_cadvisor_flags.py:147: cadvisor image not present locally: ghcr.io/google/cadvisor:v0.60.5`. The test still does not run, and its any-failure skip is unchanged, so the defect stands; status stays `open`.
-- **Progress (2026-09-29, R1.11):** after the operator pulled `ghcr.io/google/cadvisor:v0.60.5` in WSL, `make ci` showed `test_cadvisor_flags_are_supported_by_pinned_image` PASSED for the first time [V 2026-09-29] — it proved `--docker` before the R1.11 deploy, and still passes after the revert. It runs only because of that manual pull: `tests/doctor/test_35_cadvisor_flags.py:146-147` skips when the image is missing instead of pulling it, so after a Renovate bump of the cadvisor tag it silently skips again until someone pulls the new tag, and in GitHub CI it never runs. `tests/guards/test_32_alertmanager_renderer_container.py:91` already pulls its pinned image itself. Proposed addition to the fix: pull the image named in compose (as test_32 does) and fail, not skip, when the pull fails; skip only when Docker itself is missing outside CI. Status stays `open`.
-- **Progress (2026-10-02, R1.24):** `tests/doctor/test_35_cadvisor_flags.py` renders through `tests/_lib/compose.render_compose` with `.env.example` and fails with compose's stderr. It pulls the pinned image (`docker pull -q`) and fails when the pull fails, and it skips only when Docker is missing outside CI (`_require_docker`, the pattern of `tests/guards/test_32`). The skips for "no flags" and for unparsable JSON are gone. Guard `tests/guards/test_62_doctor_cadvisor_flags_policy.py` calls the check with simulated docker commands: before the fix, its four strict xfails (compose error, missing image, failed pull, CI without Docker) failed under `--runxfail` because the check skipped [V 2026-10-02]. Locally the check passed with a real pull. Status stays `open` until the PR's CI shows `PASSED … test_cadvisor_flags_are_supported_by_pinned_image` in the `tests` job.
 
 ### F25 – JSON test scans git-ignored files
 
