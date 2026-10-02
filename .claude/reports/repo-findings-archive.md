@@ -187,6 +187,26 @@ file like the report.
 - **Progress (2026-10-02, R1.24):** `tests/doctor/test_35_cadvisor_flags.py` renders through `tests/_lib/compose.render_compose` with `.env.example` and fails with compose's stderr. It pulls the pinned image (`docker pull -q`) and fails when the pull fails, and it skips only when Docker is missing outside CI (`_require_docker`, the pattern of `tests/guards/test_32`). The skips for "no flags" and for unparsable JSON are gone. Guard `tests/guards/test_62_doctor_cadvisor_flags_policy.py` calls the check with simulated docker commands: before the fix, its four strict xfails (compose error, missing image, failed pull, CI without Docker) failed under `--runxfail` because the check skipped [V 2026-10-02]. Locally the check passed with a real pull. Status stays `open` until the PR's CI shows `PASSED … test_cadvisor_flags_are_supported_by_pinned_image` in the `tests` job.
 - **Resolution (R1.24, 2026-10-02):** merge `492f205` (PR #76; `9095328` tests, `617a933` fix). The GitHub CI job `tests` of the PR shows `PASSED tests/doctor/test_35_cadvisor_flags.py::test_cadvisor_flags_are_supported_by_pinned_image` [V 2026-10-02, operator], the first run of the check in GitHub CI. Locally `make ci` showed it PASSED with a real pull. Guard `tests/guards/test_62_doctor_cadvisor_flags_policy.py` keeps the skip rule. No Pi runtime effect, no deploy.
 
+### F23 – Tests marked `lint` are never run by any gate
+
+- **Evidence:** `tests/precommit/test_15_json_valid.py:22` (absent), `tests/precommit/test_20_yamllint.py:11` (absent), `tests/precommit/test_25_no_merge_conflict_markers.py:31` (absent), `tests/precommit/test_35_large_files.py:54` (absent) carry `@pytest.mark.lint`; `Makefile:286` selects `-m precommit`, `Makefile:292` ignores `tests/precommit`; nothing in `Makefile`, `pyproject.toml` or `.github/workflows/ci.yml` selects `lint`. Three files say the check moved to pre-commit hooks. [V 2026-09-23]
+- **Impact:** Four test files are dead code that looks like coverage. (Sharpened 2026-09-23: originally recorded for `test_15` only.)
+- **Proposed fix:** Delete the four files (pre-commit hooks `check-json`, `check-yaml`, `check-merge-conflict`, `check-added-large-files` cover them), or run `-m lint` in a gate.
+- **Test:** `tests/precommit` — every marker registered in `pyproject.toml` is selected by at least one `Makefile` target.
+- **Acceptance:** No test exists that no gate runs.
+- **Progress (2026-10-02, R1.25):** `tests/precommit/test_15_json_valid.py`, `test_20_yamllint.py`, `test_25_no_merge_conflict_markers.py` and `test_35_large_files.py` deleted, and the `lint` marker removed from `pyproject.toml`. Their checks run as the pre-commit hooks `check-json`, `check-yaml` with `yamllint -s`, `check-merge-conflict` and `check-added-large-files --maxkb=2048`. The hook's limit is 2048 KB; the deleted test had 1024 KB and never ran. Guard `tests/guards/test_63_every_test_runs_in_a_gate.py` collects all tests (`-m ""`) and each Makefile gate's selection: before the fix, its strict xfail listed exactly these four tests under `--runxfail` [V 2026-10-02: 343 collected, gates 15 + 222 + 102]. It also checks the gate selections against the `Makefile`, and that every registered marker is used — self-tested by deleting the files first, which made it report `['lint']`. Status: `addressed` once the PR's CI is green.
+- **Resolution (R1.25, 2026-10-02):** merge `c2d8710` (PR #78; `120f815` tests, `7f6793e` fix). PR CI green; the job `tests` shows `PASSED tests/guards/test_63_every_test_runs_in_a_gate.py::test_every_test_is_collected_by_a_gate` [V 2026-10-02, operator]. Locally the 342 tests split into 15 (precommit) + 225 (test) + 102 (postdeploy) with none left over. No Pi runtime effect, no deploy.
+
+### F25 – JSON test scans git-ignored files
+
+- **Evidence:** `tests/precommit/test_15_json_valid.py:13-19` (absent) rglobs every `*.json`, including git-ignored files; it fails on the operator's JSONC editor settings. [V 2026-09-18, run result `1 failed, 3 passed`]
+- **Impact:** Invisible today only because of F23; would fail as soon as the test is re-enabled.
+- **Proposed fix:** Resolved by deleting the test (F23), or iterate `git ls-files '*.json'` instead of `rglob`.
+- **Test:** The test itself on a fixture tree with an ignored invalid file.
+- **Acceptance:** An ignored invalid JSON file does not fail the test; a tracked one does.
+- **Progress (2026-10-02, R1.25):** resolved by deleting the test with F23's other three `lint` files. JSON validity is checked by the `check-json` pre-commit hook, which runs on tracked and, since R1.14, untracked not-ignored files (`scripts/dev/run-hooks.sh`), so git-ignored files are never scanned. Status: `addressed` once the PR's CI is green.
+- **Resolution (R1.25, 2026-10-02):** merge `c2d8710` (PR #78; `7f6793e`), resolved with F23 by deleting the test. PR CI green [V 2026-10-02, operator].
+
 ## Host runtime updates
 
 ### F60 – `/boot/firmware` is read-only, so `initramfs-tools` stays half-configured and every APT run fails

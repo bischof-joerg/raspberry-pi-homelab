@@ -79,9 +79,9 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F20 | `ensure-journald-read.sh` default user does not match its use | Host | Low | — | R1 | open | e |
 | F21 | Toolchain drift between `.venv` and pre-commit | Toolchain | Med | — | — | addressed | h |
 | F22 | Three diverging sources of dev dependencies | Toolchain | Med | — | — | addressed | h |
-| F23 | Tests marked `lint` are never run by any gate | Tests | Med | — | R1 | open | h |
+| F23 | Tests marked `lint` are never run by any gate | Tests | Med | — | — | addressed | h |
 | F24 | Renovate validator hook runs a floating image tag | Supply chain | Med | — | R1 | open | g |
-| F25 | JSON test scans git-ignored files | Tests | Low | — | R1 | open | h |
+| F25 | JSON test scans git-ignored files | Tests | Low | — | — | addressed | h |
 | F26 | Alertmanager SMTP password written world-readable | Secrets | High | — | — | addressed | a |
 | F26b | The same password persists in every backup archive | Secrets | High | — | R1 | partly | a |
 | F27 | Container uid left to image defaults for 8 of 10 services | Hardening | Med | — | R1 | open | f |
@@ -398,24 +398,6 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Proposed fix:** R3 — fixture tests from ADR-009 §14.2 using the existing fixture overrides.
 - **Test:** New `tests/backup/` (or `tests/guards`) fixture suite running in CI.
 - **Acceptance:** Fixture tests for exit codes, lock contention and restore guards green in CI; `make backup`/`backup_verify` green on the Pi.
-
-### F23 – Tests marked `lint` are never run by any gate
-
-- **Evidence:** `tests/precommit/test_15_json_valid.py:22` (absent), `tests/precommit/test_20_yamllint.py:11` (absent), `tests/precommit/test_25_no_merge_conflict_markers.py:31` (absent), `tests/precommit/test_35_large_files.py:54` (absent) carry `@pytest.mark.lint`; `Makefile:286` selects `-m precommit`, `Makefile:292` ignores `tests/precommit`; nothing in `Makefile`, `pyproject.toml` or `.github/workflows/ci.yml` selects `lint`. Three files say the check moved to pre-commit hooks. [V 2026-09-23]
-- **Impact:** Four test files are dead code that looks like coverage. (Sharpened 2026-09-23: originally recorded for `test_15` only.)
-- **Proposed fix:** Delete the four files (pre-commit hooks `check-json`, `check-yaml`, `check-merge-conflict`, `check-added-large-files` cover them), or run `-m lint` in a gate.
-- **Test:** `tests/precommit` — every marker registered in `pyproject.toml` is selected by at least one `Makefile` target.
-- **Acceptance:** No test exists that no gate runs.
-- **Progress (2026-10-02, R1.25):** `tests/precommit/test_15_json_valid.py`, `test_20_yamllint.py`, `test_25_no_merge_conflict_markers.py` and `test_35_large_files.py` deleted, and the `lint` marker removed from `pyproject.toml`. Their checks run as the pre-commit hooks `check-json`, `check-yaml` with `yamllint -s`, `check-merge-conflict` and `check-added-large-files --maxkb=2048`. The hook's limit is 2048 KB; the deleted test had 1024 KB and never ran. Guard `tests/guards/test_63_every_test_runs_in_a_gate.py` collects all tests (`-m ""`) and each Makefile gate's selection: before the fix, its strict xfail listed exactly these four tests under `--runxfail` [V 2026-10-02: 343 collected, gates 15 + 222 + 102]. It also checks the gate selections against the `Makefile`, and that every registered marker is used — self-tested by deleting the files first, which made it report `['lint']`. Status: `addressed` once the PR's CI is green.
-
-### F25 – JSON test scans git-ignored files
-
-- **Evidence:** `tests/precommit/test_15_json_valid.py:13-19` (absent) rglobs every `*.json`, including git-ignored files; it fails on the operator's JSONC editor settings. [V 2026-09-18, run result `1 failed, 3 passed`]
-- **Impact:** Invisible today only because of F23; would fail as soon as the test is re-enabled.
-- **Proposed fix:** Resolved by deleting the test (F23), or iterate `git ls-files '*.json'` instead of `rglob`.
-- **Test:** The test itself on a fixture tree with an ignored invalid file.
-- **Acceptance:** An ignored invalid JSON file does not fail the test; a tracked one does.
-- **Progress (2026-10-02, R1.25):** resolved by deleting the test with F23's other three `lint` files. JSON validity is checked by the `check-json` pre-commit hook, which runs on tracked and, since R1.14, untracked not-ignored files (`scripts/dev/run-hooks.sh`), so git-ignored files are never scanned. Status: `addressed` once the PR's CI is green.
 
 ### F11 – `.gitattributes` does not pin LF for all text types
 
