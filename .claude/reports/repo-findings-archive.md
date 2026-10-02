@@ -62,6 +62,19 @@ file like the report.
 - **Acceptance:** `grep -nP '[äöüÄÖÜß]'` over `stacks/` returns nothing. *(Corrected 2026-09-25: this grep was already green before the fix — the comment has no umlauts. The guard checks for German words in the renderer script instead.)*
 - **Resolution (R1.1, 2026-09-25):** comment translated; `test_renderer_script_is_english_only` in `tests/guards/test_30_alertmanager_renderer_contract.py`.
 
+### F31 – Grafana admin credentials default to empty
+
+- **Evidence:** `stacks/monitoring/compose/docker-compose.yml:246-247` uses `${GRAFANA_ADMIN_USER:-}` / `${GRAFANA_ADMIN_PASSWORD:-}`. [V 2026-09-23]; what Grafana does with empty values [I — check with `docker compose config` and Grafana's startup log with the variables unset, in WSL].
+- **Impact:** A missing or incomplete host env file starts a LAN-exposed Grafana (port 3000) with whatever Grafana does for empty credentials, instead of failing the deploy.
+- **Proposed fix:** Use `${VAR:?message}` so `docker compose config` fails fast; `deploy.sh` secrets validation should list both variables.
+- **Test:** `tests/precommit/test_30_compose_config.py` — with a fixture env that omits both variables, `docker compose config` must fail and name them.
+- **Acceptance:** `docker compose config` without the two variables exits non-zero with a message naming them; with them it passes.
+- **Resolution (R1.28, 2026-10-02):** merge `b3d46e1` (PR #84; `5cafb65` tests, `6e330b8` fix), CI green.
+  - **Compose:** both variables now use `${VAR:?… must be set and non-empty in /etc/raspberry-pi-homelab/monitoring.env}`.
+  - **`deploy.sh`:** the new `validate_compose_env` runs `compose config --quiet || die` right after `ensure_journald_read_access`, which exports `SYSTEMD_JOURNAL_GID` and `DOCKER_GID`, and before sshd hardening, networks, permissions and containers. In the first draft the check sat in `validate_secrets_file`, before the GIDs exist. Measured in WSL: compose then warned on every run that both are unset (`rc=0`). Without the password, compose stops with `rc=1`: `required variable GRAFANA_ADMIN_PASSWORD is missing a value: …` [V 2026-10-02].
+  - **Tests:** `test_compose_config_requires_grafana_credentials` (unset and empty, each variable) in `tests/precommit/test_30_compose_config.py`, and `tests/guards/test_65_deploy_validates_compose_env.py` (the check exists, and the order of `main()`). Before the fix, all five strict xfails failed under `--runxfail` for the intended reason; the order test already passed.
+  - **On the Pi** [V 2026-10-02, operator]: before the deploy, both values `set` in `monitoring.env` (a check that prints no values). The deploy ended with `tests: passed (98 passed, 4 skipped)`, which the journal also holds (`Oct 02 20:09:29 rpi-hub homelab-deploy[975783]: …`), and grafana was not recreated.
+
 ## Privilege and the Docker socket
 
 ### F46 – cadvisor's privileged mode is undocumented; docs say the opposite

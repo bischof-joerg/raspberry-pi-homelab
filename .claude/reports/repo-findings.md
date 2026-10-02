@@ -88,7 +88,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F28 | cadvisor mounts the Docker socket read-write | Privilege | High | — | — | addressed | b |
 | F29 | Config-hash label missing on 5 of 10 services | Deploy | High | — | R1 | open | d |
 | F30 | vector is effectively host root via the Docker socket | Privilege | High | — | — | addressed | b |
-| F31 | Grafana admin credentials default to empty | Secrets | High | — | R1 | open | c |
+| F31 | Grafana admin credentials default to empty | Secrets | High | — | — | addressed | c |
 | F32 | Grafana runs without `read_only` on a wrong justification | Hardening | Med | — | R1 | open | f |
 | F33 | vector has no healthcheck | Hardening | Low | — | R1 | open | f |
 | F34 | vector joins the `apps` network without a reason | Privilege | Med | — | — | addressed | b |
@@ -131,6 +131,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F71 | Postdeploy pulls and runs the unpinned `hello-world:latest` | Supply chain | Low | 2026-10-02 | R2 | open | R2a |
 | F72 | node-exporter shares the host PID namespace without a recorded reason | Privilege | Low | 2026-10-02 | R2 | open | R2a |
 | F73 | deploy.sh's ERR trap never fires inside functions (no errtrace) | Deploy | Low | 2026-10-02 | R2 | open | R2a |
+| F74 | `ADMIN_IPV4` names a host that is not the admin's | Exposure | Low | 2026-10-02 | R2 | open | R2a |
 
 ## Secrets and credentials
 
@@ -142,14 +143,6 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Test:** `tests/postdeploy` — directory mode `0750`; backup fixture test (R3, F9) — a restored tree yields `0640` on the rendered file.
 - **Acceptance:** Directory mode is `750` after deploy; a restore dry-run in the fixture harness produces no world-readable credential file.
 - **Resolution (R1.1, 2026-09-25) — partly:** `init-permissions.sh` reconciles the directory to `0:nogroup 750` and strips other-bits recursively (its `--check` detects restore leftovers); rotation note in `docs/operations/BackupVerifyRestore.md` §6.2; postdeploy `test_55`. **Open:** the restore fixture test, which belongs to R3/F9 (stage R2 before the re-plan of 2026-09-26).
-
-### F31 – Grafana admin credentials default to empty
-
-- **Evidence:** `stacks/monitoring/compose/docker-compose.yml:246-247` uses `${GRAFANA_ADMIN_USER:-}` / `${GRAFANA_ADMIN_PASSWORD:-}`. [V 2026-09-23]; what Grafana does with empty values [I — check with `docker compose config` and Grafana's startup log with the variables unset, in WSL].
-- **Impact:** A missing or incomplete host env file starts a LAN-exposed Grafana (port 3000) with whatever Grafana does for empty credentials, instead of failing the deploy.
-- **Proposed fix:** Use `${VAR:?message}` so `docker compose config` fails fast; `deploy.sh` secrets validation should list both variables.
-- **Test:** `tests/precommit/test_30_compose_config.py` — with a fixture env that omits both variables, `docker compose config` must fail and name them.
-- **Acceptance:** `docker compose config` without the two variables exits non-zero with a message naming them; with them it passes.
 
 ### F12 – `.env.example` duplicates keys and holds host-derived values
 
@@ -188,6 +181,15 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Proposed fix:** Bind both ports to the LAN address in compose, or add `ufw route` / `DOCKER-USER` rules — plus a negative postdeploy check.
 - **Test:** `tests/postdeploy/test_35_network_and_ufw.py` — a negative reachability check from a non-`LAN_CIDR` source (or, if that is impractical on the Pi, assert the published bind address).
 - **Acceptance:** A connection from outside `LAN_CIDR` to 3000/9428 is refused, measured by a test, not inferred from rule presence.
+- **Progress (2026-10-02, M1 after the R1.28 deploy):** confirmed for IPv4 and measured on the Pi with a read-only script [V 2026-10-02, operator]. The setup: Docker 29.5.2, firewall backend `iptables` with the userland proxy on, `iptables v1.8.11 (nf_tables)`; `daemon.json` has neither `iptables` nor `ipv6`. The script was valid: the UFW rule `22/tcp ALLOW IN 192.168.178.0/24` had counted `11` packets of the operator's SSH session.
+  - `nat DOCKER` DNATs `--dport 3000` and `--dport 9428` with `! -i br-monitoring` and no `-d`, so every address of the Pi, and every other Docker bridge, reaches both containers.
+  - `FORWARD` jumps to `DOCKER-USER` (empty) and `DOCKER-FORWARD` first, `168K` packets each. All of UFW's forward chains stayed at `0`.
+  - The filter chain `DOCKER` accepted `dpt:3000` (`39` packets) and `dpt:9428` (`8`) from `0.0.0.0/0`.
+  - The ALLOW-LAN and DROP rules for 3000 and 9428 in `ufw-user-input` all stayed at `0` packets, although the operator had opened both UIs from the laptop beforehand.
+  - So UFW's IPv4 rules for these two ports are never evaluated.
+  - IPv6 is different. `docker-proxy` listens on `[::]:3000` and `[::]:9428`, `ip6tables -t nat` has an empty `DOCKER` chain, and v6 connections take the `INPUT` path. There `ufw6-user-input` dropped `95` packets on 3000 and `15` on 9428. That matters because the Pi has a global address (`2003:eb:ff1c:1e00:…/64`) besides its ULA.
+  - Fix direction for R1.29: binding to the LAN address restricts the destination, not the source, and `ufw route` rules are never reached while `DOCKER-FORWARD` accepts first. What works is a rule in `DOCKER-USER`, the only chain ahead of Docker's, that drops connections to the original ports 3000 and 9428 (`conntrack --ctorigdstport`) from sources outside `LAN_CIDR`. Who installs it persistently (`/etc/ufw/after.rules` or a deploy reconciler) is the F15 decision.
+  - Negative test: a container on `apps` (source outside `LAN_CIDR`) connects to the Pi's LAN address on 3000. Per this measurement it is reachable today. Status stays `open`.
 
 ### F42 – LAN exposure of 3000/9428 is recorded in no document
 
@@ -204,6 +206,15 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Proposed fix:** R1 decision (ADR) on which host state `deploy.sh` reconciles; if UFW is in, call the script in `--apply` mode from `deploy.sh` behind a flag, idempotently. Depends on F45.
 - **Test:** `tests/postdeploy/test_35_network_and_ufw.py` stays the detector; add a `tests/guards` check that `deploy.sh` invokes the reconciler when the ADR says so.
 - **Acceptance:** After deploying onto a host with a manually deleted rule, postdeploy is green without manual action.
+
+### F74 – `ADMIN_IPV4` names a host that is not the admin's
+
+- **Evidence:** `scripts/network/cleanup-ufw.sh:32,64` allows SSH from `ADMIN_IPV4` (from `/etc/raspberry-pi-homelab/monitoring.env`) besides `LAN_CIDR`. On the Pi that value is `192.168.178.42`: UFW rule `[ 2] 22/tcp ALLOW IN 192.168.178.42`, and `.env.example` carries the same example. According to the operator, the admin laptop has the fixed address `192.168.178.172` [V 2026-10-02, operator]. In M1 (F45) that rule counted `0` packets while the LAN rule counted `11` from the operator's SSH session [V 2026-10-02, operator].
+- **Impact:** The "admin" allow names a device that is not the admin's, and the admin's own device is not named. No exposure is added today, because the LAN rule allows `.42` anyway. But the admin rule loses its meaning, and it would grant SSH to a foreign device as soon as SSH is narrowed to the admin host only.
+- **Proposed fix:** Set `ADMIN_IPV4=192.168.178.172` in the host env file (operator), then `cleanup-ufw.sh --apply` replaces the tagged rule. Record in the network docs that the value must be a reserved DHCP address.
+- **Test:** `tests/postdeploy/test_35_network_and_ufw.py` keeps checking that the rule exists. A new check that `ADMIN_IPV4` lies in `LAN_CIDR` and is not the Pi's own address. Whether the admin host is the right one cannot be checked on the Pi; it stays the operator's fact.
+- **Acceptance:** `ufw status numbered` shows `22/tcp ALLOW IN 192.168.178.172`, and no rule for `.42`.
+- **Prevention:** Rung: the stage-close host audit (R2e, F64). It lists every host-specific value in `monitoring.env` that names a device (`ADMIN_IPV4`), for the operator to confirm. A packet counter of `0` on the admin rule over a period in which the admin logged in would also catch it, but only by a measurement, not by a test.
 
 ## Deploy path and config hash
 
