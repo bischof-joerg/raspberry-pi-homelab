@@ -67,7 +67,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F8 | Renderer installs `gettext` from the network at every run | Supply chain | Med | — | — | addressed | a |
 | F9 | Backup scripts have no tests although ADR-009 requires them | Backup | High | — | R3 | open | R3 |
 | F10 | pytest version drift between pre-commit and `.venv` | Toolchain | Low | — | — | addressed | – |
-| F11 | `.gitattributes` does not pin LF for all text types | Toolchain | Low | — | R1 | open | h |
+| F11 | `.gitattributes` does not pin LF for all text types | Toolchain | Low | — | — | addressed | h |
 | F12 | `.env.example` duplicates keys and holds host-derived values | Secrets | Low | — | R2 | open | R2b |
 | F13 | Compose mounts a templates directory that does not exist | Deploy | Med | — | R1 | open | d |
 | F14 | DevWorkflow committed before `make ci` | Docs | Low | — | — | addressed | – |
@@ -408,15 +408,6 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Proposed fix:** R3 — fixture tests from ADR-009 §14.2 using the existing fixture overrides.
 - **Test:** New `tests/backup/` (or `tests/guards`) fixture suite running in CI.
 - **Acceptance:** Fixture tests for exit codes, lock contention and restore guards green in CI; `make backup`/`backup_verify` green on the Pi.
-
-### F11 – `.gitattributes` does not pin LF for all text types
-
-- **Evidence:** `.gitattributes` covers sh/yml/yaml/json/toml but not `*.md`, `*.py`, `Makefile`, `*.json5`. [V 2026-09-16]
-- **Impact:** On the Windows side of the operator's machine a checkout can introduce CRLF (K9 in `ClaudeTransition.md`).
-- **Proposed fix:** `* text=auto eol=lf` plus explicit binary types.
-- **Test:** `tests/precommit` — no tracked text file contains `\r`.
-- **Acceptance:** `git ls-files --eol` shows `lf` for all text files.
-- **Progress (2026-10-02, R1.27):** measured before the fix [V 2026-10-02, `git ls-files --eol`]: 199 tracked files, 194 `i/lf`, 3 `i/none`, no binaries, and two `i/crlf`: `README.md` (105 lines) and `Todo.txt` (500 lines). `.gitattributes` now starts with `* text=auto eol=lf` and marks binary types `binary`; `README.md` converted to LF by Claude, `Todo.txt` renormalized by the operator (`git add --renormalize`, a write-protected file for Claude). Test `tests/precommit/test_55_line_endings.py` (precommit gate): the rule exists, and the index holds no CRLF. Before the fix, both strict xfails failed under `--runxfail` on the missing rule and on exactly those two files. Status: `addressed` once the PR's CI is green.
 
 ### F50 – The WSL layer (Python, Docker Desktop, apt) is neither documented nor checked
 
