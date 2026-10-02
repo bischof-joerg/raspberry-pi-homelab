@@ -119,7 +119,14 @@ rules. Write "none" only after checking each, not by default.
 returns data, a container that reports healthy, a UFW rule that exists. If no check can prove it,
 the increment is not finished being designed.
 
+Predict the postdeploy summary test by test: the collected total, the passed count without the
+variable skips, and each skip by name with its reason. Some skips depend on the host's quiet
+units, such as `test_45`'s `systemd-udevd.service` and `ufw.service` (F69). Name them as a range
+("96–97 passed, 3–4 skipped, 100 collected"), never as one exact pair (R1.22 predicted 97/3 and
+got 96/4).
+
 ## What Claude does not do
 
 Propose the commit message and the PR text. The operator commits, pushes, opens the PR, merges and
-deploys (C4, C5, IN5).
+deploys (C4, C5, IN5). Each proposed commit names the files it holds, so the split survives into
+`git add` (R1.22: the fix landed in the skill's `docs(claude)` commit).
