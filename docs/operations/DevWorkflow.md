@@ -201,7 +201,9 @@ The deploy script (in order):
   access, external Docker networks, data directory permissions
 - computes the config hash (section 7)
 - pulls images and runs `docker compose up -d`
-- runs postdeploy tests (`make postdeploy`)
+- runs postdeploy tests (`make postdeploy`) and logs pytest's counts as
+  `tests: passed (<n> passed, <m> skipped)` or `tests: FAILED (…)`, both to the terminal and to the
+  journal; the history of deploy results is `journalctl -t homelab-deploy --no-pager`
 
 Not part of deploy: UFW rule reconciliation (`scripts/network/cleanup-ufw.sh`, manual) and host
 runtime updates (`make host-*`, see `docs/operations/runtime-updates.md`). UFW state is checked by
