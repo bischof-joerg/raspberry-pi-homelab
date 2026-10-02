@@ -1,72 +1,45 @@
 from __future__ import annotations
 
-import json
+import os
 import re
 from pathlib import Path
 
 import pytest
 
 from tests._helpers import find_monitoring_compose_file, run, which_ok
+from tests._lib.compose import render_compose
 
 COMPOSE_FILE: Path = find_monitoring_compose_file()
+# Placeholders for every variable the compose file expands (no secrets), as the guards use.
+ENV_EXAMPLE = COMPOSE_FILE.parent / ".env.example"
 SERVICE_NAME = "cadvisor"
 
 
-def _compose_cmd() -> list[str] | None:
-    if not which_ok("docker"):
-        return None
-    r = run(["docker", "compose", "version"])
-    if r.returncode == 0:
-        return ["docker", "compose"]
-    return None
+def _require_docker() -> None:
+    # F47: skip only on a machine without Docker outside CI; in CI a missing Docker is a defect.
+    if which_ok("docker"):
+        return
+    if os.environ.get("CI") == "true":
+        pytest.fail("❌ Docker is required in CI for the cadvisor flags check (F47).")
+    pytest.skip("Docker not available; the cadvisor flags check runs in CI.")
 
 
-def _compose_config_json(compose_file: Path) -> dict:
-    """
-    Read rendered compose config as JSON to avoid requiring PyYAML in the pre-commit pytest env.
-    """
-    cmd = _compose_cmd()
-    if not cmd:
-        pytest.skip("docker compose plugin not available")
-
-    if not compose_file.exists():
-        pytest.skip(f"compose file not found: {compose_file}")
-
-    # Provide safe placeholders for variable expansion (no secrets).
-    env = {
-        "COMPOSE_PROJECT_NAME": "homelab-home-prod-mon",
-        "TZ": "Europe/Berlin",
-        "GRAFANA_ADMIN_USER": "admin",
-        "GRAFANA_ADMIN_PASSWORD": "changeme",
-        "ALERT_EMAIL_TO": "devnull@example.invalid",
-        "ALERT_SMTP_AUTH_USERNAME": "devnull@example.invalid",
-        "ALERT_SMTP_AUTH_PASSWORD": "changeme",
-        "ALERT_SMTP_FROM": "alerts@example.invalid",
-        "ALERT_SMTP_SMARTHOST": "smtp.example.invalid:587",
-        "ALERT_SMTP_REQUIRE_TLS": "true",
-    }
-
-    res = run([*cmd, "-f", str(compose_file), "config", "--format", "json"], env=env)
-    if res.returncode != 0:
-        # Some older compose builds may not support --format json.
-        pytest.skip(
-            f"docker compose config --format json not supported or config failed.\nstderr:\n{res.stderr}"
-        )
-
+def _compose_config() -> dict:
     try:
-        data = json.loads(res.stdout)
-    except Exception as e:
-        pytest.skip(f"Failed to parse compose config JSON: {e}")
-
-    if not isinstance(data, dict):
-        pytest.skip(f"Unexpected compose config JSON type: {type(data)}")
-
-    return data
+        return render_compose(COMPOSE_FILE, env_file=ENV_EXAMPLE)
+    except RuntimeError as exc:
+        pytest.fail(f"❌ {exc}\nFix: the monitoring stack must render with {ENV_EXAMPLE} (F47).")
 
 
-def _image_present_locally(image: str) -> bool:
-    res = run(["docker", "image", "inspect", image])
-    return res.returncode == 0
+def _pull(image: str) -> None:
+    # F47: pull the pinned image instead of skipping when it is missing, as tests/guards/test_32
+    # does; after a Renovate bump the new tag is never present locally.
+    res = run(["docker", "pull", "-q", image])
+    if res.returncode != 0:
+        pytest.fail(
+            f"❌ docker pull {image} failed (rc={res.returncode}):\n{res.stderr}\n"
+            f"Fix: check the pin in {COMPOSE_FILE} and the network (F47)."
+        )
 
 
 def _cadvisor_help(image: str) -> str:
@@ -134,18 +107,11 @@ def _extract_image_and_flags(cfg: dict) -> tuple[str, list[str]]:
 
 @pytest.mark.doctor
 def test_cadvisor_flags_are_supported_by_pinned_image():
-    if not which_ok("docker"):
-        pytest.skip("docker not available in PATH")
+    _require_docker()
+    image, flags = _extract_image_and_flags(_compose_config())
+    assert flags, f"❌ {SERVICE_NAME} has no command flags in {COMPOSE_FILE}; nothing to check."
 
-    cfg = _compose_config_json(COMPOSE_FILE)
-    image, flags = _extract_image_and_flags(cfg)
-
-    if not flags:
-        pytest.skip("No cadvisor command flags configured")
-
-    if not _image_present_locally(image):
-        pytest.skip(f"cadvisor image not present locally: {image} (run: docker pull {image})")
-
+    _pull(image)
     help_text = _cadvisor_help(image)
     supported = _supported_flags_from_help(help_text)
 

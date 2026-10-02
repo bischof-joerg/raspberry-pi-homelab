@@ -90,7 +90,6 @@ def _outcome(module) -> tuple[str, str]:
     return "passed", ""
 
 
-@pytest.mark.xfail(strict=True, reason="R1.24: a compose config error is skipped (F47)")
 def test_compose_config_error_fails(doctor) -> None:
     module, _ = doctor(config_rc=1)
     outcome, message = _outcome(module)
@@ -100,7 +99,6 @@ def test_compose_config_error_fails(doctor) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.24: a missing image is skipped, not pulled (F47)")
 def test_missing_image_is_pulled(doctor) -> None:
     module, fake = doctor(image_present=False)
     outcome, message = _outcome(module)
@@ -111,7 +109,6 @@ def test_missing_image_is_pulled(doctor) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.24: a failed pull is skipped (F47)")
 def test_failed_pull_fails(doctor) -> None:
     module, _ = doctor(image_present=False, pull_rc=1)
     outcome, message = _outcome(module)
@@ -121,7 +118,6 @@ def test_failed_pull_fails(doctor) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="R1.24: missing Docker is skipped in CI too (F47)")
 def test_ci_without_docker_fails(doctor) -> None:
     module, _ = doctor(docker=False, ci=True)
     outcome, message = _outcome(module)
