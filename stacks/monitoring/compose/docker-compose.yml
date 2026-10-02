@@ -194,8 +194,9 @@ services:
       - "3000:3000"
     environment:
       # secrets in env_file (and keep it out of git)
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      # F31: required; Grafana is published on the LAN and must never start without them.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?GRAFANA_ADMIN_USER must be set and non-empty in /etc/raspberry-pi-homelab/monitoring.env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set and non-empty in /etc/raspberry-pi-homelab/monitoring.env}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       # Optional: enable Grafana's VictoriaMetrics metrics endpoint

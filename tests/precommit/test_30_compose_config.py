@@ -113,7 +113,6 @@ GRAFANA_CREDENTIALS = ("GRAFANA_ADMIN_USER", "GRAFANA_ADMIN_PASSWORD")
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="F31: compose defaults the credentials to empty (:-)")
 @pytest.mark.parametrize("state", ["unset", "empty"])
 @pytest.mark.parametrize("var", GRAFANA_CREDENTIALS)
 def test_compose_config_requires_grafana_credentials(tmp_path: Path, var: str, state: str):
