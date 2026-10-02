@@ -345,8 +345,25 @@ with_ephemeral_docker_config() {
 run_postdeploy_tests() {
   [[ "$RUN_TESTS" == "1" ]] || { log "tests: skipped (RUN_TESTS=0)"; return 0; }
   log "tests: make postdeploy"
-  (cd "$REPO_ROOT" && POSTDEPLOY_ON_TARGET=1 make postdeploy)
-  log "tests: passed"
+  # F56: keep pytest's counts, in this output and in the journal (`journalctl -t homelab-deploy`).
+  # The output still reaches the terminal through tee. make's exit code is caught with `|| …`,
+  # so errexit stays on and does not end deploy.sh before the result is logged.
+  local tmp rc summary result
+  tmp="$(mktemp -d)"
+  { (cd "$REPO_ROOT" && POSTDEPLOY_ON_TARGET=1 make postdeploy) 2>&1 || echo "$?" >"$tmp/rc"; } \
+    | tee "$tmp/out"
+  rc="$(cat "$tmp/rc" 2>/dev/null || echo 0)"
+  summary="$(bash "$REPO_ROOT/scripts/tests/postdeploy-summary.sh" <"$tmp/out" || true)"
+  rm -rf "$tmp"
+
+  if [[ "$rc" == "0" && -n "$summary" ]]; then
+    result="tests: passed ($summary)"
+  else
+    result="tests: FAILED (${summary:-no pytest summary}, rc=$rc)"
+  fi
+  log "$result"
+  logger -t homelab-deploy -- "$result" || log "journal: logger failed; the result above is not kept"
+  [[ "$result" == "tests: passed ("* ]] || die "postdeploy tests failed"
 }
 
 main() {
