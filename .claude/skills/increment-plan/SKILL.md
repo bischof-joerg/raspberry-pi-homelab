@@ -128,6 +128,10 @@ got 96/4).
 A claim that a change removes or keeps a metric is checked after the deploy with the same
 measurement that recorded it before: run the script again and compare. R1.22 wrote "exports no
 `container_oom_events_total`" from the source alone; R1.23's M1 found the 11 series still there.
+A before/after query against VictoriaMetrics uses a fixed `time=` inside the window it means,
+never an `offset` (R1.23's M3: `offset 1h` landed before the previous deploy). Before comparing,
+it normalizes labels that carry a container ID, such as overlay paths, with `label_replace`. A
+recreated container gets a new ID, so every one of its paths shows as changed.
 
 ## What Claude does not do
 
