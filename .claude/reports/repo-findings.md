@@ -113,7 +113,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F53 | host-runtime scripts are untestable off the Pi and untested | Tests | Med | — | R3 | open | R3b |
 | F54 | Docker packages upgrade uncontrolled inside the routine APT upgrade | Host | Med | — | R3 | open | R3b |
 | F55 | Plan output, audit and runtime-updates doc disagree; audit gaps pass silently | Host | Low | — | R3 | open | R3b |
-| F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | — | R1 | open | h |
+| F56 | Deploy log records postdeploy as `passed` without counts; the evidence is not kept | Tests | Med | — | — | addressed | h |
 | F57 | cadvisor is host-root equivalent via the Docker socket, root and `pid: host` | Privilege | High | — | R3 | open | b |
 | F58 | vector's API listens on all interfaces of two networks | Privilege | Low | — | — | addressed | b |
 | F59 | `make ci` never runs the pre-commit hooks on new, untracked files | Toolchain | Low | — | — | addressed | h |
@@ -130,6 +130,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F70 | Postdeploy changes udev's log level and re-triggers every device on the host | Host | Med | 2026-10-02 | R2 | open | R2a |
 | F71 | Postdeploy pulls and runs the unpinned `hello-world:latest` | Supply chain | Low | 2026-10-02 | R2 | open | R2a |
 | F72 | node-exporter shares the host PID namespace without a recorded reason | Privilege | Low | 2026-10-02 | R2 | open | R2a |
+| F73 | deploy.sh's ERR trap never fires inside functions (no errtrace) | Deploy | Low | 2026-10-02 | R2 | open | R2a |
 
 ## Secrets and credentials
 
@@ -288,6 +289,15 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Test:** `tests/postdeploy/test_45_host_journald_units_to_victorialogs.py` proves journald ingestion either way.
 - **Acceptance:** Journald logs arrive in VictoriaLogs with the step removed or corrected.
 
+### F73 – deploy.sh's ERR trap never fires inside functions (no errtrace)
+
+- **Evidence:** `deploy.sh` sets `set -euo pipefail` and `trap 'on_err $LINENO' ERR` (`on_err` prints `ERROR: deploy.sh failed (exit=…) at line …` and a `bash -x` hint), but no `set -E`/`errtrace` [V 2026-10-02, read]. Without errtrace, shell functions do not inherit an ERR trap, and nearly all of `deploy.sh` runs inside `main()` and the functions it calls. Measured in R1.26 with `tests/guards/test_64_postdeploy_summary.py`'s harness, which runs a function body with deploy.sh's own trap: the old `run_postdeploy_tests` with a failing `make` exited 1 through errexit, without the `on_err` message [V 2026-10-02].
+- **Impact:** A failed deploy stops (errexit), but without the line number and the debugging hint that `on_err` exists to print. The operator sees only the failing command's own output. Claude's R1.26 plan assumed the trap fired there, which is how this surfaced.
+- **Proposed fix:** `set -Eeuo pipefail` in `deploy.sh`, so the trap applies in functions and subshells. Check that no function relies on a failing command passing silently, since `|| …` and `if` contexts stay exempt. Alternatively, remove `on_err` and say so.
+- **Test:** `tests/guards` — every tracked shell script with `trap … ERR` also sets `-E` (`set -E…` or `set -o errtrace`); a behaviour test like `test_64`'s harness shows the `on_err` line for a failing command inside a function.
+- **Acceptance:** The guard passes; the harness shows `ERROR: deploy.sh failed … at line …` for a failure inside a function.
+- **Prevention:** Rung: static guard in CI — the `trap … ERR` ⇒ errtrace check above, applied to every script, which also covers the next script that copies the pattern.
+
 ## Compose hardening
 
 ### F41 – No static guard for the compose hardening contract
@@ -414,16 +424,6 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Proposed fix:** R2d — `docs/operations/dev-environment-updates.md` (checklist and recovery), `make doctor` version checks (Python minor as in CI, Docker and Compose plugin present) with a pointer to the doc.
 - **Test:** `tests/doctor` — the version checks, with a clear message per missing or mismatched tool.
 - **Acceptance:** With Docker's WSL integration off, `make doctor` fails with a message naming the fix; the doc describes the update and recovery flow.
-
-### F56 – Deploy log records postdeploy as `passed` without counts; the evidence is not kept
-
-- **Evidence:** `deploy.sh:290-294` (`run_postdeploy_tests`) runs `make postdeploy` and then logs only `tests: passed`; `log()` at `deploy.sh:66` writes to stdout, and `deploy.sh` redirects nothing to a file (no `tee`/`exec >`). The `Makefile` can tee output to `logs/<target>-<ts>.log` only with opt-in `LOG=1` (`Makefile:101`), which `deploy.sh:293` does not set. Measured by the operator on 2026-09-28 (deploy of merge `ed8e008`): the deploy summary shows `tests: passed` and `deploy: done` with no pass/skip counts; the "62 passed, 4 skipped" in the log rows of `.claude/roadmap.md` §7 comes from the operator reading it off the pytest output, not from any kept record. [V 2026-09-28]; whether pytest's own summary line reliably reaches the operator's terminal view [I — the operator confirms on the next deploy].
-- **Impact:** IN7 makes "postdeploy green" part of *done*, but the only kept evidence is a word. A test that starts skipping (the false-green class of F47 and F23) or a test that vanishes leaves `tests: passed` unchanged, so a regression in coverage cannot be seen from the deploy log, and every increment log row has the same gap.
-- **Proposed fix:** `run_postdeploy_tests` records the pytest result: write a JUnit XML (`--junitxml`) or capture the summary line to a host log path outside the checkout, and log `tests: passed (<n> passed, <m> skipped, …)` — or `tests: FAILED (…)` before `die`. Decide the host path together with the log location of the backup scripts (`docs/operations/BackupVerifyRestore.md` names `logs/`). IN9 check at fix time: a new host file.
-- **Test:** `tests/guards` — run `run_postdeploy_tests` (or an extracted helper) with a stub `make` that prints a pytest summary; assert the logged line carries the counts, and that a failing stub is logged as failed with its counts.
-- **Acceptance:** The next deploy log shows `tests: passed (<n> passed, <m> skipped …)`; the increment log rows cite that line instead of an operator reading.
-- **Progress (2026-09-29):** the [I] part is answered. On the deploy of merge `68a3118` (R1.7) pytest's own summary line `63 passed, 4 skipped in 15.86s` reached the operator's terminal [V 2026-09-29, operator]. It was read from the terminal, not from a kept file, so the defect stands: `deploy.sh` still keeps no record of the counts. Status stays `open`.
-- **Progress (2026-10-02, R1.26):** `run_postdeploy_tests` pipes `make postdeploy` through `tee` into a `mktemp -d` directory. It catches make's exit code with `|| …` and takes the counts from pytest's last summary line with the new pure `scripts/tests/postdeploy-summary.sh`. It logs `tests: passed (<counts>)` or `tests: FAILED (<counts or "no pytest summary">, rc=<n>)` to the terminal and to the journal (`logger -t homelab-deploy`), removes the directory, and on failure ends with `die`. The journal has been persistent since R1.18, so no new host file is needed; the history is `journalctl -t homelab-deploy`. Guard `tests/guards/test_64_postdeploy_summary.py`: before the fix its five strict xfails (summary cases, static check) failed under `--runxfail` on the missing script and function. The behaviour tests, added in the fix commit by the operator's decision, run the function's body alone with deploy.sh's own trap, `log()` and `die()` and stubs for `make` and `logger`. They failed in four of five cases against the old body [V 2026-10-02]. Status: `addressed` once a deploy shows the line and `journalctl -t homelab-deploy` holds it.
 
 ### F69 – Journald ingestion test skips quiet units at once; the skip count varies between deploys
 
