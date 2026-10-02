@@ -4,7 +4,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
 import yaml
 
 from tests._lib.compose import render_compose
@@ -324,7 +323,6 @@ def test_read_only_exceptions_are_current() -> None:
 DEVICES_ALLOWLIST: dict[str, str] = {}
 
 
-@pytest.mark.xfail(strict=True, reason="R1.22: cadvisor still maps /dev/kmsg (F57)")
 def test_no_service_maps_host_devices() -> None:
     # Set equality: catches an unlisted service and a stale entry alike.
     mapped = {

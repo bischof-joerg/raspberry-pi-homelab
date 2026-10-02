@@ -186,3 +186,30 @@ measured that way, with another amendment.
 by F41) and `test_read_only_exceptions_are_current`.
 `tests/postdeploy/test_25_cadvisor_metrics.py`: `test_cadvisor_root_filesystem_is_read_only`
 (`HostConfig.ReadonlyRootfs` on the Pi) and `test_cadvisor_logs_no_write_errors_since_start`.
+
+## Amendment 2026-10-02 — /dev/kmsg (F57, R1.22)
+
+cadvisor maps no host device. This settles the `/dev/kmsg` point of Decision 1 and of
+"Negative / Tradeoffs"; the socket and `pid: host` points stay as written.
+
+**Measurement** (operator, on the Pi, 2026-10-02, one read-only script, no restart; cadvisor
+started 2026-10-01T13:59:39Z). `HostConfig.Devices` held only `/dev/kmsg` (`rwm`).
+`kernel.dmesg_restrict` is `0`, so reading the kernel log needs no `CAP_SYSLOG`, and `CapEff`
+was `0x2`. cadvisor's process held one file descriptor on `/dev/kmsg`; the same predicate found
+its `/dev/null`. Its log, complete since the start, lists `oom_event` among the enabled metrics
+and has no OOM-watcher warning, and `/metrics` exported 11 `container_oom_events_total` series.
+cadvisor did use the device: its OOM watcher reads the kernel's OOM-kill messages from it.
+
+**Decision** (operator, 2026-10-02). Drop the device anyway. Its only output,
+`container_oom_events_total`, is used by no vmalert rule and no dashboard; host-wide OOM kills
+stay visible through Node Exporter (`node_vmstat_oom_kill`, charted by the Node Exporter Full
+dashboard; not measured in this run). Read access to the whole kernel log
+is more than that metric is worth. Without the device cadvisor cannot start its OOM watcher and
+exports no `container_oom_events_total`; every family the postdeploy check requires is unaffected.
+A per-container OOM alert later needs a source that is not the raw kernel log, or another
+amendment.
+
+**Enforcement.** `tests/guards/test_10_monitoring_compose_contract.py`:
+`test_no_service_maps_host_devices` (every service; `DEVICES_ALLOWLIST` is empty and a new entry
+needs an ADR). `tests/postdeploy/test_25_cadvisor_metrics.py`: `test_cadvisor_has_no_host_devices`
+(`HostConfig.Devices` empty and no descriptor on `/dev/kmsg` in the process on the Pi).

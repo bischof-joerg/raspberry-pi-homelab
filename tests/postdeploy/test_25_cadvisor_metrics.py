@@ -235,6 +235,36 @@ def test_cadvisor_root_filesystem_is_read_only():
 
 
 @pytest.mark.postdeploy
+def test_cadvisor_has_no_host_devices():
+    """F57: cadvisor maps no host device and holds no /dev/kmsg descriptor (ADR-0011, amendment
+    "/dev/kmsg"; measured 2026-10-02 with the same /proc/<pid>/fd predicate)."""
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
+
+    fmt = "{{json .HostConfig.Devices}}|{{.State.Pid}}"
+    res = run(["docker", "inspect", CADVISOR_CONTAINER, "--format", fmt])
+    assert res.returncode == 0, f"❌ docker inspect {CADVISOR_CONTAINER} failed:\n{res.stderr}"
+    devices, pid = res.stdout.strip().split("|")
+    assert not json.loads(devices), (
+        f"❌ {CADVISOR_CONTAINER}: HostConfig.Devices={devices}, expected none (F57).\n"
+        "Fix: redeploy so the container is recreated from stacks/monitoring/compose/"
+        "docker-compose.yml."
+    )
+
+    kmsg = []
+    for fd in Path(f"/proc/{pid}/fd").iterdir():
+        try:
+            if os.readlink(fd) == "/dev/kmsg":
+                kmsg.append(fd.name)
+        except FileNotFoundError:
+            continue  # closed between listing and reading
+    assert not kmsg, (
+        f"❌ cadvisor (pid {pid}) holds /dev/kmsg on fd {kmsg} (F57).\n"
+        "Fix: check `ls -l /proc/<pid>/fd` and the `devices` entry in the compose file."
+    )
+
+
+@pytest.mark.postdeploy
 def test_cadvisor_logs_no_write_errors_since_start():
     """F57: a read-only root filesystem must not break a write cadvisor needs (measured 2026-10-01:
     none outside the mount targets). A refused write shows up in its log."""
