@@ -4,6 +4,7 @@ import re
 from functools import cache
 from pathlib import Path
 
+import pytest
 import yaml
 
 from tests._lib.compose import render_compose
@@ -314,6 +315,26 @@ def test_read_only_exceptions_are_current() -> None:
         f"❌ READ_ONLY_EXCEPTIONS is out of date (F41): read-only now {stale}, "
         f"finding not open in {FINDINGS_REPORT.name} {untracked}\n"
         "Fix: remove the entry, or name the open finding that tracks the service's writes."
+    )
+
+
+# F57: a host device is host access the compose file grants in one line. Each entry maps a service
+# to the ADR that records why it needs its devices. Empty: cadvisor's /dev/kmsg fed only its OOM
+# watcher (container_oom_events_total), which no rule or dashboard reads (operator, 2026-10-02).
+DEVICES_ALLOWLIST: dict[str, str] = {}
+
+
+@pytest.mark.xfail(strict=True, reason="R1.22: cadvisor still maps /dev/kmsg (F57)")
+def test_no_service_maps_host_devices() -> None:
+    # Set equality: catches an unlisted service and a stale entry alike.
+    mapped = {
+        name: service["devices"] for name, service in _services().items() if service.get("devices")
+    }
+    assert mapped.keys() == DEVICES_ALLOWLIST.keys(), (
+        f"❌ Host devices differ from DEVICES_ALLOWLIST (F57): {mapped}, "
+        f"allowlisted {sorted(DEVICES_ALLOWLIST)}\n"
+        "Fix: drop the `devices` entry, or record the measured need in an ADR and add the "
+        "service to DEVICES_ALLOWLIST; remove an entry whose service maps no device."
     )
 
 
