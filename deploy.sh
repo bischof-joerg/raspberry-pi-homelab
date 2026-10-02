@@ -170,6 +170,13 @@ validate_secrets_file() {
   [[ "$mode" == "600" ]] || die "Env file must have mode 600 (found $mode): $SECRETS_FILE"
 }
 
+# F31: compose requires some variables (${VAR:?…}); fail here, before networks and containers.
+# Runs after ensure_journald_read_access, which exports SYSTEMD_JOURNAL_GID and DOCKER_GID.
+validate_compose_env() {
+  compose config --quiet >/dev/null || die "docker compose config failed with $SECRETS_FILE (see the message above; F31)"
+  log "compose: config valid with $SECRETS_FILE"
+}
+
 compose() {
   docker compose --env-file "$SECRETS_FILE" -f "$COMPOSE_FILE" "$@"
 }
@@ -383,6 +390,7 @@ main() {
   # before the read-access step, so it also covers /var/log/journal/<machine-id> (F62)
   ensure_journald_persistent
   ensure_journald_read_access
+  validate_compose_env
   ensure_sshd_hardening
 
   bootstrap_networks

@@ -87,8 +87,8 @@ def strip_env_file_blocks(compose_text: str) -> tuple[str, list[int]]:
     return "\n".join(out) + "\n", removed
 
 
-@pytest.mark.precommit
-def test_compose_config(tmp_path: Path):
+def _patched_compose(tmp_path: Path) -> tuple[list[str], Path, Path, list[int]]:
+    """Return (compose cmd, compose file, patched copy in tmp_path, removed env_file lines)."""
     compose_file = find_monitoring_compose_file()
     if not compose_file.exists():
         pytest.fail(f"Compose file missing: {compose_file}")
@@ -103,8 +103,47 @@ def test_compose_config(tmp_path: Path):
     base_text = compose_file.read_text(encoding="utf-8")
     patched_text, removed_lines = strip_env_file_blocks(base_text)
 
+    # The project directory is tmp_path, so no local .env next to the real file interferes.
     patched = tmp_path / "docker-compose.patched.no-env-file.yml"
     patched.write_text(patched_text, encoding="utf-8")
+    return cmd, compose_file, patched, removed_lines
+
+
+GRAFANA_CREDENTIALS = ("GRAFANA_ADMIN_USER", "GRAFANA_ADMIN_PASSWORD")
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("state", ["unset", "empty"])
+@pytest.mark.parametrize("var", GRAFANA_CREDENTIALS)
+def test_compose_config_requires_grafana_credentials(tmp_path: Path, var: str, state: str):
+    """F31: Grafana is published on the LAN; it must never start without admin credentials."""
+    cmd, compose_file, patched, _removed = _patched_compose(tmp_path)
+
+    env = os.environ.copy()
+    for k, v in ENV_DEFAULTS.items():
+        env.setdefault(k, v)
+    # Override, not setdefault: the caller's environment must not supply the value.
+    env.pop(var, None)
+    if state == "empty":
+        env[var] = ""
+
+    res = run([*cmd, "-f", str(patched), "config", "--quiet"], env=env)
+
+    assert res.returncode != 0, (
+        f"❌ docker compose config passed with {var} {state}.\n"
+        f"compose_file={compose_file}\n"
+        f"Fix: interpolate it as ${{{var}:?…}} so a missing or empty value fails the deploy (F31)."
+    )
+    assert var in (res.stderr or ""), (
+        f"❌ docker compose config failed with {var} {state}, but its message does not name it.\n"
+        f"stderr:\n{res.stderr}\n"
+        f"Fix: use ${{{var}:?<message>}} so compose names the variable (F31)."
+    )
+
+
+@pytest.mark.precommit
+def test_compose_config(tmp_path: Path):
+    cmd, compose_file, patched, removed_lines = _patched_compose(tmp_path)
 
     env = os.environ.copy()
     for k, v in ENV_DEFAULTS.items():
