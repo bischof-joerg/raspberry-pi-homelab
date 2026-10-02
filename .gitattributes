@@ -1,3 +1,7 @@
+# F11: every text file is stored and checked out with LF. Git detects text vs binary itself;
+# the rules below only make the intent explicit.
+* text=auto eol=lf
+
 # Ensure shell scripts always use LF (prevents shebang/[[/substitution issues on Linux)
 *.sh text eol=lf
 
@@ -6,3 +10,15 @@
 *.yaml text eol=lf
 *.json text eol=lf
 *.toml text eol=lf
+
+# Binary types: never converted or diffed as text (none tracked today)
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.gz   binary
+*.tgz  binary
+*.zip  binary
+*.gpg  binary

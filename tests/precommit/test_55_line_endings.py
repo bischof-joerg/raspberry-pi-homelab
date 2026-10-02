@@ -16,7 +16,6 @@ DEFAULT_RULE = "* text=auto eol=lf"
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="R1.27: .gitattributes pins LF per extension only (F11)")
 def test_gitattributes_pins_lf_for_all_text() -> None:
     lines = [line.strip() for line in GITATTRIBUTES.read_text(encoding="utf-8").splitlines()]
     assert DEFAULT_RULE in lines, (
@@ -26,7 +25,6 @@ def test_gitattributes_pins_lf_for_all_text() -> None:
 
 
 @pytest.mark.precommit
-@pytest.mark.xfail(strict=True, reason="R1.27: README.md and Todo.txt hold CRLF (F11)")
 def test_no_tracked_file_has_crlf_in_the_index() -> None:
     res = run(["git", "ls-files", "--eol"])
     assert res.returncode == 0, f"❌ git ls-files --eol failed:\n{res.stderr}"
