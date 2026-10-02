@@ -56,13 +56,14 @@ implementation; a new stack copies its shape, not its service list.
 
 ## Documented exceptions — do not "fix" these
 
-- `cadvisor` runs as root with `pid: host` and the Docker socket (`:ro` since F28 — which does
-  not restrict the API, see above), but **not** `privileged` since F46 step (4), and without
-  `/dev/kmsg` since R1.22 (F57).
+- `cadvisor` runs as root with the Docker socket (`:ro` since F28 — which does not restrict the
+  API, see above), but **not** `privileged` since F46 step (4), without `/dev/kmsg` since R1.22
+  and without `pid: host` since R1.23 (F57).
   Recorded in `docs/architecture/adr/ADR-0011-cadvisor-unprivileged.md` (supersedes ADR-0010).
   No service may set `privileged: true` or map a host device: `PRIVILEGED_ALLOWLIST` and
   `DEVICES_ALLOWLIST` in `tests/guards/test_10_monitoring_compose_contract.py` are empty, and a
-  new entry needs its own ADR. If cadvisor metrics go missing, restore them with the smallest `cap_add` set, not with
+  new entry needs its own ADR. `pid: host` needs an entry in `PID_HOST_ALLOWLIST` there that
+  names an open finding or ADR; today only node-exporter (F72). If cadvisor metrics go missing, restore them with the smallest `cap_add` set, not with
   `privileged` (ADR-0011 Decision 3).
 - `alertmanager-config-render` is a one-shot renderer that runs as uid 0 (`user: "0:0"`,
   `group_add: ["65534"]`) because it must own the root-owned output directory. It has no network,

@@ -4,7 +4,6 @@ import re
 from functools import cache
 from pathlib import Path
 
-import pytest
 import yaml
 
 from tests._lib.compose import render_compose
@@ -343,7 +342,6 @@ def test_no_service_maps_host_devices() -> None:
 PID_HOST_ALLOWLIST: dict[str, str] = {"node-exporter": "F72"}
 
 
-@pytest.mark.xfail(strict=True, reason="R1.23: cadvisor still sets pid: host (F57)")
 def test_no_service_shares_the_host_pid_namespace() -> None:
     # Set equality: catches an unlisted service and a stale entry alike.
     shared = sorted(name for name, service in _services().items() if service.get("pid") == "host")

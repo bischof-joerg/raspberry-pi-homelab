@@ -265,6 +265,50 @@ def test_cadvisor_has_no_host_devices():
 
 
 @pytest.mark.postdeploy
+def test_cadvisor_has_its_own_pid_namespace():
+    """F57: cadvisor does not share the host PID namespace (ADR-0011, amendment "pid: host")."""
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
+
+    fmt = "{{.HostConfig.PidMode}}|{{.State.Pid}}"
+    res = run(["docker", "inspect", CADVISOR_CONTAINER, "--format", fmt])
+    assert res.returncode == 0, f"❌ docker inspect {CADVISOR_CONTAINER} failed:\n{res.stderr}"
+    pid_mode, pid = res.stdout.strip().split("|")
+    assert pid_mode != "host", (
+        f"❌ {CADVISOR_CONTAINER}: HostConfig.PidMode={pid_mode!r}, expected not 'host' (F57).\n"
+        "Fix: redeploy so the container is recreated from stacks/monitoring/compose/"
+        "docker-compose.yml."
+    )
+    own, host = os.readlink(f"/proc/{pid}/ns/pid"), os.readlink("/proc/1/ns/pid")
+    assert own != host, (
+        f"❌ cadvisor (pid {pid}) runs in the host PID namespace {host} (F57).\n"
+        "Fix: check `pid:` in the compose file and `docker inspect` for PidMode."
+    )
+
+
+@pytest.mark.postdeploy
+def test_cadvisor_logs_no_proc_read_errors_since_start():
+    """F57: without pid: host cadvisor reads /proc/<pid> through /rootfs/proc (measured
+    2026-10-02: 0 such errors before the change). A failed read names the path in its log."""
+    if not which_ok("docker"):
+        pytest.skip("docker not available")
+
+    res = run(["docker", "inspect", CADVISOR_CONTAINER, "--format", "{{.State.StartedAt}}"])
+    assert res.returncode == 0, f"❌ docker inspect {CADVISOR_CONTAINER} failed:\n{res.stderr}"
+    logs = run(["docker", "logs", "--since", res.stdout.strip(), CADVISOR_CONTAINER])
+    assert logs.returncode == 0, f"❌ docker logs {CADVISOR_CONTAINER} failed:\n{logs.stderr}"
+    hits = [
+        line for line in (logs.stdout + logs.stderr).splitlines() if re.search(r"/proc/\d+", line)
+    ]
+    assert not hits, (
+        "❌ cadvisor logged /proc/<pid> errors since its start (F57):\n"
+        + "\n".join(hits[:20])
+        + '\nFix: check that /rootfs/proc is the host\'s procfs (ADR-0011, amendment "pid: host"); '
+        "otherwise revert to pid: host."
+    )
+
+
+@pytest.mark.postdeploy
 def test_cadvisor_logs_no_write_errors_since_start():
     """F57: a read-only root filesystem must not break a write cadvisor needs (measured 2026-10-01:
     none outside the mount targets). A refused write shows up in its log."""

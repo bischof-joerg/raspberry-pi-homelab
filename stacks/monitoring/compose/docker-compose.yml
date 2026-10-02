@@ -269,7 +269,8 @@ services:
     # Do NOT expose to LAN; vmagent scrapes it via Docker network
     # ports:
     #   - "8080:8080"
-    pid: host
+    # F57: no pid: host. cadvisor reads every /proc/<pid> path through the host's /proc that the
+    # /:/rootfs mount brings along (measured 2026-10-02; ADR-0011, amendment "pid: host").
     # F57: no /dev/kmsg. cadvisor read it only for its OOM watcher (container_oom_events_total),
     # which no rule or dashboard uses (measured 2026-10-02; ADR-0011, amendment "/dev/kmsg").
     volumes:

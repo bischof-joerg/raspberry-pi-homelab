@@ -213,3 +213,37 @@ amendment.
 `test_no_service_maps_host_devices` (every service; `DEVICES_ALLOWLIST` is empty and a new entry
 needs an ADR). `tests/postdeploy/test_25_cadvisor_metrics.py`: `test_cadvisor_has_no_host_devices`
 (`HostConfig.Devices` empty and no descriptor on `/dev/kmsg` in the process on the Pi).
+
+## Amendment 2026-10-02 — pid: host (F57, R1.23)
+
+cadvisor runs in its own PID namespace. This settles the `pid: host` point of Decision 1 and of
+"Negative / Tradeoffs"; the socket point stays as written.
+
+**Source** (cadvisor v0.60.5, read 2026-10-02). `lib/manager/manager.go` sets
+`inHostNamespace = false` when `/rootfs/proc` exists; `container/docker/handler.go` then uses
+`rootFs = "/rootfs"`, and `lib/container/libcontainer/handler.go` reads `net/dev`, `tcp`, `udp`,
+`limits`, `fd` and `schedstat` as `path.Join(rootFs, "proc", <host pid>, …)`. Only `smaps` and
+`clear_refs` are read from `/proc` directly, for `referenced_memory`, which is not enabled here.
+
+**Measurement** (operator, on the Pi, 2026-10-02, one read-only script, no restart; cadvisor
+started 2026-10-02T11:38:27Z, log complete since then). `PidMode` was `host`. In cadvisor's mount
+table, `/rootfs/proc` is a `proc` mount: the host's procfs, carried along by the `/:/rootfs` bind
+mount. It shows host PIDs whatever namespace cadvisor runs in. `/rootfs/proc/1/comm` read
+`systemd`, as the host's `/proc/1/comm` did (the known value), and both listed 196 PIDs. The log
+had no `/proc/<pid>` error. 69 `container_*` families were exported, with 17 series per network
+family.
+
+**Decision.** Drop `pid: host`. cadvisor reads every per-process path through `/rootfs/proc`, which
+the namespace change does not touch. After the deploy the same script is run again; the
+`container_*` families must stay the same.
+
+**Correction to the amendment "/dev/kmsg".** It says cadvisor "exports no
+`container_oom_events_total`" without the device. The measurement above, taken after that
+deploy, shows 11 series of that family. They remain but are no longer incremented, since the OOM
+watcher is off. Their value was not measured.
+
+**Enforcement.** `tests/guards/test_10_monitoring_compose_contract.py`:
+`test_no_service_shares_the_host_pid_namespace` (every service; `PID_HOST_ALLOWLIST` names only
+node-exporter, tracked by F72). `tests/postdeploy/test_25_cadvisor_metrics.py`:
+`test_cadvisor_has_its_own_pid_namespace` (`PidMode` and the process's `ns/pid` on the Pi) and
+`test_cadvisor_logs_no_proc_read_errors_since_start`.
