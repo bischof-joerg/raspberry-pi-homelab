@@ -23,7 +23,6 @@ dependencies = []
 testpaths = ["tests"]
 markers = [
   "precommit: fast checks intended for git pre-commit",
-  "lint: static repo checks (yaml/json/merge markers/large files, etc.)",
   "doctor: tooling/config sanity checks for dev environments (WSL/Pi)",
   "postdeploy: checks intended to run on the Raspberry Pi after deployment",
 ]

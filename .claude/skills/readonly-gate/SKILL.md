@@ -68,8 +68,8 @@ diff /tmp/claude-gate-before.txt /tmp/claude-gate-after.txt && echo "OK: no side
 ## Acceptance
 
 Form A must print `OK: no side effects`; in Form B the final `diff` must be empty. **Any difference
-must be reported**, not worked around — it means a supposedly read-only command wrote to the tree. An extra run such as `-m lint` belongs **inside** the before/after
-window, otherwise its side effects go unchecked.
+must be reported**, not worked around — it means a supposedly read-only command wrote to the tree. Any extra run belongs **inside** the
+before/after window, otherwise its side effects go unchecked.
 
 `allowed-tools` pre-approves the individual commands. Whether the single compound call of Form A
 is covered by those patterns, or triggers a permission prompt, has not been measured. A prompt
@@ -80,9 +80,9 @@ there is acceptable; do not widen `allowed-tools` to avoid it (D4-b).
 - `pyproject.toml` sets `--maxfail=1`, so a run **stops at the first failure**. A short green tail
   does not mean the rest passed. Quote the counts.
 - `addopts` also carries `-m "not postdeploy"`. Postdeploy tests never run here; they need the Pi.
-- Tests marked `lint` are deselected by `-m precommit`. `tests/precommit/test_15_json_valid.py` is
-  currently failing on `.vscode/settings.json` and nobody sees it (F23/F25). If you want the full
-  picture, run `-m lint` separately and say that you did.
+- Every test runs in one of the gates: `tests/guards/test_63_every_test_runs_in_a_gate.py` fails
+  on a test that no Makefile selection collects (F23, R1.25). The `lint` marker and its four dead
+  files are gone; JSON, YAML, merge markers and large files are checked by the pre-commit hooks.
 - ShellCheck must come from `.venv` (0.10.0.1, matching the pre-commit pin). The system ShellCheck
   is 0.9.0 and disagrees (F21).
 
