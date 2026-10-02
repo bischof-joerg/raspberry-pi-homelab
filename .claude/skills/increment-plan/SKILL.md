@@ -125,8 +125,15 @@ units, such as `test_45`'s `systemd-udevd.service` and `ufw.service` (F69). Name
 ("96–97 passed, 3–4 skipped, 100 collected"), never as one exact pair (R1.22 predicted 97/3 and
 got 96/4).
 
+A claim that a change removes or keeps a metric is checked after the deploy with the same
+measurement that recorded it before: run the script again and compare. R1.22 wrote "exports no
+`container_oom_events_total`" from the source alone; R1.23's M1 found the 11 series still there.
+
 ## What Claude does not do
 
 Propose the commit message and the PR text. The operator commits, pushes, opens the PR, merges and
-deploys (C4, C5, IN5). Each proposed commit names the files it holds, so the split survives into
-`git add` (R1.22: the fix landed in the skill's `docs(claude)` commit).
+deploys (C4, C5, IN5). Each proposed commit is one block that the operator runs as it is:
+`git add <files> && git commit -F- <<'MSG'`, then the message, then `MSG`. Naming the files keeps
+the split (R1.22: the fix landed in the skill's `docs(claude)` commit). One block keeps the command
+out of the message (R1.22's log commit `46b29a9` has `git add …` in its subject, after `git add`
+and the message were given as two blocks).

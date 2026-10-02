@@ -26,8 +26,7 @@ Implementation goal including hardening:
 - Only Grafana exposes a TCP port
 - All other services are internal-only Docker network
 - Read-only root filesystems where supported
-- No container runs privileged; cAdvisor still runs as root with `pid: host` and the Docker
-  socket ([ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md)); vector reads the Docker
+- No container runs privileged; cAdvisor still runs as root with the Docker socket ([ADR-0011](architecture/adr/ADR-0011-cadvisor-unprivileged.md)); vector reads the Docker
   API only through the filtering socket-proxy
   ([ADR-0012](architecture/adr/ADR-0012-docker-api-socket-proxy.md))
 - Secrets never stored in Git
@@ -199,9 +198,10 @@ None – stateless.
 - Docker socket and containerd socket
 
 **Privileges:**
-cAdvisor runs without privileged mode, but as `user: root` with `pid: host`. It maps no host
-device: without `/dev/kmsg` its OOM watcher is off, so it exports no `container_oom_events_total`
-(host-wide OOM kills still come from Node Exporter). It drops every capability except
+cAdvisor runs without privileged mode, but as `user: root`. It has its own PID namespace and
+reads per-process data through the host's `/proc` under `/rootfs`. It maps no host device:
+without `/dev/kmsg` its OOM watcher is off, so `container_oom_events_total` is still exported but
+no longer counts (host-wide OOM kills still come from Node Exporter). It drops every capability except
 `DAC_OVERRIDE`, the only one it used with its own credentials when measured on the Pi (F57), and
 runs with `no-new-privileges` and a read-only root filesystem. It publishes no host port; vmagent scrapes it over the `monitoring` network. The
 `:ro` socket mounts do not restrict the Docker API, so a compromise of cAdvisor is still a

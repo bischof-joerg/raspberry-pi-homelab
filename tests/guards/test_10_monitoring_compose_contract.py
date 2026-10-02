@@ -336,6 +336,29 @@ def test_no_service_maps_host_devices() -> None:
     )
 
 
+# F57: `pid: host` shows a service every host process. Each entry maps a service to the open
+# finding that tracks it. cadvisor reads process data through the host's /proc under /rootfs
+# (measured 2026-10-02, ADR-0011); node-exporter is tracked by F72.
+PID_HOST_ALLOWLIST: dict[str, str] = {"node-exporter": "F72"}
+
+
+def test_no_service_shares_the_host_pid_namespace() -> None:
+    # Set equality: catches an unlisted service and a stale entry alike.
+    shared = sorted(name for name, service in _services().items() if service.get("pid") == "host")
+    report = FINDINGS_REPORT.read_text(encoding="utf-8")
+    untracked = sorted(
+        f"{name}: {finding}"
+        for name, finding in PID_HOST_ALLOWLIST.items()
+        if f"### {finding} " not in report
+    )
+    assert shared == sorted(PID_HOST_ALLOWLIST) and not untracked, (
+        f"❌ Services with `pid: host` differ from PID_HOST_ALLOWLIST (F57): {shared}, "
+        f"allowlisted {sorted(PID_HOST_ALLOWLIST)}, finding not open {untracked}\n"
+        "Fix: drop `pid: host`, or name the open finding or ADR that tracks it in "
+        "PID_HOST_ALLOWLIST; remove an entry whose service no longer sets it."
+    )
+
+
 def test_monitoring_doc_matches_cadvisor_privileges() -> None:
     text = MONITORING_DOC.read_text(encoding="utf-8")
     claims = [

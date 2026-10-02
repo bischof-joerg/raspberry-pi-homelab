@@ -129,6 +129,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 | F69 | Journald ingestion test skips quiet units at once; the skip count varies between deploys | Tests | Low | 2026-10-02 | R2 | open | R2a |
 | F70 | Postdeploy changes udev's log level and re-triggers every device on the host | Host | Med | 2026-10-02 | R2 | open | R2a |
 | F71 | Postdeploy pulls and runs the unpinned `hello-world:latest` | Supply chain | Low | 2026-10-02 | R2 | open | R2a |
+| F72 | node-exporter shares the host PID namespace without a recorded reason | Privilege | Low | 2026-10-02 | R2 | open | R2a |
 
 ## Secrets and credentials
 
@@ -174,6 +175,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Progress (2026-10-01, R1.21 deployed):** merge `1659424` (PR #70; `43165bf`), CI green. Measured on the Pi [V 2026-10-01, operator]: postdeploy `96 passed, 3 skipped`, including `test_cadvisor_root_filesystem_is_read_only` and `test_cadvisor_logs_no_write_errors_since_start`; cadvisor recreated at the deploy (`Created 2026-10-01T13:59:39Z`) with `ReadonlyRootfs=true`; its `docker diff` lists only the ten mount-target entries of the measurement and no `C /tmp`, so the self-test's trace in the old container went with it. Status stays `open`: `/dev/kmsg`, `pid: host` and the socket decision.
 - **Progress (2026-10-02, R1.22):** `/dev/kmsg` dropped. Measured by the operator on the Pi with one read-only script [V 2026-10-02, operator]: `kernel.dmesg_restrict 0`, `CapEff 0x2`; cadvisor held one descriptor on `/dev/kmsg` (self-test: the same predicate found `/dev/null`); its log since the start lists `oom_event` as enabled and has no OOM-watcher warning; 11 `container_oom_events_total` series. The device was in use, for the OOM watcher only; the operator decided to drop it anyway, since no rule or dashboard reads that metric. ADR-0011, amendment "/dev/kmsg". Guard `test_no_service_maps_host_devices` (`DEVICES_ALLOWLIST` empty); postdeploy `test_cadvisor_has_no_host_devices`. Still open: `pid: host` and the socket decision. Status stays `open`.
 - **Progress (2026-10-02, R1.22 deployed):** merge `77391d1` (PR #72; `49bcd9c` tests, `d48d475` fix and skill), CI green. Measured on the Pi [V 2026-10-02, operator]: deploy 13:38 `tests: passed`, postdeploy `96 passed, 4 skipped`, including `test_cadvisor_has_no_host_devices` and `test_cadvisor_exports_named_container_metrics`; all four skips are `test_21` (two) and `test_45`'s quiet `systemd-udevd.service` and `ufw.service` (F69), none in cadvisor's tests. cadvisor's log since the deploy: `Could not configure a source for OOM detection, disabling OOM events: open /dev/kmsg: no such file or directory`, as ADR-0011 expects. Status stays `open`: `pid: host` and the socket decision.
+- **Progress (2026-10-02, R1.23):** `pid: host` dropped. Source read (cadvisor v0.60.5): with `/rootfs/proc` present, every per-process path is read as `/rootfs/proc/<host pid>/…`. Measured by the operator on the Pi with one read-only script [V 2026-10-02, operator]: `/rootfs/proc` is a `proc` mount (the host's procfs via `/:/rootfs`), `1/comm` `systemd` as on the host, 196 PIDs on both sides, no `/proc/<pid>` error in the log, 69 `container_*` families. ADR-0011, amendment "pid: host", which also corrects the "/dev/kmsg" amendment: `container_oom_events_total` is still exported (11 series), only no longer counted. Guard `test_no_service_shares_the_host_pid_namespace` (`PID_HOST_ALLOWLIST`: node-exporter, F72); postdeploy `test_cadvisor_has_its_own_pid_namespace`, `test_cadvisor_logs_no_proc_read_errors_since_start`. Still open: the socket decision. Status stays `open`.
 
 ## Exposure and firewall
 
@@ -340,6 +342,15 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Proposed fix:** `condition: service_healthy` where the upstream has a healthcheck.
 - **Test:** F41 contract test.
 - **Acceptance:** No `service_started` against a service that has a healthcheck.
+
+### F72 – node-exporter shares the host PID namespace without a recorded reason
+
+- **Evidence:** `stacks/monitoring/compose/docker-compose.yml`, service `node-exporter`: `pid: host` together with `--path.rootfs=/host` and the mount `/:/host:ro,rslave` [V 2026-10-02, read]. No ADR or comment says why it needs the host PID namespace. `.claude/rules/compose-stacks.md` names only cadvisor as a documented exception. Found while planning R1.23 for cadvisor's `pid: host`. For cadvisor, R1.23's M1 showed that the host `/` bind mount brings the host's `/proc` along (`/rootfs/proc` of type `proc`, `1/comm` = `systemd`, 196 PIDs on both sides) [V 2026-10-02, operator]. Whether node-exporter's collectors read process data through `/host/proc` or through its own `/proc` is [I]: check its `--path.procfs` default under `--path.rootfs` and compare the `node_*` families before and after on the Pi.
+- **Impact:** node-exporter sees every host process and can signal none, since it runs as `65534` with `cap_drop: [ALL]`. The risk is information exposure, and the namespace share is a host-level exception the rules do not record.
+- **Proposed fix:** Measure as in R1.23: list the `node_*` families, drop `pid: host`, compare after the deploy. If something is lost, record the reason in an ADR; otherwise remove the entry from `PID_HOST_ALLOWLIST`.
+- **Test:** `tests/guards/test_10_monitoring_compose_contract.py` — `test_no_service_shares_the_host_pid_namespace` with `PID_HOST_ALLOWLIST` empty; postdeploy — a family check for node-exporter like `test_25`'s for cadvisor.
+- **Acceptance:** node-exporter runs without `pid: host` and with the same `node_*` families, or an ADR records why it needs the namespace and the allowlist cites it.
+- **Prevention:** Rung: static guard in CI. `test_no_service_shares_the_host_pid_namespace` (R1.23) refuses a new `pid: host` without an allowlist entry that names an open finding or ADR; this finding is that entry for the existing case.
 
 ## Supply chain and pinning
 
