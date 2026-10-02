@@ -317,6 +317,25 @@ def test_read_only_exceptions_are_current() -> None:
     )
 
 
+# F57: a host device is host access the compose file grants in one line. Each entry maps a service
+# to the ADR that records why it needs its devices. Empty: cadvisor's /dev/kmsg fed only its OOM
+# watcher (container_oom_events_total), which no rule or dashboard reads (operator, 2026-10-02).
+DEVICES_ALLOWLIST: dict[str, str] = {}
+
+
+def test_no_service_maps_host_devices() -> None:
+    # Set equality: catches an unlisted service and a stale entry alike.
+    mapped = {
+        name: service["devices"] for name, service in _services().items() if service.get("devices")
+    }
+    assert mapped.keys() == DEVICES_ALLOWLIST.keys(), (
+        f"❌ Host devices differ from DEVICES_ALLOWLIST (F57): {mapped}, "
+        f"allowlisted {sorted(DEVICES_ALLOWLIST)}\n"
+        "Fix: drop the `devices` entry, or record the measured need in an ADR and add the "
+        "service to DEVICES_ALLOWLIST; remove an entry whose service maps no device."
+    )
+
+
 def test_monitoring_doc_matches_cadvisor_privileges() -> None:
     text = MONITORING_DOC.read_text(encoding="utf-8")
     claims = [

@@ -270,8 +270,8 @@ services:
     # ports:
     #   - "8080:8080"
     pid: host
-    devices:
-      - /dev/kmsg:/dev/kmsg
+    # F57: no /dev/kmsg. cadvisor read it only for its OOM watcher (container_oom_events_total),
+    # which no rule or dashboard uses (measured 2026-10-02; ADR-0011, amendment "/dev/kmsg").
     volumes:
       - /etc/machine-id:/etc/machine-id:ro
       - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro

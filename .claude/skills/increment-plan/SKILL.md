@@ -61,8 +61,15 @@ destinations in `.Mounts`, never "the diff is empty" (R1.21). The script checks 
   trap cleanup EXIT
   # preflight: root, paths, tools — before any change
   # measurement: helper files only under $RUN; commands that may read stdin get </dev/null
+  echo "MEASUREMENT END"
   EOF
   ```
+
+  The terminator `EOF` stands alone on its line in the plan — no indentation, nothing after it.
+  The output is complete only if `MEASUREMENT END` is followed directly by `CLEANUP ok`. Any line
+  between them, such as `bash: line N: EOF: command not found` (R1.22's M1: the login shell
+  missed the terminator and passed it to `bash -s`), means the script did not end where it
+  should. Check whether the values before it are complete before using them.
 
   stdin *is* the script, so a command that reads stdin (`docker exec -i`, `read`) would swallow
   the rest — hence `</dev/null`. A proof line that is *expected* to fail (`ls` of a removed path)

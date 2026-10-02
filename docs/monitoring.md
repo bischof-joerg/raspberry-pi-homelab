@@ -199,10 +199,11 @@ None – stateless.
 - Docker socket and containerd socket
 
 **Privileges:**
-cAdvisor runs without privileged mode, but as `user: root` with `pid: host` and the device
-`/dev/kmsg`. It drops every capability except `DAC_OVERRIDE`, the only one it used with its own
-credentials when measured on the Pi (F57), and runs with `no-new-privileges` and a read-only root
-filesystem. It publishes no host port; vmagent scrapes it over the `monitoring` network. The
+cAdvisor runs without privileged mode, but as `user: root` with `pid: host`. It maps no host
+device: without `/dev/kmsg` its OOM watcher is off, so it exports no `container_oom_events_total`
+(host-wide OOM kills still come from Node Exporter). It drops every capability except
+`DAC_OVERRIDE`, the only one it used with its own credentials when measured on the Pi (F57), and
+runs with `no-new-privileges` and a read-only root filesystem. It publishes no host port; vmagent scrapes it over the `monitoring` network. The
 `:ro` socket mounts do not restrict the Docker API, so a compromise of cAdvisor is still a
 compromise of the host. The decision, the baseline measurement and the metric families the
 postdeploy tests require are recorded in
