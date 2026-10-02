@@ -416,6 +416,7 @@ group. The R1 column is the grouping into increments; per-group status and order
 - **Proposed fix:** `* text=auto eol=lf` plus explicit binary types.
 - **Test:** `tests/precommit` — no tracked text file contains `\r`.
 - **Acceptance:** `git ls-files --eol` shows `lf` for all text files.
+- **Progress (2026-10-02, R1.27):** measured before the fix [V 2026-10-02, `git ls-files --eol`]: 199 tracked files, 194 `i/lf`, 3 `i/none`, no binaries, and two `i/crlf`: `README.md` (105 lines) and `Todo.txt` (500 lines). `.gitattributes` now starts with `* text=auto eol=lf` and marks binary types `binary`; `README.md` converted to LF by Claude, `Todo.txt` renormalized by the operator (`git add --renormalize`, a write-protected file for Claude). Test `tests/precommit/test_55_line_endings.py` (precommit gate): the rule exists, and the index holds no CRLF. Before the fix, both strict xfails failed under `--runxfail` on the missing rule and on exactly those two files. Status: `addressed` once the PR's CI is green.
 
 ### F50 – The WSL layer (Python, Docker Desktop, apt) is neither documented nor checked
 
